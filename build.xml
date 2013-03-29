@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="tagged-stuff" default="info">
+
+  <xmlproperty file="pom.xml" prefix="pom" />
+  <property environment="env" />
+  <property file="build.properties" />
+
+  <property name="name" value="${pom.project.artifactId}" />
+  <property name="version" value="${pom.project.version}" />
+
+  <property name="deploy.war" location="${deploy.dir}/${name}.war" />
+
+  <presetdef name="mvn-without-profiles">
+    <exec executable="${maven.bin}" failifexecutionfails="true" failonerror="true">
+      <arg value="--batch-mode" />
+    </exec>
+  </presetdef>
+
+  <presetdef name="mvn">
+    <mvn-without-profiles>
+      <arg value="-P${profiles}" />
+    </mvn-without-profiles>
+  </presetdef>
+
+  <presetdef name="mvn-release">
+    <mvn-without-profiles>
+      <arg value="-Prelease" />
+    </mvn-without-profiles>
+  </presetdef>
+
+  <macrodef name="check-property">
+    <attribute name="property" />
+    <sequential>
+      <fail unless="@{property}">@{property} not set</fail>
+      <echo>@{property}:</echo>
+      <echo>    ${@{property}}</echo>
+    </sequential>
+  </macrodef>
+
+  <macrodef name="mvn-simple">
+    <attribute name="phase" />
+    <sequential>
+      <mvn>
+        <arg value="@{phase}" />
+      </mvn>
+    </sequential>
+  </macrodef>
+
+  <macrodef name="mvn-simple-notest">
+    <attribute name="phase" />
+    <sequential>
+      <mvn>
+        <arg value="-DskipTests=true" />
+        <arg value="@{phase}" />
+      </mvn>
+    </sequential>
+  </macrodef>
+
+
+  <target name="check-properties">
+    <echo>Checking Properties</echo>
+    <check-property property="name" />
+    <check-property property="version" />
+
+    <check-property property="maven.bin" />
+    <check-property property="deploy.dir" />
+    <check-property property="deploy.war" />
+  </target>
+
+  <target name="info" depends="check-properties" description="print basic configuration information">
+    <echo>-------------------------</echo>
+    <echo>mvn --version</echo>
+    <mvn>
+      <arg value="--version" />
+    </mvn>
+
+    <echo>-------------------------</echo>
+    <echo>Active Profiles</echo>
+    <mvn>
+      <arg value="--non-recursive" />
+      <arg value="help:active-profiles" />
+    </mvn>
+  </target>
+
+  <target name="clean" depends="check-properties" description="clean the project">
+    <!--
+    hack: instead of using "mvn clean" manually delete the contents of the
+    target folder without deleting the target folders themself. This is done
+    to avoid losing the "derived" attribute for those folders, if it is set in
+    the eclipse project.
+    -->
+    <delete includeemptydirs="true">
+      <fileset dir=".">
+        <include name="target/**/*" />
+      </fileset>
+    </delete>
+  </target>
+
+  <!-- standard maven phases exposed via ant -->
+  <target name="compile" depends="check-properties" description="compile the project">
+    <mvn-simple phase="compile" />
+  </target>
+
+  <target name="test" depends="check-properties" description="compile and run tests">
+    <mvn-simple phase="test" />
+  </target>
+
+  <target name="package" depends="check-properties" description="compile and package">
+    <mvn-simple phase="package" />
+  </target>
+
+  <target name="package-release" depends="clean" description="clean, compile and package using the release profile">
+    <mvn-release>
+      <arg value="package" />
+    </mvn-release>
+  </target>
+
+  <target name="package-notest" depends="check-properties" description="compile and package without running tests">
+    <mvn-simple-notest phase="package" />
+  </target>
+
+  <target name="install" depends="check-properties" description="compile and install artifacts to the local repository">
+    <mvn-simple phase="install" />
+  </target>
+
+  <target name="install-notest" depends="check-properties" description="compile and install artifacts to the local repository without running tests">
+    <mvn-simple-notest phase="install" />
+  </target>
+
+  <target name="site" depends="check-properties" description="build the site">
+    <mvn-simple phase="site" />
+  </target>
+
+
+  <!-- cleanup for deploy/explode -->
+  <target name="undeploy" depends="check-properties" description="undeploy the war">
+    <delete file="${deploy.war}" />
+  </target>
+
+
+  <!-- deploy/undeploy -->
+  <presetdef name="copy-war">
+    <copy file="target/${name}-${version}.war" overwrite="true" tofile="${deploy.war}/" />
+  </presetdef>
+
+  <target name="deploy" depends="undeploy,package,check-properties" description="deploy the packaged war">
+    <copy-war />
+  </target>
+
+  <target name="deploy-notest" depends="undeploy,package-notest,check-properties" description="deploy the packaged war without running tests">
+    <copy-war />
+  </target>
+
+  <target name="trigger-redeploy" depends="check-properties" description="trigger redeployment">
+    <touch file="${deploy.war}.dodeploy" />
+  </target>
+
+
+  <!-- findbugs -->
+  <target name="findbugs-execute" depends="check-properties" description="generate the findbugs xml file">
+    <mvn>
+      <arg value="findbugs:findbugs" />
+    </mvn>
+  </target>
+
+  <target name="findbugs-gui" depends="check-properties" description="launch the findbugs gui">
+    <mvn>
+      <arg value="findbugs:gui" />
+    </mvn>
+  </target>
+</project>

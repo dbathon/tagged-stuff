@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jboss-web>
+  <context-root>tagged-stuff</context-root>
+
+  <resource-ref>
+    <res-ref-name>jdbc/tagged-stuff</res-ref-name>
+    <jndi-name>java:jboss/datasources/TaggedStuffDS</jndi-name>
+  </resource-ref>
+</jboss-web>

@@ -1,0 +1,3 @@
+maven.bin=/path/to/bin/mvn
+
+deploy.dir=/path/to/jboss-as7/standalone/deployments/

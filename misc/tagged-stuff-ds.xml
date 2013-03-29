@@ -1,0 +1,13 @@
+<datasources xmlns="http://www.jboss.org/ironjacamar/schema">
+  <datasource jndi-name="java:jboss/datasources/TaggedStuffDS" pool-name="TaggedStuffDS" jta="true">
+    <connection-url>jdbc:h2:~/tagged-stuff</connection-url>
+    <driver>h2</driver>
+    <pool>
+      <max-pool-size>20</max-pool-size>
+    </pool>
+    <security>
+      <user-name>sa</user-name>
+      <password>sa</password>
+    </security>
+  </datasource>
+</datasources>
