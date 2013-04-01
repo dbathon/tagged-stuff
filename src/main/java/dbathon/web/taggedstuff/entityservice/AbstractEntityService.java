@@ -15,7 +15,7 @@ import javax.persistence.Transient;
 import com.google.common.collect.ImmutableMap;
 import com.googlecode.gentyref.GenericTypeReflector;
 
-public abstract class AbstractEntityService<E> implements EntityService<E> {
+public abstract class AbstractEntityService<E extends EntityWithId> implements EntityService<E> {
 
   @PersistenceContext
   protected EntityManager em;
@@ -88,16 +88,6 @@ public abstract class AbstractEntityService<E> implements EntityService<E> {
   @Override
   public Map<String, EntityProperty> getEntityProperties() {
     return entityProperties;
-  }
-
-  @Override
-  public String getIdPropertyName() {
-    return "id";
-  }
-
-  @Override
-  public String getVersionPropertyName() {
-    return "version";
   }
 
   @Override

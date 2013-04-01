@@ -6,10 +6,11 @@ import javax.persistence.Id;
 import javax.persistence.Table;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Pattern;
+import dbathon.web.taggedstuff.entityservice.EntityWithId;
 
 @Entity
 @Table(name = "TAG_")
-public class Tag extends AbstractEntity {
+public class Tag extends AbstractEntity implements EntityWithId {
 
   private String id;
 
@@ -19,6 +20,7 @@ public class Tag extends AbstractEntity {
     this.id = id;
   }
 
+  @Override
   @Id
   @Column(name = "ID_", nullable = false, length = 1000)
   @NotNull

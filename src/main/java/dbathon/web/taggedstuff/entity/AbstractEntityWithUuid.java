@@ -4,9 +4,10 @@ import java.util.UUID;
 import javax.persistence.Column;
 import javax.persistence.Id;
 import javax.persistence.MappedSuperclass;
+import dbathon.web.taggedstuff.entityservice.EntityWithId;
 
 @MappedSuperclass
-public class AbstractEntityWithUuid extends AbstractEntity {
+public class AbstractEntityWithUuid extends AbstractEntity implements EntityWithId {
 
   private String id;
 
@@ -31,6 +32,7 @@ public class AbstractEntityWithUuid extends AbstractEntity {
     return sb.toString();
   }
 
+  @Override
   @Id
   @Column(name = "ID_", nullable = false, length = 30)
   public String getId() {

@@ -38,10 +38,8 @@ public class EntityServiceLookup {
     entityServiceMap = ImmutableMap.copyOf(map);
   }
 
-  public <E> EntityService<E> getEntityService(Class<E> entityClass) {
-    @SuppressWarnings("unchecked")
-    final EntityService<E> result = (EntityService<E>) entityServiceMap.get(entityClass);
-    return result;
+  public EntityService<?> getEntityService(Class<?> entityClass) {
+    return entityServiceMap.get(entityClass);
   }
 
   public Set<Class<?>> getAllEntityClasses() {

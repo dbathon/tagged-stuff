@@ -7,16 +7,18 @@ import javax.persistence.MappedSuperclass;
 import javax.persistence.PrePersist;
 import javax.persistence.PreUpdate;
 import javax.persistence.Version;
+import dbathon.web.taggedstuff.entityservice.EntityWithVersion;
 
 @MappedSuperclass
 @Access(AccessType.PROPERTY)
-public class AbstractEntity {
+public class AbstractEntity implements EntityWithVersion {
 
   private int version;
 
   private long createdTs = Long.MIN_VALUE;
   private long lastModifiedTs = Long.MIN_VALUE;
 
+  @Override
   @Column(name = "VERSION_", nullable = false)
   @Version
   public int getVersion() {

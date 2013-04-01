@@ -75,7 +75,7 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
 
       this.properties = ImmutableMap.copyOf(properties);
 
-      idProperty = Preconditions.checkNotNull(properties.get(entityService.getIdPropertyName()));
+      idProperty = Preconditions.checkNotNull(properties.get(EntityWithId.ID_PROPERTY_NAME));
     }
 
     @Override
