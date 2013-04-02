@@ -10,7 +10,11 @@ import javax.ejb.ConcurrencyManagement;
 import javax.ejb.ConcurrencyManagementType;
 import javax.ejb.Singleton;
 import javax.inject.Inject;
+import javax.persistence.EntityManager;
+import javax.persistence.PersistenceContext;
+import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
+import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
@@ -28,6 +32,7 @@ import dbathon.web.taggedstuff.entityservice.EntityGsonTypeAdaptorFactory;
 import dbathon.web.taggedstuff.entityservice.EntityProperty;
 import dbathon.web.taggedstuff.entityservice.EntityService;
 import dbathon.web.taggedstuff.entityservice.EntityServiceLookup;
+import dbathon.web.taggedstuff.entityservice.EntityWithId;
 import dbathon.web.taggedstuff.gson.adaptor.DateAsTimestampTypeAdaptor;
 import dbathon.web.taggedstuff.util.Constants;
 import dbathon.web.taggedstuff.util.JPAUtil;
@@ -49,6 +54,9 @@ public class EntityResourceDispatcher {
 
   private static MediaType MEDIA_TYPE_JSON_UTF_8 = new MediaType("application", "json",
       ImmutableMap.of("charset", Constants.UTF_8));
+
+  @PersistenceContext
+  private EntityManager em;
 
   @Inject
   private EntityServiceLookup entityServiceLookup;
@@ -102,6 +110,27 @@ public class EntityResourceDispatcher {
     final List<?> result = entityService.query(Collections.<String, String>emptyMap());
 
     return buildJsonResponse(Response.ok(), ImmutableMap.of("result", result));
+  }
+
+  @POST
+  @Path("{entityName}")
+  @Consumes(Constants.MEDIA_TYPE_JSON)
+  @Produces(Constants.MEDIA_TYPE_JSON)
+  public <E extends EntityWithId> Response post(@PathParam("entityName") String entityName,
+      String json) {
+    @SuppressWarnings("unchecked")
+    final EntityService<E> entityService = (EntityService<E>) entityServiceMap.get(entityName);
+    if (entityService == null) {
+      return Response.status(Status.NOT_FOUND).build();
+    }
+
+    final E instance = gson.fromJson(json, entityService.getEntityClass());
+    entityService.save(instance);
+
+    // flush before writing the result
+    em.flush();
+
+    return buildJsonResponse(Response.ok(), instance);
   }
 
   @GET

@@ -1,8 +1,8 @@
 package dbathon.web.taggedstuff.entityservice;
 
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Type;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import javax.enterprise.context.ApplicationScoped;
@@ -16,7 +16,7 @@ import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import com.googlecode.gentyref.GenericTypeReflector;
-import dbathon.web.taggedstuff.util.Util;
+import dbathon.web.taggedstuff.util.ReflectionUtil;
 
 @ApplicationScoped
 public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
@@ -100,12 +100,6 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
           writeProperty(out, value, idProperty);
         }
       }
-      catch (final IllegalAccessException e) {
-        throw Util.unexpected(e);
-      }
-      catch (final InvocationTargetException e) {
-        throw Util.wrapIfNecessary(e.getCause());
-      }
       finally {
         if (currentEntityClassSet) {
           currentEntityClass.remove();
@@ -114,9 +108,9 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
       out.endObject();
     }
 
-    private void writeProperty(JsonWriter out, T value, Property property)
-        throws IllegalAccessException, InvocationTargetException, IOException {
-      final Object propertyValue = property.entityProperty.getGetter().invoke(value);
+    private void writeProperty(JsonWriter out, T value, Property property) throws IOException {
+      final Object propertyValue =
+          ReflectionUtil.invokeMethod(value, property.entityProperty.getGetter());
 
       out.name(property.entityProperty.getName());
       property.typeAdapter.write(out, propertyValue);
@@ -124,8 +118,66 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
 
     @Override
     public T read(JsonReader in) throws IOException {
-      // TODO Auto-generated method stub
-      return null;
+      boolean currentEntityClassSet = false;
+      if (currentEntityClass.get() == null) {
+        currentEntityClass.set(entityClass);
+        currentEntityClassSet = true;
+      }
+      try {
+        // first read all known properties
+        final Map<String, Object> propertyValues = new HashMap<String, Object>();
+        in.beginObject();
+        while (in.hasNext()) {
+          final String name = in.nextName();
+          final Property property = properties.get(name);
+          if (property != null) {
+            propertyValues.put(name, property.typeAdapter.read(in));
+          }
+          else {
+            in.skipValue();
+          }
+        }
+        in.endObject();
+
+        final Map<String, Object> usedPropertyValues;
+        if (currentEntityClassSet) {
+          usedPropertyValues = Collections.unmodifiableMap(propertyValues);
+        }
+        else {
+          /**
+           * This entity is deserialized as a "child" of an outer entity, so just use the id
+           * property.
+           */
+          // TODO: handle the case when there is no id (no instance for the id is found...)
+          usedPropertyValues =
+              Collections.singletonMap(EntityWithId.ID_PROPERTY_NAME,
+                  propertyValues.get(EntityWithId.ID_PROPERTY_NAME));
+        }
+
+        @SuppressWarnings("unchecked")
+        final T result = (T) findOrCreateAndApply(usedPropertyValues, currentEntityClassSet);
+        return result;
+      }
+      finally {
+        if (currentEntityClassSet) {
+          currentEntityClass.remove();
+        }
+      }
+    }
+
+    private <E extends EntityWithId> Object findOrCreateAndApply(
+        Map<String, Object> propertyValues, boolean apply) {
+      @SuppressWarnings("unchecked")
+      final EntityService<E> entityService = (EntityService<E>) this.entityService;
+
+      // TODO: differentiate between put and post...
+      // have a request scoped SerializationState thing...
+
+      final E instance = entityService.findOrCreateInstance(propertyValues);
+      if (apply) {
+        entityService.applyProperties(instance, propertyValues);
+      }
+      return instance;
     }
 
   }
