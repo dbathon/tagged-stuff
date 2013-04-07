@@ -18,7 +18,7 @@ public class EntryService extends AbstractEntityService<Entry> {
   }
 
   @Override
-  protected Entry newInstance(Map<String, Object> properties) {
+  public Entry create(Map<String, Object> properties) {
     return new Entry();
   }
 

@@ -28,8 +28,12 @@ import com.google.common.collect.ImmutableMap;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.LongSerializationPolicy;
+import dbathon.web.taggedstuff.entityservice.EntityDeserializationContext;
+import dbathon.web.taggedstuff.entityservice.EntityDeserializationContext.DeserializationMode;
 import dbathon.web.taggedstuff.entityservice.EntityGsonTypeAdaptorFactory;
 import dbathon.web.taggedstuff.entityservice.EntityProperty;
+import dbathon.web.taggedstuff.entityservice.EntitySerializationContext;
+import dbathon.web.taggedstuff.entityservice.EntitySerializationContext.SerializationMode;
 import dbathon.web.taggedstuff.entityservice.EntityService;
 import dbathon.web.taggedstuff.entityservice.EntityServiceLookup;
 import dbathon.web.taggedstuff.entityservice.EntityWithId;
@@ -64,6 +68,12 @@ public class EntityResourceDispatcher {
   @Inject
   private EntityGsonTypeAdaptorFactory entityGsonTypeAdaptorFactory;
 
+  @Inject
+  private EntitySerializationContext entitySerializationContext;
+
+  @Inject
+  private EntityDeserializationContext entityDeserializationContext;
+
   private Map<String, EntityService<?>> entityServiceMap;
 
   private Gson gson;
@@ -93,6 +103,7 @@ public class EntityResourceDispatcher {
   }
 
   private Response buildJsonResponse(ResponseBuilder builder, Object object) {
+    entitySerializationContext.setInitialMode(SerializationMode.FULL);
     builder.entity(gson.toJson(object).getBytes(Charsets.UTF_8));
     builder.header(HttpHeaders.CONTENT_TYPE, MEDIA_TYPE_JSON_UTF_8);
     return builder.build();
@@ -124,6 +135,8 @@ public class EntityResourceDispatcher {
       return Response.status(Status.NOT_FOUND).build();
     }
 
+    entityDeserializationContext.setInitialMode(DeserializationMode.CREATE);
+    entityDeserializationContext.setNextPropertiesProcessor(null);
     final E instance = gson.fromJson(json, entityService.getEntityClass());
     entityService.save(instance);
 

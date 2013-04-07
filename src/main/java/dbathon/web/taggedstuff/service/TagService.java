@@ -19,12 +19,20 @@ public class TagService extends AbstractEntityService<Tag> {
   }
 
   @Override
-  protected Tag newInstance(Map<String, Object> properties) {
+  public Tag create(Map<String, Object> properties) {
     final String id = (String) properties.get(EntityWithId.ID_PROPERTY_NAME);
 
-    final Tag result = new Tag(id);
-    // "auto-save" new tags
-    save(result);
+    return new Tag(id);
+  }
+
+  @Override
+  public Tag findOrAutoCreate(Map<String, Object> properties) {
+    Tag result = super.findOrAutoCreate(properties);
+    if (result == null) {
+      // auto-create the tag
+      result = create(properties);
+      save(result);
+    }
     return result;
   }
 

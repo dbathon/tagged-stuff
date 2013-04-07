@@ -2,11 +2,12 @@ package dbathon.web.taggedstuff.entityservice;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
+import javax.persistence.EntityNotFoundException;
+import javax.persistence.OptimisticLockException;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.gson.Gson;
@@ -16,6 +17,7 @@ import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import com.googlecode.gentyref.GenericTypeReflector;
+import dbathon.web.taggedstuff.entityservice.EntityDeserializationContext.DeserializationMode;
 import dbathon.web.taggedstuff.util.ReflectionUtil;
 
 @ApplicationScoped
@@ -24,20 +26,36 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
   @Inject
   private EntityServiceLookup entityServiceLookup;
 
+  @Inject
+  private EntitySerializationContext entitySerializationContext;
+
+  @Inject
+  private EntityDeserializationContext entityDeserializationContext;
+
   @Override
   public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> type) {
     final Class<? super T> rawType = type.getRawType();
     final EntityService<?> entityService = entityServiceLookup.getEntityService(rawType);
 
     if (entityService != null) {
-      return new Adapter<T>(entityService, gson).nullSafe();
+      @SuppressWarnings("unchecked")
+      final TypeAdapter<T> result = (TypeAdapter<T>) buildAdapter(entityService, gson);
+      return result;
     }
 
     // we can't handle it
     return null;
   }
 
-  private static class Adapter<T> extends TypeAdapter<T> {
+  private <E extends EntityWithId> TypeAdapter<?> buildAdapter(EntityService<?> entityService,
+      Gson gson) {
+    @SuppressWarnings("unchecked")
+    final EntityService<E> entityServiceE = (EntityService<E>) entityService;
+    return new Adapter<E>(entityServiceE, gson, entitySerializationContext,
+        entityDeserializationContext).nullSafe();
+  }
+
+  private static class Adapter<E extends EntityWithId> extends TypeAdapter<E> {
 
     private static class Property {
       final EntityProperty entityProperty;
@@ -53,14 +71,17 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
       }
     }
 
-    private static final ThreadLocal<Class<?>> currentEntityClass = new ThreadLocal<Class<?>>();
-
-    private final EntityService<?> entityService;
+    private final EntityService<E> entityService;
     private final Class<?> entityClass;
     private final Map<String, Property> properties;
     private final Property idProperty;
 
-    public Adapter(EntityService<?> entityService, Gson gson) {
+    private final EntitySerializationContext entitySerializationContext;
+    private final EntityDeserializationContext entityDeserializationContext;
+
+    public Adapter(EntityService<E> entityService, Gson gson,
+        EntitySerializationContext entitySerializationContext,
+        EntityDeserializationContext entityDeserializationContext) {
       this.entityService = entityService;
 
       entityClass = entityService.getEntityClass();
@@ -76,39 +97,38 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
       this.properties = ImmutableMap.copyOf(properties);
 
       idProperty = Preconditions.checkNotNull(properties.get(EntityWithId.ID_PROPERTY_NAME));
+
+      this.entitySerializationContext = entitySerializationContext;
+      this.entityDeserializationContext = entityDeserializationContext;
     }
 
     @Override
-    public void write(JsonWriter out, T value) throws IOException {
+    public void write(JsonWriter out, E value) throws IOException {
       out.beginObject();
-      boolean currentEntityClassSet = false;
-      if (currentEntityClass.get() == null) {
-        currentEntityClass.set(entityClass);
-        currentEntityClassSet = true;
-      }
+      entitySerializationContext.push(entityClass);
       try {
-        if (currentEntityClassSet) {
+        switch (entitySerializationContext.getCurrentMode()) {
+        case FULL:
           for (final Property property : properties.values()) {
             writeProperty(out, value, property);
           }
-        }
-        else {
-          /**
-           * This entity is serialized as a "child" of an outer entity, so just write the id
-           * property.
-           */
+          break;
+        case ONLY_ID:
+          // only write the id
           writeProperty(out, value, idProperty);
+          break;
+        default:
+          throw new IllegalStateException("unexpected mode: "
+              + entitySerializationContext.getCurrentMode());
         }
       }
       finally {
-        if (currentEntityClassSet) {
-          currentEntityClass.remove();
-        }
+        entitySerializationContext.pop();
       }
       out.endObject();
     }
 
-    private void writeProperty(JsonWriter out, T value, Property property) throws IOException {
+    private void writeProperty(JsonWriter out, E value, Property property) throws IOException {
       final Object propertyValue =
           ReflectionUtil.invokeMethod(value, property.entityProperty.getGetter());
 
@@ -117,67 +137,71 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
     }
 
     @Override
-    public T read(JsonReader in) throws IOException {
-      boolean currentEntityClassSet = false;
-      if (currentEntityClass.get() == null) {
-        currentEntityClass.set(entityClass);
-        currentEntityClassSet = true;
-      }
+    public E read(JsonReader in) throws IOException {
+      entityDeserializationContext.push(entityClass);
       try {
         // first read all known properties
-        final Map<String, Object> propertyValues = new HashMap<String, Object>();
-        in.beginObject();
-        while (in.hasNext()) {
-          final String name = in.nextName();
-          final Property property = properties.get(name);
-          if (property != null) {
-            propertyValues.put(name, property.typeAdapter.read(in));
-          }
-          else {
-            in.skipValue();
-          }
-        }
-        in.endObject();
+        final Map<String, Object> propertyValues = readPropertyValues(in);
 
-        final Map<String, Object> usedPropertyValues;
-        if (currentEntityClassSet) {
-          usedPropertyValues = Collections.unmodifiableMap(propertyValues);
-        }
-        else {
-          /**
-           * This entity is deserialized as a "child" of an outer entity, so just use the id
-           * property.
-           */
-          // TODO: handle the case when there is no id (no instance for the id is found...)
-          usedPropertyValues =
-              Collections.singletonMap(EntityWithId.ID_PROPERTY_NAME,
-                  propertyValues.get(EntityWithId.ID_PROPERTY_NAME));
-        }
+        entityDeserializationContext.getCurrentPropertiesProcessor().process(propertyValues);
 
-        @SuppressWarnings("unchecked")
-        final T result = (T) findOrCreateAndApply(usedPropertyValues, currentEntityClassSet);
-        return result;
+        final DeserializationMode mode = entityDeserializationContext.getCurrentMode();
+
+        E instance = null;
+        if (mode.isExistingAllowed()) {
+          instance = entityService.findOrAutoCreate(propertyValues);
+
+          if (instance instanceof EntityWithVersion) {
+            // compare the version if it is in properties
+            final Integer version =
+                (Integer) propertyValues.get(EntityWithVersion.VERSION_PROPERTY_NAME);
+            if (version != null) {
+              final int existingVersion = ((EntityWithVersion) instance).getVersion();
+              if (existingVersion != version) {
+                // TODO: improve exception?
+                throw new OptimisticLockException(instance);
+              }
+            }
+          }
+
+          if (instance == null && !mode.isCreateAllowed()) {
+            // TODO: improve exception...
+            throw new EntityNotFoundException();
+          }
+        }
+        if (instance == null && mode.isCreateAllowed()) {
+          instance = entityService.create(propertyValues);
+          if (instance == null) {
+            throw new IllegalStateException("create returned null for " + entityClass);
+          }
+        }
+        assert instance != null;
+
+        if (mode.isWithApplyProperties()) {
+          entityService.applyProperties(instance, propertyValues);
+        }
+        return instance;
       }
       finally {
-        if (currentEntityClassSet) {
-          currentEntityClass.remove();
-        }
+        entityDeserializationContext.pop();
       }
     }
 
-    private <E extends EntityWithId> Object findOrCreateAndApply(
-        Map<String, Object> propertyValues, boolean apply) {
-      @SuppressWarnings("unchecked")
-      final EntityService<E> entityService = (EntityService<E>) this.entityService;
-
-      // TODO: differentiate between put and post...
-      // have a request scoped SerializationState thing...
-
-      final E instance = entityService.findOrCreateInstance(propertyValues);
-      if (apply) {
-        entityService.applyProperties(instance, propertyValues);
+    private Map<String, Object> readPropertyValues(JsonReader in) throws IOException {
+      final Map<String, Object> propertyValues = new HashMap<String, Object>();
+      in.beginObject();
+      while (in.hasNext()) {
+        final String name = in.nextName();
+        final Property property = properties.get(name);
+        if (property != null) {
+          propertyValues.put(name, property.typeAdapter.read(in));
+        }
+        else {
+          in.skipValue();
+        }
       }
-      return instance;
+      in.endObject();
+      return propertyValues;
     }
 
   }

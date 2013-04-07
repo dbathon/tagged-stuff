@@ -14,7 +14,6 @@ import java.util.Set;
 import javax.persistence.Entity;
 import javax.persistence.EntityManager;
 import javax.persistence.MappedSuperclass;
-import javax.persistence.OptimisticLockException;
 import javax.persistence.PersistenceContext;
 import javax.persistence.Transient;
 import com.google.common.collect.ImmutableMap;
@@ -107,39 +106,14 @@ public abstract class AbstractEntityService<E extends EntityWithId> implements E
   }
 
   /**
-   * The given <code>properties</code> can usually be ignored, but they might be useful in some
-   * cases.
-   * 
-   * @param properties
-   * @return a new entity instance in the "default initial state" (should never return
-   *         <code>null</code>)
+   * The default implementation just extracts the id property from <code>properties</code> and the
+   * redirects to {@link #find(String)} (no auto-create is performed).
    */
-  protected abstract E newInstance(Map<String, Object> properties);
-
   @Override
-  public E findOrCreateInstance(Map<String, Object> properties) {
+  public E findOrAutoCreate(Map<String, Object> properties) {
     final String id = (String) properties.get(EntityWithId.ID_PROPERTY_NAME);
 
-    final E existing = id == null ? null : find(id);
-
-    if (existing != null) {
-      if (existing instanceof EntityWithVersion) {
-        // compare the version if it is in properties
-        final Integer version = (Integer) properties.get(EntityWithVersion.VERSION_PROPERTY_NAME);
-        if (version != null) {
-          final int existingVersion = ((EntityWithVersion) existing).getVersion();
-          if (existingVersion != version) {
-            // TODO: improve exception?
-            throw new OptimisticLockException(existing);
-          }
-        }
-      }
-
-      return existing;
-    }
-    else {
-      return newInstance(properties);
-    }
+    return id != null ? find(id) : null;
   }
 
   @Override
