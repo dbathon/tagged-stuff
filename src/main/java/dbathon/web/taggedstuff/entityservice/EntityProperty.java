@@ -1,6 +1,9 @@
 package dbathon.web.taggedstuff.entityservice;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.util.Collection;
+import com.googlecode.gentyref.GenericTypeReflector;
 import dbathon.web.taggedstuff.util.Util;
 
 public class EntityProperty {
@@ -10,10 +13,24 @@ public class EntityProperty {
   private final Method getter;
   private final Method setter;
 
+  private final Class<?> collectionElementType;
+
   private EntityProperty(String name, Method getter, Method setter) {
     this.name = name;
     this.getter = getter;
     this.setter = setter;
+
+    final Class<?> returnType = getter.getReturnType();
+    if (Collection.class.isAssignableFrom(returnType)) {
+      final ParameterizedType collectionType =
+          (ParameterizedType) GenericTypeReflector.getExactSuperType(getter.getGenericReturnType(),
+              Collection.class);
+      collectionElementType =
+          GenericTypeReflector.erase(collectionType.getActualTypeArguments()[0]);
+    }
+    else {
+      collectionElementType = null;
+    }
   }
 
   /**
@@ -65,6 +82,14 @@ public class EntityProperty {
 
   public Method getSetter() {
     return setter;
+  }
+
+  public boolean isCollectionProperty() {
+    return collectionElementType != null;
+  }
+
+  public Class<?> getCollectionElementType() {
+    return collectionElementType;
   }
 
   public boolean isReadOnly() {

@@ -3,10 +3,14 @@ package dbathon.web.taggedstuff.entityservice;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.persistence.Entity;
 import javax.persistence.EntityManager;
 import javax.persistence.MappedSuperclass;
@@ -141,17 +145,67 @@ public abstract class AbstractEntityService<E extends EntityWithId> implements E
   @Override
   public void applyProperties(E instance, Map<String, Object> properties) {
     for (final EntityProperty property : getEntityProperties().values()) {
-      if (property.isReadOnly()) {
-        continue;
-      }
       final String name = property.getName();
       if (properties.containsKey(name)) {
         final Object value = properties.get(name);
 
-        // TODO: add hook for the service to easily check whether the value is valid etc...
-        // TODO: handle collections...
+        if (property.isCollectionProperty()) {
+          if (value instanceof Collection<?>) {
+            applyCollectionProperty(instance, property, (Collection<?>) value);
+          }
+          else {
+            throw new IllegalArgumentException("property needs to be an exception: "
+                + property.getName());
+          }
+        }
+        else {
+          // only apply the property if it is writable
+          // TODO: compare and throw exception on difference when read only?
+          if (!property.isReadOnly()) {
+            applySimpleProperty(instance, property, value);
+          }
+        }
+      }
+    }
+  }
 
-        ReflectionUtil.invokeMethod(instance, property.getSetter(), value);
+  protected void applySimpleProperty(E instance, EntityProperty property, Object value) {
+    ReflectionUtil.invokeMethod(instance, property.getSetter(), value);
+  }
+
+  protected void applyCollectionProperty(E instance, EntityProperty property, Collection<?> value) {
+    @SuppressWarnings("unchecked")
+    final Collection<Object> propertyCollection =
+        (Collection<Object>) ReflectionUtil.invokeMethod(instance, property.getGetter());
+
+    // "convert" value to the correct collection type
+    final Collection<?> normalizedValue;
+    if (propertyCollection instanceof List<?>) {
+      normalizedValue = new ArrayList<Object>(value);
+    }
+    else if (propertyCollection instanceof Set<?>) {
+      normalizedValue = new HashSet<Object>(value);
+    }
+    else {
+      // default to list...
+      normalizedValue = new ArrayList<Object>(value);
+    }
+
+    /**
+     * only modify propertyCollection if it is actually different from value to avoid unnecessarily
+     * triggering a new entity version
+     */
+    if (!propertyCollection.equals(normalizedValue)) {
+      // just clear the collection and add all entries from value
+      propertyCollection.clear();
+      final Class<?> elementType = property.getCollectionElementType();
+      for (final Object item : normalizedValue) {
+        // only allow instances of elementType (null is not allowed
+        if (!elementType.isInstance(item)) {
+          throw new IllegalArgumentException("all items of property " + property.getName()
+              + " must be " + elementType);
+        }
+        propertyCollection.add(item);
       }
     }
   }
