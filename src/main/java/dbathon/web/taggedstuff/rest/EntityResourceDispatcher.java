@@ -15,6 +15,7 @@ import javax.persistence.PersistenceContext;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
@@ -37,6 +38,7 @@ import dbathon.web.taggedstuff.entityservice.EntitySerializationContext.Serializ
 import dbathon.web.taggedstuff.entityservice.EntityService;
 import dbathon.web.taggedstuff.entityservice.EntityServiceLookup;
 import dbathon.web.taggedstuff.entityservice.EntityWithId;
+import dbathon.web.taggedstuff.entityservice.PropertiesProcessor;
 import dbathon.web.taggedstuff.gson.adaptor.DateAsTimestampTypeAdaptor;
 import dbathon.web.taggedstuff.util.Constants;
 import dbathon.web.taggedstuff.util.JPAUtil;
@@ -123,6 +125,23 @@ public class EntityResourceDispatcher {
     return buildJsonResponse(Response.ok(), ImmutableMap.of("result", result));
   }
 
+  @GET
+  @Path("{entityName}/{id}")
+  @Produces(Constants.MEDIA_TYPE_JSON)
+  public Response find(@PathParam("entityName") String entityName, @PathParam("id") String id) {
+    final EntityService<?> entityService = entityServiceMap.get(entityName);
+    if (entityService == null) {
+      return Response.status(Status.NOT_FOUND).build();
+    }
+
+    final Object result = entityService.find(id);
+    if (result == null) {
+      return Response.status(Status.NOT_FOUND).build();
+    }
+
+    return buildJsonResponse(Response.ok(), result);
+  }
+
   @POST
   @Path("{entityName}")
   @Consumes(Constants.MEDIA_TYPE_JSON)
@@ -144,6 +163,41 @@ public class EntityResourceDispatcher {
     em.flush();
 
     return buildJsonResponse(Response.ok(), instance);
+  }
+
+  @PUT
+  @Path("{entityName}/{id}")
+  @Consumes(Constants.MEDIA_TYPE_JSON)
+  @Produces(Constants.MEDIA_TYPE_JSON)
+  public <E extends EntityWithId> Response put(@PathParam("entityName") String entityName,
+      @PathParam("id") final String id, String json) {
+    @SuppressWarnings("unchecked")
+    final EntityService<E> entityService = (EntityService<E>) entityServiceMap.get(entityName);
+    if (entityService == null) {
+      return Response.status(Status.NOT_FOUND).build();
+    }
+    final Object instance = entityService.find(id);
+    if (instance == null) {
+      return Response.status(Status.NOT_FOUND).build();
+    }
+
+    entityDeserializationContext.setInitialMode(DeserializationMode.EXISTING_WITH_APPLY);
+    entityDeserializationContext.setNextPropertiesProcessor(new PropertiesProcessor() {
+      @Override
+      public void process(Map<String, Object> properties) {
+        properties.put(EntityWithId.ID_PROPERTY_NAME, id);
+      }
+    });
+    final E deserializedInstance = gson.fromJson(json, entityService.getEntityClass());
+    if (deserializedInstance != instance) {
+      throw new IllegalStateException("deserializedInstance != instance");
+    }
+    entityService.save(deserializedInstance);
+
+    // flush before writing the result
+    em.flush();
+
+    return buildJsonResponse(Response.ok(), deserializedInstance);
   }
 
   @GET
