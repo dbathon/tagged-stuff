@@ -15,6 +15,7 @@ import com.google.gson.TypeAdapter;
 import com.google.gson.TypeAdapterFactory;
 import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
 import com.googlecode.gentyref.GenericTypeReflector;
 import dbathon.web.taggedstuff.entityservice.EntityDeserializationContext.DeserializationMode;
@@ -189,18 +190,25 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
 
     private Map<String, Object> readPropertyValues(JsonReader in) throws IOException {
       final Map<String, Object> propertyValues = new HashMap<String, Object>();
-      in.beginObject();
-      while (in.hasNext()) {
-        final String name = in.nextName();
-        final Property property = properties.get(name);
-        if (property != null) {
-          propertyValues.put(name, property.typeAdapter.read(in));
-        }
-        else {
-          in.skipValue();
-        }
+      if (in.peek() == JsonToken.STRING) {
+        // if it is just a string, then interpret it as the id
+        propertyValues.put(EntityWithId.ID_PROPERTY_NAME, idProperty.typeAdapter.read(in));
       }
-      in.endObject();
+      else {
+        // read an object
+        in.beginObject();
+        while (in.hasNext()) {
+          final String name = in.nextName();
+          final Property property = properties.get(name);
+          if (property != null) {
+            propertyValues.put(name, property.typeAdapter.read(in));
+          }
+          else {
+            in.skipValue();
+          }
+        }
+        in.endObject();
+      }
       return propertyValues;
     }
 
