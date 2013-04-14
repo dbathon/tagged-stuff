@@ -26,20 +26,14 @@ import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableMap;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.LongSerializationPolicy;
-import dbathon.web.taggedstuff.entityservice.EntityDeserializationContext;
-import dbathon.web.taggedstuff.entityservice.EntityDeserializationContext.DeserializationMode;
-import dbathon.web.taggedstuff.entityservice.EntityGsonTypeAdaptorFactory;
 import dbathon.web.taggedstuff.entityservice.EntityProperty;
-import dbathon.web.taggedstuff.entityservice.EntitySerializationContext;
-import dbathon.web.taggedstuff.entityservice.EntitySerializationContext.SerializationMode;
 import dbathon.web.taggedstuff.entityservice.EntityService;
 import dbathon.web.taggedstuff.entityservice.EntityServiceLookup;
 import dbathon.web.taggedstuff.entityservice.EntityWithId;
-import dbathon.web.taggedstuff.entityservice.PropertiesProcessor;
-import dbathon.web.taggedstuff.gson.adaptor.DateAsTimestampTypeAdaptor;
+import dbathon.web.taggedstuff.serialization.EntityDeserializationMode;
+import dbathon.web.taggedstuff.serialization.EntitySerializationMode;
+import dbathon.web.taggedstuff.serialization.JsonSerializationService;
+import dbathon.web.taggedstuff.serialization.PropertiesProcessor;
 import dbathon.web.taggedstuff.util.Constants;
 import dbathon.web.taggedstuff.util.JPAUtil;
 import dbathon.web.taggedstuff.util.Util;
@@ -68,17 +62,9 @@ public class EntityResourceDispatcher {
   private EntityServiceLookup entityServiceLookup;
 
   @Inject
-  private EntityGsonTypeAdaptorFactory entityGsonTypeAdaptorFactory;
-
-  @Inject
-  private EntitySerializationContext entitySerializationContext;
-
-  @Inject
-  private EntityDeserializationContext entityDeserializationContext;
+  private JsonSerializationService jsonSerializationService;
 
   private Map<String, EntityService<?>> entityServiceMap;
-
-  private Gson gson;
 
   @PostConstruct
   protected void initialize() {
@@ -93,20 +79,12 @@ public class EntityResourceDispatcher {
     }
 
     entityServiceMap = ImmutableMap.copyOf(map);
-
-    final GsonBuilder gsonBuilder = new GsonBuilder();
-    gsonBuilder.setPrettyPrinting();
-    gsonBuilder.serializeNulls();
-    gsonBuilder.disableHtmlEscaping();
-    gsonBuilder.setLongSerializationPolicy(LongSerializationPolicy.STRING);
-    gsonBuilder.registerTypeAdapterFactory(entityGsonTypeAdaptorFactory);
-    gsonBuilder.registerTypeAdapterFactory(DateAsTimestampTypeAdaptor.FACTORY);
-    gson = gsonBuilder.create();
   }
 
   private Response buildJsonResponse(ResponseBuilder builder, Object object) {
-    entitySerializationContext.setInitialMode(SerializationMode.FULL);
-    builder.entity(gson.toJson(object).getBytes(Charsets.UTF_8));
+    final String json =
+        jsonSerializationService.serialializeToJson(object, EntitySerializationMode.FULL);
+    builder.entity(json.getBytes(Charsets.UTF_8));
     builder.header(HttpHeaders.CONTENT_TYPE, MEDIA_TYPE_JSON_UTF_8);
     return builder.build();
   }
@@ -154,9 +132,9 @@ public class EntityResourceDispatcher {
       return Response.status(Status.NOT_FOUND).build();
     }
 
-    entityDeserializationContext.setInitialMode(DeserializationMode.CREATE);
-    entityDeserializationContext.setNextPropertiesProcessor(null);
-    final E instance = gson.fromJson(json, entityService.getEntityClass());
+    final E instance =
+        jsonSerializationService.deserialializeFromJson(json, entityService.getEntityClass(),
+            EntityDeserializationMode.CREATE);
     entityService.save(instance);
 
     // flush before writing the result
@@ -181,14 +159,15 @@ public class EntityResourceDispatcher {
       return Response.status(Status.NOT_FOUND).build();
     }
 
-    entityDeserializationContext.setInitialMode(DeserializationMode.EXISTING_WITH_APPLY);
-    entityDeserializationContext.setNextPropertiesProcessor(new PropertiesProcessor() {
+    final PropertiesProcessor propertiesProcessor = new PropertiesProcessor() {
       @Override
       public void process(Map<String, Object> properties) {
         properties.put(EntityWithId.ID_PROPERTY_NAME, id);
       }
-    });
-    final E deserializedInstance = gson.fromJson(json, entityService.getEntityClass());
+    };
+    final E deserializedInstance =
+        jsonSerializationService.deserialializeFromJson(json, entityService.getEntityClass(),
+            EntityDeserializationMode.EXISTING_WITH_APPLY, propertiesProcessor);
     if (deserializedInstance != instance) {
       throw new IllegalStateException("deserializedInstance != instance");
     }

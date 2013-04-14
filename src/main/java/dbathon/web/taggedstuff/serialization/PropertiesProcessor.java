@@ -1,4 +1,4 @@
-package dbathon.web.taggedstuff.entityservice;
+package dbathon.web.taggedstuff.serialization;
 
 import java.util.Map;
 

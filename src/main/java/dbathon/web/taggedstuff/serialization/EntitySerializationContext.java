@@ -1,28 +1,20 @@
-package dbathon.web.taggedstuff.entityservice;
+package dbathon.web.taggedstuff.serialization;
 
 import java.util.ArrayList;
 import java.util.List;
 import javax.enterprise.context.RequestScoped;
 
+/**
+ * For internal use by {@link JsonSerializationService}, should not be used directly.
+ */
 @RequestScoped
 public class EntitySerializationContext {
 
-  public static enum SerializationMode {
-    FULL,
-    ONLY_ID;
-
-    public SerializationMode getNextMode() {
-      // for now always ONLY_ID...
-      return ONLY_ID;
-    }
-
-  }
-
   private static class StackEntry {
     final Class<?> entityClass;
-    final SerializationMode mode;
+    final EntitySerializationMode mode;
 
-    private StackEntry(Class<?> entityClass, SerializationMode mode) {
+    private StackEntry(Class<?> entityClass, EntitySerializationMode mode) {
       this.entityClass = entityClass;
       this.mode = mode;
     }
@@ -30,7 +22,7 @@ public class EntitySerializationContext {
 
   private List<StackEntry> stack;
 
-  private SerializationMode initialMode;
+  private EntitySerializationMode initialMode;
 
   private List<StackEntry> getStack() {
     if (stack == null) {
@@ -61,22 +53,22 @@ public class EntitySerializationContext {
     return getCurrentEntry().entityClass;
   }
 
-  public SerializationMode getCurrentMode() {
+  public EntitySerializationMode getCurrentMode() {
     return getCurrentEntry().mode;
   }
 
-  public SerializationMode getInitialMode() {
+  public EntitySerializationMode getInitialMode() {
     return initialMode;
   }
 
-  public void setInitialMode(SerializationMode initialMode) {
+  public void setInitialMode(EntitySerializationMode initialMode) {
     checkStackEmpty();
     this.initialMode = initialMode;
   }
 
   public void push(Class<?> entityClass) {
     final List<StackEntry> stack = getStack();
-    final SerializationMode mode;
+    final EntitySerializationMode mode;
     if (stack.isEmpty()) {
       if (initialMode == null) {
         throw new IllegalStateException("initialMode is null");

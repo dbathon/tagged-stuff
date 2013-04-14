@@ -1,9 +1,12 @@
-package dbathon.web.taggedstuff.entityservice;
+package dbathon.web.taggedstuff.serialization;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
+import java.sql.Timestamp;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import javax.annotation.PostConstruct;
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
 import javax.persistence.EntityNotFoundException;
@@ -11,6 +14,8 @@ import javax.persistence.OptimisticLockException;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.LongSerializationPolicy;
 import com.google.gson.TypeAdapter;
 import com.google.gson.TypeAdapterFactory;
 import com.google.gson.reflect.TypeToken;
@@ -18,11 +23,19 @@ import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
 import com.googlecode.gentyref.GenericTypeReflector;
-import dbathon.web.taggedstuff.entityservice.EntityDeserializationContext.DeserializationMode;
+import dbathon.web.taggedstuff.entityservice.EntityProperty;
+import dbathon.web.taggedstuff.entityservice.EntityService;
+import dbathon.web.taggedstuff.entityservice.EntityServiceLookup;
+import dbathon.web.taggedstuff.entityservice.EntityWithId;
+import dbathon.web.taggedstuff.entityservice.EntityWithVersion;
 import dbathon.web.taggedstuff.util.ReflectionUtil;
 
+/**
+ * Serializes and deserializes object graphs consisting mainly of {@linkplain EntityWithId entities}
+ * and collections.
+ */
 @ApplicationScoped
-public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
+public class JsonSerializationService {
 
   @Inject
   private EntityServiceLookup entityServiceLookup;
@@ -33,14 +46,56 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
   @Inject
   private EntityDeserializationContext entityDeserializationContext;
 
-  @Override
-  public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> type) {
-    final Class<? super T> rawType = type.getRawType();
-    final EntityService<?> entityService = entityServiceLookup.getEntityService(rawType);
+  private volatile Gson gson;
 
+  @PostConstruct
+  protected void initialize() {
+    final GsonBuilder gsonBuilder = new GsonBuilder();
+
+    gsonBuilder.setPrettyPrinting();
+    gsonBuilder.serializeNulls();
+    gsonBuilder.disableHtmlEscaping();
+    gsonBuilder.setLongSerializationPolicy(LongSerializationPolicy.STRING);
+
+    gsonBuilder.registerTypeAdapterFactory(new TypeAdapterFactory() {
+      @Override
+      public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> type) {
+        return createTypeAdapter(gson, type);
+      }
+    });
+
+    gson = gsonBuilder.create();
+  }
+
+  public String serialializeToJson(Object object, EntitySerializationMode initialMode) {
+    entitySerializationContext.setInitialMode(initialMode);
+    return gson.toJson(object);
+  }
+
+  public <T> T deserialializeFromJson(String json, Class<T> resultClass,
+      EntityDeserializationMode initialMode, PropertiesProcessor initialPropertiesProcessor) {
+    entityDeserializationContext.setInitialMode(initialMode);
+    entityDeserializationContext.setNextPropertiesProcessor(initialPropertiesProcessor);
+    return gson.fromJson(json, resultClass);
+  }
+
+  public <T> T deserialializeFromJson(String json, Class<T> resultClass,
+      EntityDeserializationMode initialMode) {
+    return deserialializeFromJson(json, resultClass, initialMode, null);
+  }
+
+  private <T> TypeAdapter<T> createTypeAdapter(Gson gson, TypeToken<T> type) {
+    final Class<? super T> rawType = type.getRawType();
+    if (rawType == Date.class || rawType == Timestamp.class) {
+      @SuppressWarnings("unchecked")
+      final TypeAdapter<T> result = (TypeAdapter<T>) new DateAsTimestampTypeAdaptor(rawType);
+      return result;
+    }
+
+    final EntityService<?> entityService = entityServiceLookup.getEntityService(rawType);
     if (entityService != null) {
       @SuppressWarnings("unchecked")
-      final TypeAdapter<T> result = (TypeAdapter<T>) buildAdapter(entityService, gson);
+      final TypeAdapter<T> result = (TypeAdapter<T>) buildEntityAdapter(entityService, gson);
       return result;
     }
 
@@ -48,59 +103,86 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
     return null;
   }
 
-  private <E extends EntityWithId> TypeAdapter<?> buildAdapter(EntityService<?> entityService,
-      Gson gson) {
+  private <E extends EntityWithId> TypeAdapter<?> buildEntityAdapter(
+      EntityService<?> entityService, Gson gson) {
     @SuppressWarnings("unchecked")
     final EntityService<E> entityServiceE = (EntityService<E>) entityService;
-    return new Adapter<E>(entityServiceE, gson, entitySerializationContext,
-        entityDeserializationContext).nullSafe();
+    return new EntityTypeAdapter<E>(entityServiceE, gson).nullSafe();
   }
 
-  private static class Adapter<E extends EntityWithId> extends TypeAdapter<E> {
+  private static class DateAsTimestampTypeAdaptor extends TypeAdapter<Date> {
 
-    private static class Property {
-      final EntityProperty entityProperty;
-      /**
-       * The type is <code>TypeAdapter&lt;Object></code> to avoid casting when it is used...
-       */
-      final TypeAdapter<Object> typeAdapter;
+    private final Class<?> type;
 
-      @SuppressWarnings("unchecked")
-      public Property(EntityProperty entityProperty, TypeAdapter<?> typeAdapter) {
-        this.entityProperty = entityProperty;
-        this.typeAdapter = (TypeAdapter<Object>) typeAdapter;
+    public DateAsTimestampTypeAdaptor(final Class<?> type) {
+      this.type = type;
+    }
+
+    @Override
+    public Date read(final JsonReader in) throws IOException {
+      return toType(in.nextLong());
+    }
+
+    private Date toType(final long timestamp) {
+      if (type == Date.class) {
+        return new Date(timestamp);
+      }
+      else if (type == Timestamp.class) {
+        return new Timestamp(timestamp);
+      }
+      else {
+        throw new IllegalArgumentException("unsupported type: " + type);
       }
     }
 
+    @Override
+    public void write(final JsonWriter out, final Date value) throws IOException {
+      // just write the long timestamp
+      out.value(value.getTime());
+    }
+
+  }
+
+  private static class PropertyWithTypeAdapter {
+    final EntityProperty entityProperty;
+    /**
+     * The type is <code>TypeAdapter&lt;Object></code> to avoid casting when it is used...
+     */
+    final TypeAdapter<Object> typeAdapter;
+
+    @SuppressWarnings("unchecked")
+    public PropertyWithTypeAdapter(EntityProperty entityProperty, TypeAdapter<?> typeAdapter) {
+      this.entityProperty = entityProperty;
+      this.typeAdapter = (TypeAdapter<Object>) typeAdapter;
+    }
+  }
+
+  private class EntityTypeAdapter<E extends EntityWithId> extends TypeAdapter<E> {
+
     private final EntityService<E> entityService;
     private final Class<?> entityClass;
-    private final Map<String, Property> properties;
-    private final Property idProperty;
+    private final Map<String, PropertyWithTypeAdapter> properties;
+    private final PropertyWithTypeAdapter idProperty;
 
-    private final EntitySerializationContext entitySerializationContext;
-    private final EntityDeserializationContext entityDeserializationContext;
-
-    public Adapter(EntityService<E> entityService, Gson gson,
-        EntitySerializationContext entitySerializationContext,
-        EntityDeserializationContext entityDeserializationContext) {
+    public EntityTypeAdapter(EntityService<E> entityService, Gson gson) {
       this.entityService = entityService;
 
       entityClass = entityService.getEntityClass();
-      final Map<String, Property> properties = new HashMap<String, Property>();
+      final Map<String, PropertyWithTypeAdapter> properties =
+          new HashMap<String, PropertyWithTypeAdapter>();
       for (final EntityProperty entityProperty : entityService.getEntityProperties().values()) {
         final Type exactPropertyType =
             GenericTypeReflector.getExactReturnType(entityProperty.getGetter(), entityClass);
 
-        properties.put(entityProperty.getName(),
-            new Property(entityProperty, gson.getAdapter(TypeToken.get(exactPropertyType))));
+        properties.put(
+            entityProperty.getName(),
+            new PropertyWithTypeAdapter(entityProperty,
+                gson.getAdapter(TypeToken.get(exactPropertyType))));
       }
 
       this.properties = ImmutableMap.copyOf(properties);
 
       idProperty = Preconditions.checkNotNull(properties.get(EntityWithId.ID_PROPERTY_NAME));
-
-      this.entitySerializationContext = entitySerializationContext;
-      this.entityDeserializationContext = entityDeserializationContext;
     }
 
     @Override
@@ -110,7 +192,7 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
       try {
         switch (entitySerializationContext.getCurrentMode()) {
         case FULL:
-          for (final Property property : properties.values()) {
+          for (final PropertyWithTypeAdapter property : properties.values()) {
             writeProperty(out, value, property);
           }
           break;
@@ -129,7 +211,8 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
       out.endObject();
     }
 
-    private void writeProperty(JsonWriter out, E value, Property property) throws IOException {
+    private void writeProperty(JsonWriter out, E value, PropertyWithTypeAdapter property)
+        throws IOException {
       final Object propertyValue =
           ReflectionUtil.invokeMethod(value, property.entityProperty.getGetter());
 
@@ -146,7 +229,7 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
 
         entityDeserializationContext.getCurrentPropertiesProcessor().process(propertyValues);
 
-        final DeserializationMode mode = entityDeserializationContext.getCurrentMode();
+        final EntityDeserializationMode mode = entityDeserializationContext.getCurrentMode();
 
         E instance = null;
         if (mode.isExistingAllowed()) {
@@ -199,7 +282,7 @@ public class EntityGsonTypeAdaptorFactory implements TypeAdapterFactory {
         in.beginObject();
         while (in.hasNext()) {
           final String name = in.nextName();
-          final Property property = properties.get(name);
+          final PropertyWithTypeAdapter property = properties.get(name);
           if (property != null) {
             propertyValues.put(name, property.typeAdapter.read(in));
           }

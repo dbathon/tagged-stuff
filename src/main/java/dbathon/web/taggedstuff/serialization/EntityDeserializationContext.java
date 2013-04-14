@@ -1,50 +1,22 @@
-package dbathon.web.taggedstuff.entityservice;
+package dbathon.web.taggedstuff.serialization;
 
 import java.util.ArrayList;
 import java.util.List;
 import javax.enterprise.context.RequestScoped;
 
+/**
+ * For internal use by {@link JsonSerializationService}, should not be used directly.
+ */
 @RequestScoped
 public class EntityDeserializationContext {
 
-  public static enum DeserializationMode {
-    CREATE(true),
-    EXISTING_WITH_APPLY(true),
-    EXISTING_WITHOUT_APPLY(false),
-    CREATE_OR_EXISTING_WITH_APPLY(true);
-
-    private final boolean withApplyProperties;
-
-    private DeserializationMode(boolean withApplyProperties) {
-      this.withApplyProperties = withApplyProperties;
-    }
-
-    public DeserializationMode getNextMode() {
-      // for now always EXISTING_WITHOUT_APPLY...
-      return EXISTING_WITHOUT_APPLY;
-    }
-
-    public boolean isWithApplyProperties() {
-      return withApplyProperties;
-    }
-
-    public boolean isExistingAllowed() {
-      return CREATE != this;
-    }
-
-    public boolean isCreateAllowed() {
-      return CREATE == this || CREATE_OR_EXISTING_WITH_APPLY == this;
-    }
-
-  }
-
   private static class StackEntry {
     final Class<?> entityClass;
-    final DeserializationMode mode;
+    final EntityDeserializationMode mode;
     final PropertiesProcessor propertiesProcessor;
     PropertiesProcessor nextPropertiesProcessor = null;
 
-    private StackEntry(Class<?> entityClass, DeserializationMode mode,
+    private StackEntry(Class<?> entityClass, EntityDeserializationMode mode,
         PropertiesProcessor propertiesProcessor) {
       this.entityClass = entityClass;
       this.mode = mode;
@@ -54,7 +26,7 @@ public class EntityDeserializationContext {
 
   private List<StackEntry> stack;
 
-  private DeserializationMode initialMode;
+  private EntityDeserializationMode initialMode;
 
   private PropertiesProcessor initialPropertiesProcessor;
 
@@ -87,7 +59,7 @@ public class EntityDeserializationContext {
     return getCurrentEntry().entityClass;
   }
 
-  public DeserializationMode getCurrentMode() {
+  public EntityDeserializationMode getCurrentMode() {
     return getCurrentEntry().mode;
   }
 
@@ -99,11 +71,11 @@ public class EntityDeserializationContext {
     return processor != null ? processor : PropertiesProcessor.NOOP_PROCESSOR;
   }
 
-  public DeserializationMode getInitialMode() {
+  public EntityDeserializationMode getInitialMode() {
     return initialMode;
   }
 
-  public void setInitialMode(DeserializationMode initialMode) {
+  public void setInitialMode(EntityDeserializationMode initialMode) {
     checkStackEmpty();
     this.initialMode = initialMode;
   }
@@ -119,7 +91,7 @@ public class EntityDeserializationContext {
 
   public void push(Class<?> entityClass) {
     final List<StackEntry> stack = getStack();
-    final DeserializationMode mode;
+    final EntityDeserializationMode mode;
     final PropertiesProcessor processor;
     if (stack.isEmpty()) {
       if (initialMode == null) {
