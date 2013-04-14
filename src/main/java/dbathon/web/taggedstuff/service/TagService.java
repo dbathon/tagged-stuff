@@ -5,17 +5,21 @@ import java.util.Map;
 import javax.ejb.ConcurrencyManagement;
 import javax.ejb.ConcurrencyManagementType;
 import javax.ejb.Singleton;
+import javax.persistence.TypedQuery;
 import dbathon.web.taggedstuff.entity.Tag;
 import dbathon.web.taggedstuff.entityservice.AbstractEntityService;
 import dbathon.web.taggedstuff.entityservice.EntityWithId;
+import dbathon.web.taggedstuff.entityservice.QueryParameters;
 
 @Singleton
 @ConcurrencyManagement(ConcurrencyManagementType.BEAN)
 public class TagService extends AbstractEntityService<Tag> {
 
   @Override
-  public List<Tag> query(Map<String, String> parameters) {
-    return em.createQuery("select e from Tag e", Tag.class).getResultList();
+  public List<Tag> query(QueryParameters queryParameters) {
+    final String queryString = "select e from Tag e" + queryParseOrderBy("e", queryParameters);
+    final TypedQuery<Tag> query = em.createQuery(queryString, Tag.class);
+    return queryApplyRestrictionsAndExecute(query, queryParameters);
   }
 
   @Override

@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.annotation.PostConstruct;
 import javax.ejb.ConcurrencyManagement;
 import javax.ejb.ConcurrencyManagementType;
@@ -27,6 +28,7 @@ import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
@@ -41,6 +43,7 @@ import dbathon.web.taggedstuff.entityservice.EntityProperty;
 import dbathon.web.taggedstuff.entityservice.EntityService;
 import dbathon.web.taggedstuff.entityservice.EntityServiceLookup;
 import dbathon.web.taggedstuff.entityservice.EntityWithId;
+import dbathon.web.taggedstuff.entityservice.QueryParameters;
 import dbathon.web.taggedstuff.serialization.EntityDeserializationMode;
 import dbathon.web.taggedstuff.serialization.EntitySerializationMode;
 import dbathon.web.taggedstuff.serialization.JsonSerializationService;
@@ -165,14 +168,47 @@ public class EntityResourceDispatcher {
     return notNullOrNotFoundError(entityService);
   }
 
+  private class RestQueryParameters implements QueryParameters {
+
+    private final MultivaluedMap<String, String> params;
+
+    private RestQueryParameters(MultivaluedMap<String, String> params) {
+      this.params = params;
+    }
+
+    @Override
+    public Set<String> keySet() {
+      return Collections.unmodifiableSet(params.keySet());
+    }
+
+    @Override
+    public <T> T get(String key, Class<T> type) {
+      // for now just use get first...
+      final String value = params.getFirst(key);
+      if (value == null) {
+        return null;
+      }
+      if (type == String.class) {
+        return type.cast(value);
+      }
+      else {
+        // try to convert using json
+        return jsonSerializationService.deserialializeFromJson(value, type,
+            EntityDeserializationMode.EXISTING_WITHOUT_APPLY);
+      }
+    }
+
+  }
+
   @GET
   @Path("{entityName}")
   @Produces(Constants.MEDIA_TYPE_JSON)
-  public Response query(@PathParam("entityName") String entityName) {
+  public Response query(@PathParam("entityName") String entityName, @Context UriInfo uriInfo) {
     try {
       final EntityService<?> entityService = getEntityService(entityName);
 
-      final List<?> result = entityService.query(Collections.<String, String>emptyMap());
+      final List<?> result =
+          entityService.query(new RestQueryParameters(uriInfo.getQueryParameters()));
 
       return buildJsonResponse(Response.ok(), ImmutableMap.of("result", result));
     }

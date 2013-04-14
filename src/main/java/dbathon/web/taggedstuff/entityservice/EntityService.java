@@ -9,7 +9,7 @@ public interface EntityService<E extends EntityWithId> {
 
   Map<String, EntityProperty> getEntityProperties();
 
-  List<E> query(Map<String, String> parameters);
+  List<E> query(QueryParameters queryParameters);
 
   /**
    * @param id

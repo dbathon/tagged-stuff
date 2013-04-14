@@ -16,11 +16,18 @@ import javax.persistence.EntityManager;
 import javax.persistence.MappedSuperclass;
 import javax.persistence.PersistenceContext;
 import javax.persistence.Transient;
+import javax.persistence.TypedQuery;
+import com.google.common.base.Joiner;
+import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.primitives.Primitives;
 import com.googlecode.gentyref.GenericTypeReflector;
 import dbathon.web.taggedstuff.util.ReflectionUtil;
 
 public abstract class AbstractEntityService<E extends EntityWithId> implements EntityService<E> {
+
+  private static final Splitter COMMA_SPLITTER = Splitter.on(",");
+  private static final Joiner COMMA_JOINER = Joiner.on(", ");
 
   @PersistenceContext
   protected EntityManager em;
@@ -96,8 +103,56 @@ public abstract class AbstractEntityService<E extends EntityWithId> implements E
   }
 
   @Override
-  public List<E> query(Map<String, String> parameters) {
+  public List<E> query(QueryParameters queryParameters) {
     return Collections.emptyList();
+  }
+
+  protected <T> List<T> queryApplyRestrictionsAndExecute(TypedQuery<T> query,
+      QueryParameters queryParameters) {
+    final Integer firstResult = queryParameters.get("firstResult", Integer.class);
+    final Integer maxResults = queryParameters.get("maxResults", Integer.class);
+    if (firstResult != null) {
+      query.setFirstResult(firstResult);
+    }
+    if (maxResults != null) {
+      query.setMaxResults(maxResults);
+    }
+    return query.getResultList();
+  }
+
+  protected String queryParseOrderBy(String entityAlias, QueryParameters queryParameters) {
+    final String orderBy = queryParameters.get("orderBy", String.class);
+    if (orderBy == null) {
+      return "";
+    }
+
+    final List<String> parts = new ArrayList<String>();
+    final Map<String, EntityProperty> properties = getEntityProperties();
+    for (String part : COMMA_SPLITTER.split(orderBy)) {
+      part = part.trim();
+      final boolean desc = part.startsWith("-");
+      if (desc) {
+        part = part.substring(1);
+      }
+      final EntityProperty entityProperty = properties.get(part);
+
+      // just ignore invalid properties...
+      if (entityProperty != null) {
+        final Class<?> propertyType = entityProperty.getGetter().getReturnType();
+        // for now only allow sorting on strings and numbers
+        if (propertyType == String.class
+            || Number.class.isAssignableFrom(Primitives.wrap(propertyType))) {
+          parts.add(entityAlias + "." + part + (desc ? " DESC" : " ASC"));
+        }
+      }
+    }
+
+    if (parts.isEmpty()) {
+      return "";
+    }
+    else {
+      return " order by " + COMMA_JOINER.join(parts);
+    }
   }
 
   @Override
