@@ -1,0 +1,2 @@
+Adding the following index should be very useful, but it does not seem to be possible with annotations (Hibernate or JPA...):
+create index IDX_ENTRY_TAG_TAG_ENTRY on ENTRY_TAG (ID_TAG, ID_ENTRY);
