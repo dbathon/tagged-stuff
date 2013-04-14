@@ -93,6 +93,12 @@
       <artifactId>gentyref</artifactId>
       <version>1.1.0</version>
     </dependency>
+
+    <dependency>
+      <groupId>commons-logging</groupId>
+      <artifactId>commons-logging</artifactId>
+      <version>1.1.2</version>
+    </dependency>
   </dependencies>
 
   <build>
