@@ -6,11 +6,10 @@ import javax.persistence.Id;
 import javax.persistence.Table;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Pattern;
-import dbathon.web.taggedstuff.entityservice.EntityWithId;
 
 @Entity
 @Table(name = "TAG_")
-public class Tag extends AbstractEntity implements EntityWithId {
+public class Tag extends AbstractEntity {
 
   private String id;
 

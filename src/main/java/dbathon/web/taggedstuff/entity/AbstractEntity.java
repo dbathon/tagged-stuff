@@ -7,11 +7,16 @@ import javax.persistence.MappedSuperclass;
 import javax.persistence.PrePersist;
 import javax.persistence.PreUpdate;
 import javax.persistence.Version;
+import dbathon.web.taggedstuff.entityservice.EntityWithId;
 import dbathon.web.taggedstuff.entityservice.EntityWithVersion;
 
+/**
+ * Defines {@link #equals(Object)} and {@link #hashCode()} based on the {@linkplain #getId() id} and
+ * the class.
+ */
 @MappedSuperclass
 @Access(AccessType.PROPERTY)
-public class AbstractEntity implements EntityWithVersion {
+public abstract class AbstractEntity implements EntityWithId, EntityWithVersion {
 
   private int version;
 
@@ -58,6 +63,28 @@ public class AbstractEntity implements EntityWithVersion {
   @PreUpdate
   public void preUpdate() {
     setLastModifiedTs(System.currentTimeMillis());
+  }
+
+  @Override
+  public int hashCode() {
+    final String id = getId();
+    if (id == null) {
+      // no id yet just use default hash code
+      return super.hashCode();
+    }
+    else {
+      return 31 * getClass().hashCode() + id.hashCode();
+    }
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+    if (this == obj) return true;
+    if (!(obj instanceof AbstractEntity)) return false;
+    if (getClass() != obj.getClass()) return false;
+    final AbstractEntity other = (AbstractEntity) obj;
+    final String id = getId();
+    return id != null && id.equals(other.getId());
   }
 
 }

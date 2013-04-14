@@ -4,10 +4,9 @@ import java.util.UUID;
 import javax.persistence.Column;
 import javax.persistence.Id;
 import javax.persistence.MappedSuperclass;
-import dbathon.web.taggedstuff.entityservice.EntityWithId;
 
 @MappedSuperclass
-public class AbstractEntityWithUuid extends AbstractEntity implements EntityWithId {
+public abstract class AbstractEntityWithUuid extends AbstractEntity {
 
   private String id;
 
