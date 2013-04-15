@@ -5,11 +5,12 @@ import java.util.Map;
 import javax.ejb.ConcurrencyManagement;
 import javax.ejb.ConcurrencyManagementType;
 import javax.ejb.Singleton;
-import javax.persistence.TypedQuery;
 import dbathon.web.taggedstuff.entity.Tag;
 import dbathon.web.taggedstuff.entityservice.AbstractEntityService;
 import dbathon.web.taggedstuff.entityservice.EntityWithId;
 import dbathon.web.taggedstuff.entityservice.QueryParameters;
+import dbathon.web.taggedstuff.persistence.WhereClauseBuilder;
+import dbathon.web.taggedstuff.util.Util;
 
 @Singleton
 @ConcurrencyManagement(ConcurrencyManagementType.BEAN)
@@ -17,9 +18,27 @@ public class TagService extends AbstractEntityService<Tag> {
 
   @Override
   public List<Tag> query(QueryParameters queryParameters) {
-    final String queryString = "select e from Tag e" + queryParseOrderBy("e", queryParameters);
-    final TypedQuery<Tag> query = em.createQuery(queryString, Tag.class);
-    return queryApplyRestrictionsAndExecute(query, queryParameters);
+    final WhereClauseBuilder builder = new WhereClauseBuilder();
+
+    final String queryParam = queryParameters.get("query", String.class);
+    if (queryParam != null) {
+      builder.startOr();
+      for (final String queryPart : Util.splitToTrimmedStrings(queryParam)) {
+        if (queryPart.endsWith("*")) {
+          builder.add("e.id like ?", queryPart.substring(0, queryPart.length() - 1) + "%");
+        }
+        else {
+          builder.add("e.id = ?", queryPart);
+        }
+      }
+      builder.finishOr();
+    }
+
+    final String queryString =
+        "select e from Tag e" + builder.buildWhereClause()
+            + queryParseOrderBy("e", queryParameters);
+    return queryApplyRestrictionsAndExecute(
+        builder.applyParameters(em.createQuery(queryString, Tag.class)), queryParameters);
   }
 
   @Override
