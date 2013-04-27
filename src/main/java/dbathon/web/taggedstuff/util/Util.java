@@ -40,7 +40,7 @@ public final class Util {
   }
 
   public static List<String> splitToTrimmedStrings(String input, Splitter splitter) {
-    final List<String> result = new ArrayList<String>();
+    final List<String> result = new ArrayList<>();
     for (final String item : splitter.split(input.trim())) {
       final String trimmed = item.trim();
       if (trimmed.length() > 0) {

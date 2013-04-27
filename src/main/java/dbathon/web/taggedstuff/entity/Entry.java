@@ -24,7 +24,7 @@ public class Entry extends AbstractEntityWithUuid {
 
   private String body;
 
-  private Set<Tag> tags = new HashSet<Tag>(0);
+  private Set<Tag> tags = new HashSet<>();
 
   @Column(name = "TITLE_", nullable = false, length = 1000)
   @NotNull

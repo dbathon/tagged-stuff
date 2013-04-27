@@ -23,7 +23,7 @@ public class WhereClauseBuilder {
 
     public final Joiner joiner;
 
-    public List<String> conditions = new ArrayList<String>();
+    public List<String> conditions = new ArrayList<>();
 
     private Conditions(Joiner joiner) {
       this.joiner = joiner;
@@ -38,9 +38,9 @@ public class WhereClauseBuilder {
 
   private final String paramNamePrefix;
 
-  private final Map<String, Object> paramsMap = new HashMap<String, Object>();
+  private final Map<String, Object> paramsMap = new HashMap<>();
 
-  private final List<Conditions> stack = new ArrayList<Conditions>();
+  private final List<Conditions> stack = new ArrayList<>();
 
   public WhereClauseBuilder(String paramNamePrefix) {
     this.paramNamePrefix = "_" + paramNamePrefix + "_";

@@ -26,7 +26,7 @@ public class EntitySerializationContext {
 
   private List<StackEntry> getStack() {
     if (stack == null) {
-      stack = new ArrayList<StackEntry>();
+      stack = new ArrayList<>();
     }
     return stack;
   }

@@ -21,7 +21,7 @@ public class EntityServiceLookup {
 
   @PostConstruct
   protected void initialize() {
-    final Map<Class<?>, EntityService<?>> map = new HashMap<Class<?>, EntityService<?>>();
+    final Map<Class<?>, EntityService<?>> map = new HashMap<>();
 
     for (final Bean<?> bean : beanManager.getBeans(EntityService.class)) {
       final CreationalContext<?> creationalContext = beanManager.createCreationalContext(bean);

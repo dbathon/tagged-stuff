@@ -49,8 +49,8 @@ public abstract class AbstractEntityService<E extends EntityWithId> implements E
 
   protected Map<String, EntityProperty> buildEntityProperties(Class<E> entityClass) {
     // collect candidates
-    final Map<String, Method> getterCandidates = new HashMap<String, Method>();
-    final Map<String, Method> setterCandidates = new HashMap<String, Method>();
+    final Map<String, Method> getterCandidates = new HashMap<>();
+    final Map<String, Method> setterCandidates = new HashMap<>();
     Class<?> current = entityClass;
     while (current != null) {
       if (current.isAnnotationPresent(Entity.class)
@@ -75,7 +75,7 @@ public abstract class AbstractEntityService<E extends EntityWithId> implements E
       current = current.getSuperclass();
     }
 
-    final Map<String, EntityProperty> result = new HashMap<String, EntityProperty>();
+    final Map<String, EntityProperty> result = new HashMap<>();
 
     // build result
     for (final Method getter : getterCandidates.values()) {
@@ -126,7 +126,7 @@ public abstract class AbstractEntityService<E extends EntityWithId> implements E
       return "";
     }
 
-    final List<String> parts = new ArrayList<String>();
+    final List<String> parts = new ArrayList<>();
     final Map<String, EntityProperty> properties = getEntityProperties();
     for (String part : COMMA_SPLITTER.split(orderBy)) {
       part = part.trim();
@@ -210,14 +210,14 @@ public abstract class AbstractEntityService<E extends EntityWithId> implements E
     // "convert" value to the correct collection type
     final Collection<?> normalizedValue;
     if (propertyCollection instanceof List<?>) {
-      normalizedValue = new ArrayList<Object>(value);
+      normalizedValue = new ArrayList<>(value);
     }
     else if (propertyCollection instanceof Set<?>) {
-      normalizedValue = new HashSet<Object>(value);
+      normalizedValue = new HashSet<>(value);
     }
     else {
       // default to list...
-      normalizedValue = new ArrayList<Object>(value);
+      normalizedValue = new ArrayList<>(value);
     }
 
     /**

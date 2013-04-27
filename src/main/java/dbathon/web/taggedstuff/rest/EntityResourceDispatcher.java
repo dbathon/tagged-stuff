@@ -84,7 +84,7 @@ public class EntityResourceDispatcher {
 
   @PostConstruct
   protected void initialize() {
-    final Map<String, EntityService<?>> map = new HashMap<String, EntityService<?>>();
+    final Map<String, EntityService<?>> map = new HashMap<>();
 
     for (final Class<?> entityClass : entityServiceLookup.getAllEntityClasses()) {
       final String name = Util.firstLetterLowerCase(JPAUtil.getEntityName(entityClass));
@@ -297,10 +297,10 @@ public class EntityResourceDispatcher {
   @Path("test")
   @Produces(Constants.MEDIA_TYPE_JSON)
   public Response test() {
-    final Map<String, Object> result = new HashMap<String, Object>();
+    final Map<String, Object> result = new HashMap<>();
     for (final Class<?> entityClass : entityServiceLookup.getAllEntityClasses()) {
       final EntityService<?> entityService = entityServiceLookup.getEntityService(entityClass);
-      final List<String> props = new ArrayList<String>();
+      final List<String> props = new ArrayList<>();
       for (final EntityProperty prop : entityService.getEntityProperties().values()) {
         props.add(prop.getName() + " " + prop.isReadOnly());
       }

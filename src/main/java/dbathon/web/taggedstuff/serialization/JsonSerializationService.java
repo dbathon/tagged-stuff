@@ -107,7 +107,7 @@ public class JsonSerializationService {
       EntityService<?> entityService, Gson gson) {
     @SuppressWarnings("unchecked")
     final EntityService<E> entityServiceE = (EntityService<E>) entityService;
-    return new EntityTypeAdapter<E>(entityServiceE, gson).nullSafe();
+    return new EntityTypeAdapter<>(entityServiceE, gson).nullSafe();
   }
 
   private static class DateAsTimestampTypeAdaptor extends TypeAdapter<Date> {
@@ -168,8 +168,7 @@ public class JsonSerializationService {
       this.entityService = entityService;
 
       entityClass = entityService.getEntityClass();
-      final Map<String, PropertyWithTypeAdapter> properties =
-          new HashMap<String, PropertyWithTypeAdapter>();
+      final Map<String, PropertyWithTypeAdapter> properties = new HashMap<>();
       for (final EntityProperty entityProperty : entityService.getEntityProperties().values()) {
         final Type exactPropertyType =
             GenericTypeReflector.getExactReturnType(entityProperty.getGetter(), entityClass);
@@ -272,7 +271,7 @@ public class JsonSerializationService {
     }
 
     private Map<String, Object> readPropertyValues(JsonReader in) throws IOException {
-      final Map<String, Object> propertyValues = new HashMap<String, Object>();
+      final Map<String, Object> propertyValues = new HashMap<>();
       if (in.peek() == JsonToken.STRING) {
         // if it is just a string, then interpret it as the id
         propertyValues.put(EntityWithId.ID_PROPERTY_NAME, idProperty.typeAdapter.read(in));
