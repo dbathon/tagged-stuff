@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <jboss-web>
   <context-root>tagged-stuff</context-root>
+  <symbolic-linking-enabled>true</symbolic-linking-enabled>
 
   <resource-ref>
     <res-ref-name>jdbc/tagged-stuff</res-ref-name>
