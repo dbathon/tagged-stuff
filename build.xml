@@ -133,21 +133,25 @@
 
 
   <!-- cleanup for deploy/explode -->
-  <target name="undeploy" depends="check-properties" description="undeploy the war">
+  <target name="undeploy-unexplode" depends="check-properties" description="undeploy the war">
     <delete file="${deploy.war}" />
+    <delete removeNotFollowedSymlinks="true" failonerror="false">
+      <fileset dir="${deploy.war}" followsymlinks="false"/>
+      <dirset dir="${deploy.war}" followsymlinks="false"/>
+    </delete>
   </target>
 
 
-  <!-- deploy/undeploy -->
+  <!-- deploy -->
   <presetdef name="copy-war">
     <copy file="target/${name}-${version}.war" overwrite="true" tofile="${deploy.war}/" />
   </presetdef>
 
-  <target name="deploy" depends="undeploy,package,check-properties" description="deploy the packaged war">
+  <target name="deploy" depends="undeploy-unexplode,package,check-properties" description="deploy the packaged war">
     <copy-war />
   </target>
 
-  <target name="deploy-notest" depends="undeploy,package-notest,check-properties" description="deploy the packaged war without running tests">
+  <target name="deploy-notest" depends="undeploy-unexplode,package-notest,check-properties" description="deploy the packaged war without running tests">
     <copy-war />
   </target>
 
@@ -155,6 +159,21 @@
     <touch file="${deploy.war}.dodeploy" />
   </target>
 
+  <presetdef name="create-war-symlinks">
+    <sequential>
+      <mkdir dir="${deploy.war}/" />
+      <symlink link="${deploy.war}/WEB-INF" resource="${basedir}/target/${name}-${version}/WEB-INF" />
+      <symlink link="${deploy.war}/app" resource="${basedir}/src/main/webapp/app" />
+    </sequential>
+  </presetdef>
+
+  <target name="explode-symlinked" depends="undeploy-unexplode,package,check-properties" description="deploy the war symlinked">
+    <create-war-symlinks />
+  </target>
+
+  <target name="explode-symlinked-notest" depends="undeploy-unexplode,package-notest,check-properties" description="deploy the war symlinked without running tests">
+    <create-war-symlinks />
+  </target>
 
   <!-- findbugs -->
   <target name="findbugs-execute" depends="check-properties" description="generate the findbugs xml file">
