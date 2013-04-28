@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en" ng-app="taggedStuff">
+<head>
+<meta charset="utf-8">
+<title>Tagged Stuff</title>
+<style>
+[ng-cloak] {
+  display: none;
+}
+</style>
+<link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <div class="header">
+    <h1 class="title">Tagged Stuff</h1>
+    <div ng-cloak class="content">
+      <ul class="menu">
+        <li><a href="#/">Main</a></li>
+        <li><a href="#/view2">View 2</a></li>
+      </ul>
+      Search: <input type="text" />
+    </div>
+  </div>
+
+  <div ng-view class="container"></div>
+
+  <!-- In production use:
+  <script src="//ajax.googleapis.com/ajax/libs/angularjs/1.0.6/angular.min.js"></script>
+  -->
+  <script src="lib/angular/angular.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/services.js"></script>
+  <script src="js/controllers.js"></script>
+  <script src="js/filters.js"></script>
+  <script src="js/directives.js"></script>
+</body>
+</html>

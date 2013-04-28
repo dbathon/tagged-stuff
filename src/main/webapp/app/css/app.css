@@ -1,0 +1,98 @@
+/* basics */
+body {
+  font-family: arial, sans-serif;
+  font-size: 14px;
+  background-color: white;
+}
+
+body,div {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.content {
+  margin: 7px;
+}
+
+.header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100px;
+  overflow: hidden;
+  background-color: #f2f2f2;
+  border-bottom: 1px solid #ddd;
+}
+
+.container {
+  position: absolute;
+  top: 100px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: auto;
+}
+
+.sidebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 230px;
+  overflow: auto;
+}
+
+.entries-container {
+  position: absolute;
+  top: 0;
+  left: 230px;
+  right: 0;
+  bottom: 0;
+  min-width: 400px;
+  overflow: auto;
+}
+
+.title {
+  margin: 0;
+  padding: 7px;
+}
+
+.entry-title {
+  margin: 0;
+  padding: 7px;
+  border-bottom: 1px solid #ddd;
+}
+
+.entry {
+  padding: 5px;
+  border-bottom: 1px solid #999;
+}
+
+/* menu */
+.menu {
+  list-style: none;
+  display: inline;
+  padding: 0 10px 0 0;
+}
+
+.menu:before {
+  content: "[";
+}
+
+.menu:after {
+  content: "]";
+}
+
+.menu>li {
+  display: inline;
+}
+
+.menu>li:before {
+  content: "| ";
+}
+
+.menu>li:nth-child(1):before {
+  content: "";
+}
