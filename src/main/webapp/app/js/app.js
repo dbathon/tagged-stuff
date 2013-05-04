@@ -20,4 +20,10 @@
     }
   ]);
 
+  app.run([
+    '$injector', function($injector) {
+      return window.ngInjector = $injector;
+    }
+  ]);
+
 }).call(this);

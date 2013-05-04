@@ -4,4 +4,18 @@
   <div>
     Version: v<span app-version></span>
   </div>
+  <div>
+    Show: <input type="checkbox" ng-model="show">
+    <br>
+    Text: <input ng-model="text">
+  </div>
+  <div ng-show="show">
+    content1 {{text}} <span log-digest="d1"></span>
+  </div>
+  <div content-if="show">
+    content2 {{text}} <span log-digest="d2"></span>
+  </div>
+  <div>
+    after {{text}} <span log-digest="d3"></span>
+  </div>
 </div>

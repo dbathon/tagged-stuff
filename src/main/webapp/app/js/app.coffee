@@ -17,3 +17,8 @@ app.config ['$routeProvider', ($routeProvider) ->
     redirectTo : '/'
 
 ]
+
+app.run ['$injector', ($injector) ->
+  # "export" the injector for testing...
+  window.ngInjector = $injector
+]

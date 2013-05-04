@@ -12,4 +12,40 @@
     }
   ]);
 
+  module.directive('contentIf', function() {
+    return {
+      transclude: true,
+      compile: function(element, attrs, transclude) {
+        return function(scope, element, attrs) {
+          var content, contentScope;
+          content = contentScope = null;
+          return scope.$watch(attrs.contentIf, function(value) {
+            if (content) {
+              contentScope.$destroy();
+              content.remove();
+              content = null;
+            }
+            if (value) {
+              contentScope = scope.$new();
+              return transclude(contentScope, function(elem) {
+                content = elem;
+                return element.append(content);
+              });
+            }
+          });
+        };
+      }
+    };
+  });
+
+  module.directive('logDigest', function() {
+    return function(scope, element, attrs) {
+      var name;
+      name = attrs.logDigest || '???';
+      return scope.$watch(function() {
+        return console.log('digest: ' + name);
+      });
+    };
+  });
+
 }).call(this);
