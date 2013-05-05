@@ -25,7 +25,7 @@ module.factory 'entityServiceFactory', ['$http', 'baseRestPath', ($http, baseRes
         result = []
         p = $http { method: 'GET', url: basePath, params: params }
         p.success (data) ->
-          result.push.apply(result, data.result)
+          result.push data.result...
         p.error errorHandler
         result
       get: (id) ->
