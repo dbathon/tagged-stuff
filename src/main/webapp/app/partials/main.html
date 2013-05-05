@@ -2,67 +2,16 @@
   <div class="content">
     <p>Tags</p>
     <ul>
-      <li ng-repeat="tag in tags">{{tag.name}}</li>
+      <li ng-repeat="tag in tags">
+        <a href="" ng-click="searchForTag(tag)">{{tag.id}}</a>
+      </li>
     </ul>
   </div>
 </div>
 
 <div class="entries-container">
-  <h2 class="entry-title">Entries title</h2>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
-  <div class="entry">Foo oij oi jpoij oeiwsjf oweij fiaughrf lksdmn cvqiuzgf oisjd fkjhg9
-    heßwpko.</div>
+  <h2 class="entry-title">{{entriesTitle()}}</h2>
+  <div class="entry" ng-repeat="e in entries">
+    {{e.id}}: {{e.title}} {{e.body}}
+  </div>
 </div>

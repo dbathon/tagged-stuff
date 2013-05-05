@@ -18,7 +18,11 @@
         <li><a href="#/">Main</a></li>
         <li><a href="#/view2">View 2</a></li>
       </ul>
-      Search: <input type="text" />
+      <form ng-submit="search()" ng-controller="SearchCtrl" style="display: inline;">
+        <input type="text" ng-model="data.searchString" />
+        <input type="submit" value="Search" />
+        <input type="button" ng-click="searchAll()" value="All" />
+      </form>
     </div>
   </div>
 
