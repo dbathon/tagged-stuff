@@ -11,7 +11,16 @@
 
 <div class="entries-container" ng-controller="EntriesCtrl">
   <h2 class="entries-title">{{entriesTitle()}}</h2>
-  <div class="entry" ng-repeat="e in entries">
-    {{e.id}}: {{e.title}} {{e.body}}
+  <div ng-repeat="e in entries">
+    <div class="entry-title-{{isExpanded(e)}}" ng-click="select(e)">
+      <span class="entry-title-text">{{e.title}}</span>
+      -
+      <span class="entry-title-tags">{{joinedTags(e)}}</span>
+    </div>
+    <span content-if="isExpanded(e)">
+      <div class="entry-body">
+        {{e.body}}
+      </div>
+    </span>
   </div>
 </div>

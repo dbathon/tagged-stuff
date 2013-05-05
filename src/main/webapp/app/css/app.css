@@ -65,8 +65,31 @@ body,div {
   border-bottom: 1px solid #ddd;
 }
 
-.entry {
+.entry-title-false {
   padding: 5px;
+  border-left: 1px solid white;
+  border-bottom: 1px solid #999;
+  cursor: pointer;
+}
+
+.entry-title-true {
+  padding: 5px;
+  background-color: #e5e5e5;
+  border-left: 1px solid blue;
+  cursor: pointer;
+}
+
+.entry-title-text {
+  font-weight: bold;
+}
+
+.entry-title-tags {
+  color: #333;
+}
+
+.entry-body {
+  padding: 5px;
+  border-left: 1px solid blue;
   border-bottom: 1px solid #999;
 }
 

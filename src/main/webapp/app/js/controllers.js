@@ -41,11 +41,13 @@
 
   module.controller('EntriesCtrl', [
     '$scope', 'entryService', 'searchService', function(s, entryService, searchService) {
-      var updateEntries;
+      var selectedIndex, updateEntries;
       s.data = {
         searchString: null
       };
+      selectedIndex = null;
       updateEntries = function() {
+        selectedIndex = null;
         return s.entries = entryService.query({
           orderBy: '-createdTs',
           query: s.data.searchString
@@ -58,6 +60,30 @@
           return 'All entries';
         }
       };
+      s.isSelected = function(entry) {
+        return entry === s.entries[selectedIndex];
+      };
+      s.isExpanded = function(entry) {
+        return s.isSelected(entry);
+      };
+      s.select = function(entry) {
+        var index;
+        index = s.entries.indexOf(entry);
+        return selectedIndex = index >= 0 ? index : null;
+      };
+      s.joinedTags = function(entry) {
+        var tag;
+        return ((function() {
+          var _i, _len, _ref, _results;
+          _ref = entry.tags;
+          _results = [];
+          for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+            tag = _ref[_i];
+            _results.push(tag.id);
+          }
+          return _results;
+        })()).sort().join(' ');
+      };
       searchService.addListener(s, function(searchString) {
         s.data.searchString = searchString && searchString.length > 0 ? searchString : null;
         return updateEntries();
@@ -65,7 +91,5 @@
       return updateEntries();
     }
   ]);
-
-  module.controller('MyCtrl2', [function() {}]);
 
 }).call(this);

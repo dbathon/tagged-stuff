@@ -29,7 +29,10 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
   s.data =
     searchString: null
 
+  selectedIndex = null
+
   updateEntries = ->
+    selectedIndex = null
     s.entries = entryService.query { orderBy: '-createdTs', query: s.data.searchString }
 
   s.entriesTitle = ->
@@ -38,6 +41,19 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
     else
       'All entries'
 
+  s.isSelected = (entry) ->
+    entry == s.entries[selectedIndex]
+
+  s.isExpanded = (entry) ->
+    s.isSelected entry
+
+  s.select = (entry) ->
+    index = s.entries.indexOf(entry)
+    selectedIndex = if index >= 0 then index else null
+
+  s.joinedTags = (entry) ->
+    (tag.id for tag in entry.tags).sort().join ' '
+
   searchService.addListener s, (searchString) ->
     s.data.searchString = if searchString && searchString.length > 0 then searchString else null
     updateEntries()
@@ -45,6 +61,3 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
   updateEntries()
 ]
 
-module.controller 'MyCtrl2', [() ->
-
-]
