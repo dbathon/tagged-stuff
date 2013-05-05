@@ -1,4 +1,4 @@
-<div class="sidebar">
+<div class="sidebar" ng-controller="TagsCtrl">
   <div class="content">
     <p>Tags</p>
     <ul>
@@ -9,8 +9,8 @@
   </div>
 </div>
 
-<div class="entries-container">
-  <h2 class="entry-title">{{entriesTitle()}}</h2>
+<div class="entries-container" ng-controller="EntriesCtrl">
+  <h2 class="entries-title">{{entriesTitle()}}</h2>
   <div class="entry" ng-repeat="e in entries">
     {{e.id}}: {{e.title}} {{e.body}}
   </div>

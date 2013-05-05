@@ -21,9 +21,9 @@
     }
   ]);
 
-  module.controller('MainCtrl', [
-    '$scope', 'entryService', 'tagService', 'searchService', function(s, entryService, tagService, searchService) {
-      var updateEntries, updateTags;
+  module.controller('TagsCtrl', [
+    '$scope', 'tagService', 'searchService', function(s, tagService, searchService) {
+      var updateTags;
       s.data = {
         searchString: null
       };
@@ -32,14 +32,24 @@
           orderBy: 'id'
         });
       };
+      s.searchForTag = function(tag) {
+        return searchService.search('+' + tag.id);
+      };
+      return updateTags();
+    }
+  ]);
+
+  module.controller('EntriesCtrl', [
+    '$scope', 'entryService', 'searchService', function(s, entryService, searchService) {
+      var updateEntries;
+      s.data = {
+        searchString: null
+      };
       updateEntries = function() {
         return s.entries = entryService.query({
           orderBy: '-createdTs',
           query: s.data.searchString
         });
-      };
-      s.searchForTag = function(tag) {
-        return searchService.search('+' + tag.id);
       };
       s.entriesTitle = function() {
         if (s.data.searchString) {
@@ -52,7 +62,6 @@
         s.data.searchString = searchString && searchString.length > 0 ? searchString : null;
         return updateEntries();
       });
-      updateTags();
       return updateEntries();
     }
   ]);

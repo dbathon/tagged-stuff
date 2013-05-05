@@ -6,15 +6,13 @@ app = angular.module 'taggedStuff',
 app.config ['$routeProvider', ($routeProvider) ->
 
   $routeProvider.when '/',
-    templateUrl : 'partials/main.html',
-    controller : 'MainCtrl'
+    templateUrl: 'partials/main.html'
 
   $routeProvider.when '/view2',
-    templateUrl : 'partials/partial2.html',
-    controller : 'MyCtrl2'
+    templateUrl: 'partials/partial2.html'
 
   $routeProvider.otherwise
-    redirectTo : '/'
+    redirectTo: '/'
 
 ]
 
