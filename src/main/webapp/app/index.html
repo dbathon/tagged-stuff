@@ -10,7 +10,7 @@
 </style>
 <link rel="stylesheet" href="css/app.css" />
 </head>
-<body>
+<body ng-controller="RootCtrl" on-keypress="broadcastKeypress($event)" on-keyup="broadcastKeyup($event)">
   <div class="header">
     <h1 class="title">Tagged Stuff</h1>
     <div ng-cloak class="content">

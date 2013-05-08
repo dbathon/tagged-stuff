@@ -30,3 +30,13 @@ module.directive 'logDigest', ->
     name = attrs.logDigest || '???'
     scope.$watch ->
       console.log 'digest: ' + name
+
+for type in ['press', 'down', 'up']
+  do (type) ->
+    module.directive 'onKey' + type, ['$parse', ($parse) ->
+      (scope, element, attrs) ->
+        fn = $parse attrs['onKey' + type]
+        element.bind 'key' + type, (event) ->
+          scope.$apply ->
+            fn scope, { $event: event }
+    ]
