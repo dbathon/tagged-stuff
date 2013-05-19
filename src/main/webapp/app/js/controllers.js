@@ -158,4 +158,38 @@
     }
   ]);
 
+  module.controller('EntryCtrl', [
+    '$scope', 'entryService', function(s, entryService) {
+      s.bodyLines = function(entry) {
+        var line, _i, _len, _ref, _results;
+        if (entry.body) {
+          _ref = entry.body.split("\n");
+          _results = [];
+          for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+            line = _ref[_i];
+            if (line.trim().length > 0) {
+              _results.push(line.trim());
+            }
+          }
+          return _results;
+        } else {
+          return [];
+        }
+      };
+      return s.sortedTags = function(entry) {
+        var tag;
+        return ((function() {
+          var _i, _len, _ref, _results;
+          _ref = entry.tags;
+          _results = [];
+          for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+            tag = _ref[_i];
+            _results.push(tag.id);
+          }
+          return _results;
+        })()).sort();
+      };
+    }
+  ]);
+
 }).call(this);

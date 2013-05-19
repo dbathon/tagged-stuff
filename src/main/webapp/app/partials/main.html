@@ -11,16 +11,23 @@
 
 <div class="entries-container" ng-controller="EntriesCtrl">
   <h2 class="entries-title">{{entriesTitle()}}</h2>
-  <div ng-repeat="e in entries">
-    <div class="entry-title-{{isExpanded(e)}}" ng-click="select(e)">
-      <span class="entry-title-text">{{e.title}}</span>
+  <div ng-repeat="entry in entries">
+    <div class="entry-header-{{isExpanded(entry)}}" ng-click="select(entry)">
+      <span class="entry-header-text">{{entry.title}}</span>
       -
-      <span class="entry-title-tags">{{joinedTags(e)}}</span>
+      <span class="entry-header-tags">{{joinedTags(entry)}}</span>
     </div>
-    <span content-if="isExpanded(e)">
-      <div class="entry-body">
-        {{e.body}}
+    <div content-if="isExpanded(entry)">
+      <div class="entry-container" ng-controller="EntryCtrl">
+        <div class="entry-title"><a ng-href="{{entry.url}}" target="_blank">{{entry.title}}</a></div>
+        <div class="entry-url"><a ng-href="{{entry.url}}" target="_blank">{{entry.url}}</a></div>
+        <div class="entry-body-container">
+          <div ng-repeat="line in bodyLines(entry)">{{line}}</div>
+        </div>
+        <ul class="entry-tag-list">
+          <li ng-repeat="tag in sortedTags(entry)">{{tag}}</li>
+        </ul>
       </div>
-    </span>
+    </div>
   </div>
 </div>

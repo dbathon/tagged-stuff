@@ -93,3 +93,14 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
   updateEntries()
 ]
 
+module.controller 'EntryCtrl', ['$scope', 'entryService', (s, entryService) ->
+  s.bodyLines = (entry) ->
+    if entry.body
+      line.trim() for line in entry.body.split "\n"  when line.trim().length > 0
+    else
+      []
+
+  s.sortedTags = (entry) ->
+    (tag.id for tag in entry.tags).sort()
+]
+

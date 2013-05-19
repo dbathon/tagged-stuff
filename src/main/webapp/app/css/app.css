@@ -65,32 +65,61 @@ body,div {
   border-bottom: 1px solid #ddd;
 }
 
-.entry-title-false {
+.entry-header-false {
   padding: 5px;
   border-left: 1px solid white;
   border-bottom: 1px solid #999;
   cursor: pointer;
 }
 
-.entry-title-true {
+.entry-header-true {
   padding: 5px;
   background-color: #e5e5e5;
   border-left: 1px solid blue;
   cursor: pointer;
 }
 
-.entry-title-text {
+.entry-header-text {
   font-weight: bold;
 }
 
-.entry-title-tags {
+.entry-header-tags {
   color: #333;
 }
 
-.entry-body {
+.entry-container {
   padding: 5px;
   border-left: 1px solid blue;
   border-bottom: 1px solid #999;
+}
+
+.entry-title {
+  font-weight: bold;
+  font-size: 20px;
+}
+
+.entry-title>a {
+  text-decoration: none;
+}
+
+.entry-body-container {
+  margin-top: 10px;
+}
+
+.entry-tag-list {
+  list-style: none;
+  display: inline-block;
+  margin: 0;
+  padding: 5px 0 0;
+}
+
+.entry-tag-list>li {
+  display: inline-block;
+  margin: 0 5px 0 0;
+  padding: 1px 4px;
+  background-color: #e5e5e5;
+  border: 1px solid #999;
+  border-radius: 2px;
 }
 
 /* menu */
