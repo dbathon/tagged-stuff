@@ -2,17 +2,16 @@
 module = angular.module 'taggedStuff.controllers', []
 
 module.controller 'RootCtrl', ['$scope', '$rootScope', (s, $rootScope) ->
+  eventFromInput = (event) ->
+    angular.lowercase(event.target.nodeName) in ['input', 'textarea']
+
   s.broadcastKeypress = (event) ->
-    console.log event
-    console.log 'press-' + (event.keyCode || event.charCode) + '-' + angular.lowercase(event.target.nodeName)
-    console.log (k for own k, v of event when v && k.match(/Key$/)).sort().join '-'
-    $rootScope.$broadcast('global.keypress', event)
+    if !eventFromInput(event)
+      $rootScope.$broadcast('global.keypress', event)
 
   s.broadcastKeyup = (event) ->
-    console.log event
-    console.log 'up-' + event.keyCode + '-' + angular.lowercase(event.target.nodeName)
-    console.log (k for own k, v of event when v && k.match(/Key$/)).sort().join '-'
-    $rootScope.$broadcast('global.keyup', event)
+    if !eventFromInput(event)
+      $rootScope.$broadcast('global.keyup', event)
 ]
 
 module.controller 'SearchCtrl', ['$scope', 'searchService', (s, searchService) ->
@@ -73,7 +72,6 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
     updateEntries()
 
   s.$on 'global.keypress', (_, event) ->
-    return if angular.lowercase(event.target.nodeName) == 'input'
     switch event.keyCode || event.charCode
       when 106
         # j -> down
