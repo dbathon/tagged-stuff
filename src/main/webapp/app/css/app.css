@@ -11,6 +11,10 @@ body,div {
   border: 0;
 }
 
+label {
+  display: block;
+}
+
 .content {
   margin: 7px;
 }

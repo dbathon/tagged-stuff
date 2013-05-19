@@ -27,6 +27,18 @@
         <ul class="entry-tag-list">
           <li ng-repeat="tag in sortedTags(entry)">{{tag}}</li>
         </ul>
+        <hr />
+        <div ng-switch="editing">
+          <input ng-switch-when="false" type="button" ng-click="startEdit(entry)" value="Edit" />
+          <form ng-switch-when="true" ng-submit="saveEdit(entry)">
+            <label>Title<br /><input type="text" ng-model="entry.title" /></label>
+            <label>URL<br /><input type="text" ng-model="entry.url" /></label>
+            <label>Tags<br /><input type="text" ng-model="data.tagsText" /></label>
+            <label>Body<br /><textarea ng-model="entry.body"></textarea></label>
+            <input type="submit" value="Save" />
+            <input type="button" ng-click="cancelEdit(entry)" value="Cancel" />
+          </form>
+        </div>
       </div>
     </div>
   </div>

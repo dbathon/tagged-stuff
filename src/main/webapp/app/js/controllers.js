@@ -163,7 +163,7 @@
       s.bodyLines = function(entry) {
         var line, _i, _len, _ref, _results;
         if (entry.body) {
-          _ref = entry.body.split("\n");
+          _ref = entry.body.split('\n');
           _results = [];
           for (_i = 0, _len = _ref.length; _i < _len; _i++) {
             line = _ref[_i];
@@ -176,7 +176,7 @@
           return [];
         }
       };
-      return s.sortedTags = function(entry) {
+      s.sortedTags = function(entry) {
         var tag;
         return ((function() {
           var _i, _len, _ref, _results;
@@ -188,6 +188,44 @@
           }
           return _results;
         })()).sort();
+      };
+      s.editing = false;
+      s.entryBackup = {};
+      s.data = {
+        tagsText: null
+      };
+      s.startEdit = function(entry) {
+        if (!s.editing) {
+          angular.copy(entry, s.entryBackup);
+          s.data.tagsText = s.sortedTags(entry).join(' ');
+          return s.editing = true;
+        }
+      };
+      s.saveEdit = function(entry) {
+        var tag;
+        if (s.editing) {
+          entry.tags = (function() {
+            var _i, _len, _ref, _results;
+            _ref = s.data.tagsText.split(' ');
+            _results = [];
+            for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+              tag = _ref[_i];
+              if (tag.trim().length > 0) {
+                _results.push({
+                  id: tag.trim()
+                });
+              }
+            }
+            return _results;
+          })();
+          return s.editing = false;
+        }
+      };
+      return s.cancelEdit = function(entry) {
+        if (s.editing) {
+          angular.copy(s.entryBackup, entry);
+          return s.editing = false;
+        }
       };
     }
   ]);

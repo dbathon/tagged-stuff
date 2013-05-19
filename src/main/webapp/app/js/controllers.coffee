@@ -96,11 +96,34 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
 module.controller 'EntryCtrl', ['$scope', 'entryService', (s, entryService) ->
   s.bodyLines = (entry) ->
     if entry.body
-      line.trim() for line in entry.body.split "\n"  when line.trim().length > 0
+      line.trim() for line in entry.body.split '\n'  when line.trim().length > 0
     else
       []
 
   s.sortedTags = (entry) ->
     (tag.id for tag in entry.tags).sort()
+
+  s.editing = false
+  s.entryBackup = {}
+  s.data = { tagsText: null }
+
+  s.startEdit = (entry) ->
+    if !s.editing
+      angular.copy entry, s.entryBackup
+      s.data.tagsText = s.sortedTags(entry).join ' '
+      s.editing = true
+
+  s.saveEdit = (entry) ->
+    if s.editing
+      # process tags
+      entry.tags = ({ id: tag.trim() } for tag in s.data.tagsText.split ' '  when tag.trim().length > 0)
+      # TODO: actual save
+      s.editing = false
+
+  s.cancelEdit = (entry) ->
+    if s.editing
+      # restore old state
+      angular.copy s.entryBackup, entry
+      s.editing = false
 ]
 
