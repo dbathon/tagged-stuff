@@ -29,8 +29,10 @@ module.controller 'TagsCtrl', ['$scope', 'tagService', 'searchService', (s, tagS
   s.data =
     searchString: null
 
+  s.tags = []
+
   updateTags = ->
-    s.tags = tagService.query { orderBy: 'id' }
+    tagService.query { orderBy: 'id' }, s.tags
 
   s.searchForTag = (tag) ->
     searchService.search '+' + tag.id
@@ -44,9 +46,11 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
 
   selectedIndex = null
 
+  s.entries = []
+
   updateEntries = ->
     selectedIndex = null
-    s.entries = entryService.query { orderBy: '-createdTs', query: s.data.searchString }
+    entryService.query { orderBy: '-createdTs', query: s.data.searchString }, s.entries
 
   s.entriesTitle = ->
     if s.data.searchString

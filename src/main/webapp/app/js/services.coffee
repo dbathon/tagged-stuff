@@ -16,20 +16,19 @@ module.factory 'entityServiceFactory', ['$http', 'baseRestPath', ($http, baseRes
   (entityName) ->
     basePath = baseRestPath + 'entity/' + entityName + '/'
 
-    errorHandler = (data, status, headers, config) ->
+    errorLogger = (data, status, headers, config) ->
       # TODO: make this better and configurable
       l [data, status, headers, config]
 
     {
-      query: (params) ->
-        result = []
-        p = $http { method: 'GET', url: basePath, params: params }
-        p.success (data) ->
-          result.push data.result...
-        p.error errorHandler
-        result
-      get: (id) ->
-        {}
+      query: (params, targetArray) ->
+        promise = $http { method: 'GET', url: basePath, params: params }
+        if angular.isArray targetArray
+          promise.success (data) ->
+            targetArray.length = 0
+            targetArray.push data.result...
+        promise.error errorLogger
+        promise
       save: (entity) ->
         entity
     }

@@ -21,28 +21,27 @@
   module.factory('entityServiceFactory', [
     '$http', 'baseRestPath', function($http, baseRestPath) {
       return function(entityName) {
-        var basePath, errorHandler;
+        var basePath, errorLogger;
         basePath = baseRestPath + 'entity/' + entityName + '/';
-        errorHandler = function(data, status, headers, config) {
+        errorLogger = function(data, status, headers, config) {
           return l([data, status, headers, config]);
         };
         return {
-          query: function(params) {
-            var p, result;
-            result = [];
-            p = $http({
+          query: function(params, targetArray) {
+            var promise;
+            promise = $http({
               method: 'GET',
               url: basePath,
               params: params
             });
-            p.success(function(data) {
-              return result.push.apply(result, data.result);
-            });
-            p.error(errorHandler);
-            return result;
-          },
-          get: function(id) {
-            return {};
+            if (angular.isArray(targetArray)) {
+              promise.success(function(data) {
+                targetArray.length = 0;
+                return targetArray.push.apply(targetArray, data.result);
+              });
+            }
+            promise.error(errorLogger);
+            return promise;
           },
           save: function(entity) {
             return entity;

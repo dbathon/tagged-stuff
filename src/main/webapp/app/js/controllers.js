@@ -47,10 +47,11 @@
       s.data = {
         searchString: null
       };
+      s.tags = [];
       updateTags = function() {
-        return s.tags = tagService.query({
+        return tagService.query({
           orderBy: 'id'
-        });
+        }, s.tags);
       };
       s.searchForTag = function(tag) {
         return searchService.search('+' + tag.id);
@@ -66,12 +67,13 @@
         searchString: null
       };
       selectedIndex = null;
+      s.entries = [];
       updateEntries = function() {
         selectedIndex = null;
-        return s.entries = entryService.query({
+        return entryService.query({
           orderBy: '-createdTs',
           query: s.data.searchString
-        });
+        }, s.entries);
       };
       s.entriesTitle = function() {
         if (s.data.searchString) {
