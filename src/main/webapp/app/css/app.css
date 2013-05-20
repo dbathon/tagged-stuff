@@ -70,6 +70,10 @@ body,div {
   line-height: 16px;
 }
 
+.entry-header-false:hover {
+  background-color: #eee;
+}
+
 .entry-header-true {
   padding: 5px;
   background-color: #e5e5e5;
