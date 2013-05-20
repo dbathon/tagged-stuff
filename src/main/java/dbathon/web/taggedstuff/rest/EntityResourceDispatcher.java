@@ -8,8 +8,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.annotation.PostConstruct;
+import javax.annotation.Resource;
 import javax.ejb.ConcurrencyManagement;
 import javax.ejb.ConcurrencyManagementType;
+import javax.ejb.SessionContext;
 import javax.ejb.Singleton;
 import javax.inject.Inject;
 import javax.persistence.EntityManager;
@@ -74,6 +76,9 @@ public class EntityResourceDispatcher {
   @PersistenceContext
   private EntityManager em;
 
+  @Resource
+  private SessionContext ctx;
+
   @Inject
   private EntityServiceLookup entityServiceLookup;
 
@@ -120,6 +125,9 @@ public class EntityResourceDispatcher {
    * Handles expected exceptions by converting them to an appropriate {@link Response}
    */
   private Response handleException(RuntimeException exception) {
+    // mark the transaction as rollback-only
+    ctx.setRollbackOnly();
+
     // the "current" exception
     Throwable e = exception;
     // prevent infinite loop
