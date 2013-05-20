@@ -33,10 +33,10 @@
           <form ng-switch-when="true" ng-submit="saveEdit(entry)">
             <input type="submit" value="Save" />
             <input type="button" ng-click="cancelEdit(entry)" value="Cancel" />
-            <label>Title<br /><input type="text" ng-model="entry.title" /></label>
-            <label>URL<br /><input type="text" ng-model="entry.url" /></label>
-            <label>Tags<br /><input type="text" ng-model="data.tagsText" /></label>
-            <label>Body<br /><textarea ng-model="entry.body"></textarea></label>
+            <label>Title<br /><input type="text" size="80" ng-model="edited.title" /></label>
+            <label>URL<br /><input type="text" size="80" ng-model="edited.url" /></label>
+            <label>Tags<br /><input type="text" size="80" ng-model="data.tagsText" /></label>
+            <label>Body<br /><textarea cols="80" rows="10" ng-model="edited.body"></textarea></label>
           </form>
         </div>
       </div>

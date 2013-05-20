@@ -165,13 +165,13 @@
         })()).sort();
       };
       s.editing = false;
-      s.entryBackup = {};
+      s.edited = {};
       s.data = {
         tagsText: null
       };
       s.startEdit = function(entry) {
         if (!s.editing) {
-          angular.copy(entry, s.entryBackup);
+          angular.copy(entry, s.edited);
           s.data.tagsText = s.sortedTags(entry).join(' ');
           return s.editing = true;
         }
@@ -179,6 +179,7 @@
       s.saveEdit = function(entry) {
         var tag;
         if (s.editing) {
+          angular.copy(s.edited, entry);
           entry.tags = (function() {
             var _i, _len, _ref, _results;
             _ref = s.data.tagsText.split(' ');
@@ -198,7 +199,6 @@
       };
       return s.cancelEdit = function(entry) {
         if (s.editing) {
-          angular.copy(s.entryBackup, entry);
           return s.editing = false;
         }
       };

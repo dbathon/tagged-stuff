@@ -102,17 +102,19 @@ module.controller 'EntryCtrl', ['$scope', 'entryService', (s, entryService) ->
     (tag.id for tag in entry.tags).sort()
 
   s.editing = false
-  s.entryBackup = {}
+  s.edited = {}
   s.data = { tagsText: null }
 
   s.startEdit = (entry) ->
     if !s.editing
-      angular.copy entry, s.entryBackup
+      angular.copy entry, s.edited
       s.data.tagsText = s.sortedTags(entry).join ' '
       s.editing = true
 
   s.saveEdit = (entry) ->
     if s.editing
+      # apply changes
+      angular.copy s.edited, entry
       # process tags
       entry.tags = ({ id: tag.trim() } for tag in s.data.tagsText.split ' '  when tag.trim().length > 0)
       # TODO: actual save
@@ -120,8 +122,6 @@ module.controller 'EntryCtrl', ['$scope', 'entryService', (s, entryService) ->
 
   s.cancelEdit = (entry) ->
     if s.editing
-      # restore old state
-      angular.copy s.entryBackup, entry
       s.editing = false
 ]
 

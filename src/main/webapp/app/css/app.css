@@ -13,6 +13,7 @@ body,div {
 
 label {
   display: block;
+  font-weight: bold;
 }
 
 .content {
