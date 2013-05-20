@@ -13,7 +13,7 @@ body,div {
   top: 0;
   left: 0;
   right: 0;
-  height: 100px;
+  height: 99px;
   overflow: hidden;
   background-color: #f9f9f9;
   border-bottom: 1px solid #ddd;
@@ -41,6 +41,13 @@ body,div {
   overflow: auto;
 }
 
+.button-bar {
+  padding: 5px;
+  background-color: #f9f9f9;
+  border-bottom: 1px solid #ddd;
+  border-left: 1px solid #ddd;
+}
+
 .entries-container {
   position: absolute;
   top: 0;
@@ -58,7 +65,9 @@ body,div {
 
 .entries-title {
   margin: 0;
-  padding: 7px;
+  padding: 7px 5px;
+  font-size: 18px;
+  font-weight: bold;
   border-bottom: 1px solid #ddd;
 }
 

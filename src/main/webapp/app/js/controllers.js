@@ -91,6 +91,47 @@
         index = s.entries.indexOf(entry);
         return selectedIndex = index >= 0 ? index : null;
       };
+      s.down = function() {
+        if (s.entries.length > 0) {
+          if ((selectedIndex != null) && selectedIndex < s.entries.length - 1) {
+            return ++selectedIndex;
+          } else if (selectedIndex == null) {
+            return selectedIndex = 0;
+          }
+        }
+      };
+      s.up = function() {
+        if (s.entries.length > 0) {
+          if (selectedIndex > 0) {
+            return --selectedIndex;
+          } else if (selectedIndex == null) {
+            return selectedIndex = s.entries.length - 1;
+          }
+        }
+      };
+      s.newEntry = function() {
+        s.entries.unshift({
+          tags: []
+        });
+        return selectedIndex = 0;
+      };
+      s.isCurrentEntryNew = function() {
+        return selectedIndex === 0 && !s.entries[0].id;
+      };
+      s.cancelNewEntry = function() {
+        if (s.isCurrentEntryNew()) {
+          return s.entries.shift();
+        }
+      };
+      s.$watch('isCurrentEntryNew()', function(newValue, oldValue) {
+        var oldSelectedIndex;
+        if (oldValue && !newValue && !s.entries[0].id) {
+          oldSelectedIndex = selectedIndex;
+          selectedIndex = 0;
+          s.cancelNewEntry();
+          return selectedIndex = oldSelectedIndex ? oldSelectedIndex - 1 : oldSelectedIndex;
+        }
+      });
       s.joinedTags = function(entry) {
         var tag;
         return ((function() {
@@ -111,22 +152,9 @@
       s.$on('global.keypress', function(_, event) {
         switch (event.keyCode || event.charCode) {
           case 106:
-            if (s.entries.length > 0) {
-              if ((selectedIndex != null) && selectedIndex < s.entries.length - 1) {
-                return ++selectedIndex;
-              } else if (selectedIndex == null) {
-                return selectedIndex = 0;
-              }
-            }
-            break;
+            return s.down();
           case 107:
-            if (s.entries.length > 0) {
-              if (selectedIndex > 0) {
-                return --selectedIndex;
-              } else if (selectedIndex == null) {
-                return selectedIndex = s.entries.length - 1;
-              }
-            }
+            return s.up();
         }
       });
       return updateEntries();
@@ -176,6 +204,16 @@
           return s.editing = true;
         }
       };
+      s.isEditing = function(entry) {
+        if (s.editing) {
+          return true;
+        } else {
+          if (!entry.id) {
+            s.startEdit(entry);
+          }
+          return s.editing;
+        }
+      };
       s.saveEdit = function(entry) {
         var tag;
         if (s.editing) {
@@ -199,7 +237,8 @@
       };
       return s.cancelEdit = function(entry) {
         if (s.editing) {
-          return s.editing = false;
+          s.editing = false;
+          return s.cancelNewEntry();
         }
       };
     }

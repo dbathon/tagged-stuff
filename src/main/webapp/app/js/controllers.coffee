@@ -64,6 +64,41 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
     index = s.entries.indexOf(entry)
     selectedIndex = if index >= 0 then index else null
 
+  s.down = ->
+    if s.entries.length > 0
+      if selectedIndex? && selectedIndex < s.entries.length - 1
+        ++selectedIndex
+      else if !selectedIndex?
+        selectedIndex = 0
+
+  s.up = ->
+    if s.entries.length > 0
+      if selectedIndex > 0
+        --selectedIndex
+      else if !selectedIndex?
+        selectedIndex = s.entries.length - 1
+
+  s.newEntry = ->
+    s.entries.unshift { tags: [] }
+    selectedIndex = 0
+
+  s.isCurrentEntryNew = ->
+    selectedIndex == 0 && !s.entries[0].id
+
+  s.cancelNewEntry = ->
+    if s.isCurrentEntryNew()
+      s.entries.shift()
+
+  s.$watch 'isCurrentEntryNew()', (newValue, oldValue) ->
+    # cancel new entry when the selection changes
+    if oldValue && !newValue && !s.entries[0].id
+      oldSelectedIndex = selectedIndex
+      # temporarily select 0 again for cancel
+      selectedIndex = 0
+      s.cancelNewEntry()
+      # restore and "fix" selectedIndex
+      selectedIndex = if oldSelectedIndex then oldSelectedIndex - 1 else oldSelectedIndex
+
   s.joinedTags = (entry) ->
     (tag.id for tag in entry.tags).sort().join ' '
 
@@ -73,20 +108,10 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
 
   s.$on 'global.keypress', (_, event) ->
     switch event.keyCode || event.charCode
-      when 106
-        # j -> down
-        if s.entries.length > 0
-          if selectedIndex? && selectedIndex < s.entries.length - 1
-            ++selectedIndex
-          else if !selectedIndex?
-            selectedIndex = 0
-      when 107
-        # k -> up
-        if s.entries.length > 0
-          if selectedIndex > 0
-            --selectedIndex
-          else if !selectedIndex?
-            selectedIndex = s.entries.length - 1
+      when 106 # j
+        s.down()
+      when 107 # k
+        s.up()
 
   updateEntries()
 ]
@@ -111,6 +136,15 @@ module.controller 'EntryCtrl', ['$scope', 'entryService', (s, entryService) ->
       s.data.tagsText = s.sortedTags(entry).join ' '
       s.editing = true
 
+  s.isEditing = (entry) ->
+    if s.editing
+      true
+    else
+      # automatically start editing if it is a new entry
+      if !entry.id
+        s.startEdit(entry)
+      s.editing
+
   s.saveEdit = (entry) ->
     if s.editing
       # apply changes
@@ -123,5 +157,7 @@ module.controller 'EntryCtrl', ['$scope', 'entryService', (s, entryService) ->
   s.cancelEdit = (entry) ->
     if s.editing
       s.editing = false
+      # see EntriesCtrl...
+      s.cancelNewEntry()
 ]
 

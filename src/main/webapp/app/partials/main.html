@@ -1,6 +1,6 @@
 <div class="sidebar" ng-controller="TagsCtrl">
   <div class="content">
-    <p>Tags</p>
+    <h3>Tags</h3>
     <ul>
       <li ng-repeat="tag in tags">
         <a href="" ng-click="searchForTag(tag)">{{tag.id}}</a>
@@ -10,42 +10,49 @@
 </div>
 
 <div class="entries-container" ng-controller="EntriesCtrl">
-  <h2 class="entries-title">{{entriesTitle()}}</h2>
+  <div class="button-bar">
+    <button class="btn" ng-click="newEntry()">
+      <i class="icon-plus"></i> New
+    </button>
+  </div>
+  <div class="entries-title">{{entriesTitle()}}</div>
   <div ng-repeat="entry in entries">
     <div class="entry-header-{{isExpanded(entry)}}" ng-click="select(entry)">
-      <span class="entry-header-text">{{entry.title}}</span>
+      <span class="entry-header-text">{{entry.id && entry.title || 'New Entry'}}</span>
       -
       <span class="entry-header-tags">{{joinedTags(entry)}}</span>
     </div>
     <div content-if="isExpanded(entry)">
-      <div class="entry-container" ng-controller="EntryCtrl">
-        <div class="entry-title"><a ng-href="{{entry.url}}" target="_blank">{{entry.title}}</a></div>
-        <div class="entry-url"><a ng-href="{{entry.url}}" target="_blank">{{entry.url}}</a></div>
-        <div class="entry-body-container">
-          <div ng-repeat="line in bodyLines(entry)">{{line}}</div>
+      <div ng-controller="EntryCtrl">
+        <div class="entry-container" ng-show="!isCurrentEntryNew()">
+          <div class="entry-title"><a ng-href="{{entry.url}}" target="_blank">{{entry.title}}</a></div>
+          <div class="entry-url"><a ng-href="{{entry.url}}" target="_blank">{{entry.url}}</a></div>
+          <div class="entry-body-container">
+            <div ng-repeat="line in bodyLines(entry)">{{line}}</div>
+          </div>
+          <ul class="entry-tag-list">
+            <li ng-repeat="tag in sortedTags(entry)">{{tag}}</li>
+          </ul>
         </div>
-        <ul class="entry-tag-list">
-          <li ng-repeat="tag in sortedTags(entry)">{{tag}}</li>
-        </ul>
-      </div>
-      <div class="entry-edit-container" ng-controller="EntryCtrl">
-        <div ng-switch="editing">
-          <button ng-switch-when="false" class="btn btn-small" ng-click="startEdit(entry)">
-            <i class="icon-pencil"></i> Edit
-          </button>
-          
-          <form ng-switch-when="true" ng-submit="saveEdit(entry)">
-            <button class="btn btn-small btn-primary" type="submit">
-              <i class="icon-ok icon-white"></i> Save
+        <div class="entry-edit-container">
+          <div ng-switch="isEditing(entry)">
+            <button ng-switch-when="false" class="btn btn-small" ng-click="startEdit(entry)">
+              <i class="icon-pencil"></i> Edit
             </button>
-            <button class="btn btn-small" ng-click="cancelEdit(entry)">
-              <i class="icon-trash"></i> Cancel
-            </button>
-            <label>Title<br /><input class="input-xxlarge" type="text" ng-model="edited.title" /></label>
-            <label>URL<br /><input class="input-xxlarge"type="text" ng-model="edited.url" /></label>
-            <label>Tags<br /><input class="input-xxlarge"type="text" ng-model="data.tagsText" /></label>
-            <label>Body<br /><textarea class="input-xxlarge" rows="10" ng-model="edited.body"></textarea></label>
-          </form>
+            
+            <form ng-switch-when="true" ng-submit="saveEdit(entry)">
+              <button class="btn btn-small btn-primary" type="submit">
+                <i class="icon-ok icon-white"></i> Save
+              </button>
+              <button class="btn btn-small" ng-click="cancelEdit(entry)">
+                <i class="icon-trash"></i> Cancel
+              </button>
+              <label>Title<br /><input class="input-xxlarge" type="text" ng-model="edited.title" /></label>
+              <label>URL<br /><input class="input-xxlarge"type="text" ng-model="edited.url" /></label>
+              <label>Tags<br /><input class="input-xxlarge"type="text" ng-model="data.tagsText" /></label>
+              <label>Body<br /><textarea class="input-xxlarge" rows="10" ng-model="edited.body"></textarea></label>
+            </form>
+          </div>
         </div>
       </div>
     </div>
