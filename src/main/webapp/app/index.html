@@ -8,20 +8,29 @@
   display: none;
 }
 </style>
+<link rel="stylesheet" href="css/bootstrap.css" />
 <link rel="stylesheet" href="css/app.css" />
 </head>
 <body ng-controller="RootCtrl" on-keypress="broadcastKeypress($event)" on-keyup="broadcastKeyup($event)">
   <div class="header">
-    <h1 class="title">Tagged Stuff</h1>
     <div ng-cloak class="content">
-      <ul class="menu">
-        <li><a href="#/">Main</a></li>
-        <li><a href="#/view2">View 2</a></li>
-      </ul>
-      <form ng-submit="search()" ng-controller="SearchCtrl" style="display: inline;">
-        <input type="text" ng-model="data.searchString" />
-        <input type="submit" value="Search" />
-        <input type="button" ng-click="searchAll()" value="All" />
+      <div class="navbar">
+        <div class="navbar-inner">
+          <a class="brand" href="#">Tagged Stuff</a>
+          <ul class="nav">
+            <li class="active"><a href="#/">Main</a></li>
+            <li><a href="#/view2">View 2</a></li>
+          </ul>
+        </div>
+      </div>
+      <form ng-submit="search()" ng-controller="SearchCtrl" class="form-inline">
+        <div class="input-append">
+          <input type="text" ng-model="data.searchString" />
+          <button type="submit" class="btn">
+            <i class="icon-search"></i> Search
+          </button>
+        </div>
+        <input class="btn" type="button" ng-click="searchAll()" value="All" />
       </form>
     </div>
   </div>

@@ -27,16 +27,24 @@
         <ul class="entry-tag-list">
           <li ng-repeat="tag in sortedTags(entry)">{{tag}}</li>
         </ul>
-        <hr />
+      </div>
+      <div class="entry-edit-container" ng-controller="EntryCtrl">
         <div ng-switch="editing">
-          <input ng-switch-when="false" type="button" ng-click="startEdit(entry)" value="Edit" />
+          <button ng-switch-when="false" class="btn btn-small" ng-click="startEdit(entry)">
+            <i class="icon-pencil"></i> Edit
+          </button>
+          
           <form ng-switch-when="true" ng-submit="saveEdit(entry)">
-            <input type="submit" value="Save" />
-            <input type="button" ng-click="cancelEdit(entry)" value="Cancel" />
-            <label>Title<br /><input type="text" size="80" ng-model="edited.title" /></label>
-            <label>URL<br /><input type="text" size="80" ng-model="edited.url" /></label>
-            <label>Tags<br /><input type="text" size="80" ng-model="data.tagsText" /></label>
-            <label>Body<br /><textarea cols="80" rows="10" ng-model="edited.body"></textarea></label>
+            <button class="btn btn-small btn-primary" type="submit">
+              <i class="icon-ok icon-white"></i> Save
+            </button>
+            <button class="btn btn-small" ng-click="cancelEdit(entry)">
+              <i class="icon-trash"></i> Cancel
+            </button>
+            <label>Title<br /><input class="input-xxlarge" type="text" ng-model="edited.title" /></label>
+            <label>URL<br /><input class="input-xxlarge"type="text" ng-model="edited.url" /></label>
+            <label>Tags<br /><input class="input-xxlarge"type="text" ng-model="data.tagsText" /></label>
+            <label>Body<br /><textarea class="input-xxlarge" rows="10" ng-model="edited.body"></textarea></label>
           </form>
         </div>
       </div>
