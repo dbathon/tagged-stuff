@@ -64,6 +64,12 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
   s.isSelected = (entry) ->
     entry == s.entries[selectedIndex]
 
+  s.getSelectedEntry = ->
+    if selectedIndex?
+      s.entries[selectedIndex]
+    else
+      null
+
   s.isExpanded = (entry) ->
     s.isSelected entry
 
@@ -122,8 +128,13 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
     switch event.keyCode || event.charCode
       when 106 # j
         s.down()
+        event.preventDefault()
       when 107 # k
         s.up()
+        event.preventDefault()
+      when 110 # n
+        s.newEntry()
+        event.preventDefault()
 
   updateEntries()
 ]
@@ -179,5 +190,21 @@ module.controller 'EntryCtrl', ['$scope', 'entryService', '$window', '$rootScope
       s.editing = false
       # see EntriesCtrl...
       s.cancelNewEntry()
+
+  s.$on 'global.keypress', (_, event) ->
+    switch event.keyCode || event.charCode
+      when 101 # e
+        entry = s.getSelectedEntry()
+        if entry
+          s.startEdit entry
+          event.preventDefault()
+
+  s.formKeydown = (event) ->
+    switch event.keyCode
+      when 27 # ESC
+        entry = s.getSelectedEntry()
+        if entry
+          s.cancelEdit entry
+          event.preventDefault()
 ]
 

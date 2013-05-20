@@ -40,7 +40,7 @@
               <i class="icon-pencil"></i> Edit
             </button>
             
-            <form ng-switch-when="true" ng-submit="saveEdit(entry)">
+            <form ng-switch-when="true" ng-submit="saveEdit(entry)" on-keydown="formKeydown($event)">
               <button class="btn btn-small btn-primary" type="submit">
                 <i class="icon-ok icon-white"></i> Save
               </button>

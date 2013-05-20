@@ -88,6 +88,13 @@
       s.isSelected = function(entry) {
         return entry === s.entries[selectedIndex];
       };
+      s.getSelectedEntry = function() {
+        if (selectedIndex != null) {
+          return s.entries[selectedIndex];
+        } else {
+          return null;
+        }
+      };
       s.isExpanded = function(entry) {
         return s.isSelected(entry);
       };
@@ -163,9 +170,14 @@
       s.$on('global.keypress', function(_, event) {
         switch (event.keyCode || event.charCode) {
           case 106:
-            return s.down();
+            s.down();
+            return event.preventDefault();
           case 107:
-            return s.up();
+            s.up();
+            return event.preventDefault();
+          case 110:
+            s.newEntry();
+            return event.preventDefault();
         }
       });
       return updateEntries();
@@ -255,10 +267,32 @@
           });
         }
       };
-      return s.cancelEdit = function(entry) {
+      s.cancelEdit = function(entry) {
         if (s.editing) {
           s.editing = false;
           return s.cancelNewEntry();
+        }
+      };
+      s.$on('global.keypress', function(_, event) {
+        var entry;
+        switch (event.keyCode || event.charCode) {
+          case 101:
+            entry = s.getSelectedEntry();
+            if (entry) {
+              s.startEdit(entry);
+              return event.preventDefault();
+            }
+        }
+      });
+      return s.formKeydown = function(event) {
+        var entry;
+        switch (event.keyCode) {
+          case 27:
+            entry = s.getSelectedEntry();
+            if (entry) {
+              s.cancelEdit(entry);
+              return event.preventDefault();
+            }
         }
       };
     }
