@@ -2,10 +2,21 @@
 module = angular.module('taggedStuff.directives', [])
 
 module.directive 'appVersion', ['version', (version) ->
-
   (scope, elm, attrs) -> elm.text(version);
-
 ]
+
+
+module.directive 'navItem', ->
+  restrict: 'E'
+  transclude: true
+  scope:
+    location: '@location'
+  controller: ['$scope', '$location', (s, $location) ->
+    s.isActive = ->
+      s.location == $location.path()
+  ]
+  template: '<li ng-class="{active: isActive()}"><a ng-href="#{{location}}" ng-transclude></a></li>'
+  replace: true
 
 
 module.directive 'contentIf', ->
@@ -30,6 +41,7 @@ module.directive 'logDigest', ->
     name = attrs.logDigest || '???'
     scope.$watch ->
       console.log 'digest: ' + name
+
 
 for type in ['press', 'down', 'up']
   do (type) ->

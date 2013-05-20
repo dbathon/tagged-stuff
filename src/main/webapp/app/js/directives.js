@@ -12,6 +12,25 @@
     }
   ]);
 
+  module.directive('navItem', function() {
+    return {
+      restrict: 'E',
+      transclude: true,
+      scope: {
+        location: '@location'
+      },
+      controller: [
+        '$scope', '$location', function(s, $location) {
+          return s.isActive = function() {
+            return s.location === $location.path();
+          };
+        }
+      ],
+      template: '<li ng-class="{active: isActive()}"><a ng-href="#{{location}}" ng-transclude></a></li>',
+      replace: true
+    };
+  });
+
   module.directive('contentIf', function() {
     return {
       transclude: true,
