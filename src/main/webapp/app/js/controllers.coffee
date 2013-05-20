@@ -62,7 +62,11 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
 
   s.select = (entry) ->
     index = s.entries.indexOf(entry)
-    selectedIndex = if index >= 0 then index else null
+    if selectedIndex == index && !s.isCurrentEntryNew()
+      # unselect
+      selectedIndex = null
+    else
+      selectedIndex = if index >= 0 then index else null
 
   s.down = ->
     if s.entries.length > 0

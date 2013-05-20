@@ -89,7 +89,11 @@
       s.select = function(entry) {
         var index;
         index = s.entries.indexOf(entry);
-        return selectedIndex = index >= 0 ? index : null;
+        if (selectedIndex === index && !s.isCurrentEntryNew()) {
+          return selectedIndex = null;
+        } else {
+          return selectedIndex = index >= 0 ? index : null;
+        }
       };
       s.down = function() {
         if (s.entries.length > 0) {
