@@ -56,6 +56,9 @@
       s.searchForTag = function(tag) {
         return searchService.search('+' + tag.id);
       };
+      s.$on('entry.saved', function() {
+        return updateTags();
+      });
       return updateTags();
     }
   ]);
@@ -168,7 +171,7 @@
   ]);
 
   module.controller('EntryCtrl', [
-    '$scope', 'entryService', function(s, entryService) {
+    '$scope', 'entryService', '$window', '$rootScope', function(s, entryService, $window, $rootScope) {
       s.bodyLines = function(entry) {
         var line, _i, _len, _ref, _results;
         if (entry.body) {
@@ -221,8 +224,9 @@
         }
       };
       s.saveEdit = function(entry) {
-        var tag;
+        var entryBackup, promise, tag;
         if (s.editing) {
+          entryBackup = angular.copy(entry);
           angular.copy(s.edited, entry);
           entry.tags = (function() {
             var _i, _len, _ref, _results;
@@ -238,7 +242,15 @@
             }
             return _results;
           })();
-          return s.editing = false;
+          promise = entryService.save(entry);
+          promise.success(function() {
+            s.editing = false;
+            return $rootScope.$broadcast('entry.saved');
+          });
+          return promise.error(function(data, status) {
+            angular.copy(entryBackup, entry);
+            return $window.alert('Save failed: ' + (angular.isObject(data) && data.error ? data.error : 'Status: ' + status));
+          });
         }
       };
       return s.cancelEdit = function(entry) {

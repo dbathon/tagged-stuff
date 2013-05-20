@@ -37,6 +37,9 @@ module.controller 'TagsCtrl', ['$scope', 'tagService', 'searchService', (s, tagS
   s.searchForTag = (tag) ->
     searchService.search '+' + tag.id
 
+  s.$on 'entry.saved', ->
+    updateTags()
+
   updateTags()
 ]
 
@@ -124,7 +127,7 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
   updateEntries()
 ]
 
-module.controller 'EntryCtrl', ['$scope', 'entryService', (s, entryService) ->
+module.controller 'EntryCtrl', ['$scope', 'entryService', '$window', '$rootScope', (s, entryService, $window, $rootScope) ->
   s.bodyLines = (entry) ->
     if entry.body
       line.trim() for line in entry.body.split '\n'  when line.trim().length > 0
@@ -155,12 +158,20 @@ module.controller 'EntryCtrl', ['$scope', 'entryService', (s, entryService) ->
 
   s.saveEdit = (entry) ->
     if s.editing
+      # make a backup in case the save fails
+      entryBackup = angular.copy entry
       # apply changes
       angular.copy s.edited, entry
       # process tags
       entry.tags = ({ id: tag.trim() } for tag in s.data.tagsText.split ' '  when tag.trim().length > 0)
-      # TODO: actual save
-      s.editing = false
+
+      promise = entryService.save entry
+      promise.success ->
+        s.editing = false
+        $rootScope.$broadcast 'entry.saved'
+      promise.error (data, status) ->
+        angular.copy entryBackup, entry
+        $window.alert 'Save failed: ' + (if angular.isObject(data) && data.error then data.error else 'Status: ' + status)
 
   s.cancelEdit = (entry) ->
     if s.editing

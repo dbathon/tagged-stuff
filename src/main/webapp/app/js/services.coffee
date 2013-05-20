@@ -16,6 +16,9 @@ module.factory 'entityServiceFactory', ['$http', 'baseRestPath', ($http, baseRes
   (entityName) ->
     basePath = baseRestPath + 'entity/' + entityName + '/'
 
+    pathWithId = (id) ->
+      basePath + id
+
     errorLogger = (data, status, headers, config) ->
       # TODO: make this better and configurable
       l [data, status, headers, config]
@@ -29,8 +32,27 @@ module.factory 'entityServiceFactory', ['$http', 'baseRestPath', ($http, baseRes
             targetArray.push data.result...
         promise.error errorLogger
         promise
+
       save: (entity) ->
-        entity
+        request =
+          data: entity
+          headers:
+            'Content-Type': 'application/json'
+
+        if entity.id
+          # existing -> put an update
+          request.method = 'PUT'
+          request.url = pathWithId(entity.id)
+        else
+          # new entity -> post
+          request.method = 'POST'
+          request.url = basePath
+
+        promise = $http request
+        promise.success (data) ->
+          angular.copy data, entity
+        promise.error errorLogger
+        promise
     }
 ]
 

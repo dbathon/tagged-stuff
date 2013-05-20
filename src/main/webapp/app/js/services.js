@@ -21,8 +21,11 @@
   module.factory('entityServiceFactory', [
     '$http', 'baseRestPath', function($http, baseRestPath) {
       return function(entityName) {
-        var basePath, errorLogger;
+        var basePath, errorLogger, pathWithId;
         basePath = baseRestPath + 'entity/' + entityName + '/';
+        pathWithId = function(id) {
+          return basePath + id;
+        };
         errorLogger = function(data, status, headers, config) {
           return l([data, status, headers, config]);
         };
@@ -44,7 +47,26 @@
             return promise;
           },
           save: function(entity) {
-            return entity;
+            var promise, request;
+            request = {
+              data: entity,
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            };
+            if (entity.id) {
+              request.method = 'PUT';
+              request.url = pathWithId(entity.id);
+            } else {
+              request.method = 'POST';
+              request.url = basePath;
+            }
+            promise = $http(request);
+            promise.success(function(data) {
+              return angular.copy(data, entity);
+            });
+            promise.error(errorLogger);
+            return promise;
           }
         };
       };
