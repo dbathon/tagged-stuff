@@ -119,10 +119,12 @@
         }
       };
       s.newEntry = function() {
-        s.entries.unshift({
-          tags: []
-        });
-        return selectedIndex = 0;
+        if (!s.isCurrentEntryNew()) {
+          s.entries.unshift({
+            tags: []
+          });
+          return selectedIndex = 0;
+        }
       };
       s.isCurrentEntryNew = function() {
         return selectedIndex === 0 && !s.entries[0].id;

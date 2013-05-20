@@ -90,8 +90,9 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
         selectedIndex = s.entries.length - 1
 
   s.newEntry = ->
-    s.entries.unshift { tags: [] }
-    selectedIndex = 0
+    if !s.isCurrentEntryNew()
+      s.entries.unshift { tags: [] }
+      selectedIndex = 0
 
   s.isCurrentEntryNew = ->
     selectedIndex == 0 && !s.entries[0].id
