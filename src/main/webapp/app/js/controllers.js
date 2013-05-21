@@ -25,7 +25,7 @@
   ]);
 
   module.controller('SearchCtrl', [
-    '$scope', 'searchService', function(s, searchService) {
+    '$scope', 'searchService', 'focus', function(s, searchService, focus) {
       s.data = {
         searchString: ''
       };
@@ -35,8 +35,18 @@
       s.searchAll = function() {
         return searchService.search(null);
       };
-      return searchService.addListener(s, function(searchString) {
+      searchService.addListener(s, function(searchString) {
         return s.data.searchString = searchString;
+      });
+      return s.$on('global.keypress', function(_, event) {
+        switch (event.keyCode || event.charCode) {
+          case 115:
+            focus.requestFocus('searchField');
+            return event.preventDefault();
+          case 97:
+            s.searchAll();
+            return event.preventDefault();
+        }
       });
     }
   ]);
@@ -185,7 +195,7 @@
   ]);
 
   module.controller('EntryCtrl', [
-    '$scope', 'entryService', '$window', '$rootScope', function(s, entryService, $window, $rootScope) {
+    '$scope', 'entryService', '$window', '$rootScope', 'focus', function(s, entryService, $window, $rootScope, focus) {
       s.bodyLines = function(entry) {
         var line, _i, _len, _ref, _results;
         if (entry.body) {
@@ -224,7 +234,8 @@
         if (!s.editing) {
           angular.copy(entry, s.edited);
           s.data.tagsText = s.sortedTags(entry).join(' ');
-          return s.editing = true;
+          s.editing = true;
+          return focus.requestFocus('entry.title');
         }
       };
       s.isEditing = function(entry) {
@@ -275,13 +286,22 @@
       };
       s.$on('global.keypress', function(_, event) {
         var entry;
-        switch (event.keyCode || event.charCode) {
-          case 101:
-            entry = s.getSelectedEntry();
-            if (entry) {
+        entry = s.getSelectedEntry();
+        if (entry) {
+          switch (event.keyCode || event.charCode) {
+            case 101:
               s.startEdit(entry);
               return event.preventDefault();
-            }
+            case 116:
+              s.startEdit(entry);
+              focus.requestFocus('entry.tags');
+              return event.preventDefault();
+            case 118:
+              if (entry.url) {
+                $window.open(entry.url, '_blank');
+                return event.preventDefault();
+              }
+          }
         }
       });
       return s.formKeydown = function(event) {

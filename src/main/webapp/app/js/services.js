@@ -100,4 +100,17 @@
     }
   ]);
 
+  module.factory('focus', function() {
+    var focus;
+    return focus = {
+      focusId: null,
+      requestFocus: function(id) {
+        return focus.focusId = id;
+      },
+      reset: function() {
+        return focus.focusId = null;
+      }
+    };
+  });
+
 }).call(this);

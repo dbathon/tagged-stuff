@@ -14,7 +14,7 @@ module.controller 'RootCtrl', ['$scope', '$rootScope', (s, $rootScope) ->
       $rootScope.$broadcast('global.keyup', event)
 ]
 
-module.controller 'SearchCtrl', ['$scope', 'searchService', (s, searchService) ->
+module.controller 'SearchCtrl', ['$scope', 'searchService', 'focus', (s, searchService, focus) ->
   s.data =
     searchString: ''
 
@@ -23,6 +23,15 @@ module.controller 'SearchCtrl', ['$scope', 'searchService', (s, searchService) -
 
   searchService.addListener s, (searchString) ->
     s.data.searchString = searchString
+
+  s.$on 'global.keypress', (_, event) ->
+    switch event.keyCode || event.charCode
+      when 115 # s -> focus search field
+        focus.requestFocus 'searchField'
+        event.preventDefault()
+      when 97 # a -> search all
+        s.searchAll()
+        event.preventDefault()
 ]
 
 module.controller 'TagsCtrl', ['$scope', 'tagService', 'searchService', (s, tagService, searchService) ->
@@ -126,20 +135,20 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
 
   s.$on 'global.keypress', (_, event) ->
     switch event.keyCode || event.charCode
-      when 106 # j
+      when 106 # j -> down
         s.down()
         event.preventDefault()
-      when 107 # k
+      when 107 # k -> up
         s.up()
         event.preventDefault()
-      when 110 # n
+      when 110 # n -> new
         s.newEntry()
         event.preventDefault()
 
   updateEntries()
 ]
 
-module.controller 'EntryCtrl', ['$scope', 'entryService', '$window', '$rootScope', (s, entryService, $window, $rootScope) ->
+module.controller 'EntryCtrl', ['$scope', 'entryService', '$window', '$rootScope', 'focus', (s, entryService, $window, $rootScope, focus) ->
   s.bodyLines = (entry) ->
     if entry.body
       line.trim() for line in entry.body.split '\n'  when line.trim().length > 0
@@ -158,6 +167,7 @@ module.controller 'EntryCtrl', ['$scope', 'entryService', '$window', '$rootScope
       angular.copy entry, s.edited
       s.data.tagsText = s.sortedTags(entry).join ' '
       s.editing = true
+      focus.requestFocus 'entry.title'
 
   s.isEditing = (entry) ->
     if s.editing
@@ -192,16 +202,24 @@ module.controller 'EntryCtrl', ['$scope', 'entryService', '$window', '$rootScope
       s.cancelNewEntry()
 
   s.$on 'global.keypress', (_, event) ->
-    switch event.keyCode || event.charCode
-      when 101 # e
-        entry = s.getSelectedEntry()
-        if entry
+    entry = s.getSelectedEntry()
+    if entry
+      switch event.keyCode || event.charCode
+        when 101 # e -> edit
           s.startEdit entry
           event.preventDefault()
+        when 116 # t -> edit with tags focused
+          s.startEdit entry
+          focus.requestFocus 'entry.tags'
+          event.preventDefault()
+        when 118 # v -> open url
+          if entry.url
+            $window.open entry.url, '_blank'
+            event.preventDefault()
 
   s.formKeydown = (event) ->
     switch event.keyCode
-      when 27 # ESC
+      when 27 # ESC -> cancel edit
         entry = s.getSelectedEntry()
         if entry
           s.cancelEdit entry

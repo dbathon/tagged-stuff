@@ -25,7 +25,7 @@
       </div>
       <form ng-submit="search()" ng-controller="SearchCtrl" class="form-inline">
         <div class="input-append">
-          <input type="text" ng-model="data.searchString" />
+          <input type="text" ng-model="data.searchString" focus-id="searchField" />
           <button type="submit" class="btn">
             <i class="icon-search"></i> Search
           </button>

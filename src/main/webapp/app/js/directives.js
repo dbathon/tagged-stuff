@@ -2,7 +2,7 @@
 (function() {
   var module, type, _fn, _i, _len, _ref;
 
-  module = angular.module('taggedStuff.directives', []);
+  module = angular.module('taggedStuff.directives', ['taggedStuff.services']);
 
   module.directive('appVersion', [
     'version', function(version) {
@@ -89,5 +89,25 @@
     type = _ref[_i];
     _fn(type);
   }
+
+  module.directive('focusId', [
+    'focus', function(focus) {
+      return function(scope, element, attrs) {
+        var focusId;
+        focusId = attrs.focusId;
+        if (focusId) {
+          return scope.$watch((function() {
+            return focus.focusId === focusId;
+          }), function(newValue) {
+            if (newValue) {
+              element[0].focus();
+              element[0].select();
+              return focus.reset();
+            }
+          });
+        }
+      };
+    }
+  ]);
 
 }).call(this);

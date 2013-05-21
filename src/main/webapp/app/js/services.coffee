@@ -72,3 +72,13 @@ module.factory 'searchService', ['$rootScope', ($rootScope) ->
     scope.$on 'searchService.executeSearch', (event, searchString) ->
       callback searchString
 ]
+
+module.factory 'focus', ->
+  focus =
+    focusId: null
+
+    requestFocus: (id) ->
+      focus.focusId = id
+
+    reset: ->
+      focus.focusId = null

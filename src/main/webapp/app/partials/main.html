@@ -47,9 +47,9 @@
               <button class="btn btn-small" ng-click="cancelEdit(entry)">
                 <i class="icon-trash"></i> Cancel
               </button>
-              <label>Title<br /><input class="input-xxlarge" type="text" ng-model="edited.title" /></label>
+              <label>Title<br /><input class="input-xxlarge" type="text" ng-model="edited.title" focus-id="entry.title" /></label>
               <label>URL<br /><input class="input-xxlarge"type="text" ng-model="edited.url" /></label>
-              <label>Tags<br /><input class="input-xxlarge"type="text" ng-model="data.tagsText" /></label>
+              <label>Tags<br /><input class="input-xxlarge"type="text" ng-model="data.tagsText" focus-id="entry.tags" /></label>
               <label>Body<br /><textarea class="input-xxlarge" rows="10" ng-model="edited.body"></textarea></label>
             </form>
           </div>

@@ -1,5 +1,5 @@
 
-module = angular.module('taggedStuff.directives', [])
+module = angular.module 'taggedStuff.directives', ['taggedStuff.services']
 
 module.directive 'appVersion', ['version', (version) ->
   (scope, elm, attrs) -> elm.text(version);
@@ -52,3 +52,15 @@ for type in ['press', 'down', 'up']
           scope.$apply ->
             fn scope, { $event: event }
     ]
+
+
+module.directive 'focusId', ['focus', (focus) ->
+  (scope, element, attrs) ->
+    focusId = attrs.focusId
+    if focusId
+      scope.$watch (-> focus.focusId == focusId), (newValue) ->
+        if newValue
+          element[0].focus()
+          element[0].select()
+          focus.reset()
+]
