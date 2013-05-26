@@ -2,7 +2,7 @@
 (function() {
   var module, type, _fn, _i, _len, _ref;
 
-  module = angular.module('taggedStuff.directives', ['taggedStuff.services']);
+  module = angular.module('taggedStuff.directives', ['taggedStuff.services', 'ngSanitize']);
 
   module.directive('appVersion', [
     'version', function(version) {
@@ -56,6 +56,20 @@
       }
     };
   });
+
+  module.directive('bindHtml', [
+    '$sanitize', function($sanitize) {
+      var A_HREF_REGEXP;
+      A_HREF_REGEXP = /<a href/g;
+      return function(scope, element, attrs) {
+        return scope.$watch(attrs.bindHtml, function(value) {
+          value = $sanitize(value);
+          value = value.replace(A_HREF_REGEXP, '<a target="_blank" href');
+          return element.html(value || '');
+        });
+      };
+    }
+  ]);
 
   module.directive('logDigest', function() {
     return function(scope, element, attrs) {

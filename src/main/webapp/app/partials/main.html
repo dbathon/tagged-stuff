@@ -27,8 +27,11 @@
         <div class="entry-container" ng-show="!isCurrentEntryNew()">
           <div class="entry-title"><a ng-href="{{entry.url}}" target="_blank">{{entry.title}}</a></div>
           <div class="entry-url"><a ng-href="{{entry.url}}" target="_blank">{{entry.url}}</a></div>
-          <div class="entry-body-container">
-            <div ng-repeat="line in bodyLines(entry)">{{line}}</div>
+          <div ng-switch="entry.html" class="entry-body-container">
+            <div ng-switch-when="false">
+              <div ng-repeat="line in bodyLines(entry)" bind-html="line | linky"></div>
+            </div>
+            <div ng-switch-when="true" bind-html="entry.body"></div>
           </div>
           <ul class="entry-tag-list">
             <li ng-repeat="tag in sortedTags(entry)">{{tag}}</li>
@@ -51,6 +54,7 @@
               <label>URL<br /><input class="input-xxlarge"type="text" ng-model="edited.url" /></label>
               <label>Tags<br /><input class="input-xxlarge"type="text" ng-model="data.tagsText" focus-id="entry.tags" /></label>
               <label>Body<br /><textarea class="input-xxlarge" rows="10" ng-model="edited.body"></textarea></label>
+              <label>HTML<br /><input type="checkbox" ng-model="edited.html"></input></label>
             </form>
           </div>
         </div>

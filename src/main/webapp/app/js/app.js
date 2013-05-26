@@ -2,7 +2,7 @@
 (function() {
   var app;
 
-  app = angular.module('taggedStuff', ['taggedStuff.filters', 'taggedStuff.services', 'taggedStuff.directives', 'taggedStuff.controllers']);
+  app = angular.module('taggedStuff', ['taggedStuff.filters', 'taggedStuff.services', 'taggedStuff.directives', 'taggedStuff.controllers', 'ngSanitize']);
 
   app.config([
     '$routeProvider', function($routeProvider) {

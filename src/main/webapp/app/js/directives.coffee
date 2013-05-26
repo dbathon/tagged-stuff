@@ -1,5 +1,5 @@
 
-module = angular.module 'taggedStuff.directives', ['taggedStuff.services']
+module = angular.module 'taggedStuff.directives', ['taggedStuff.services', 'ngSanitize']
 
 module.directive 'appVersion', ['version', (version) ->
   (scope, elm, attrs) -> elm.text(version);
@@ -34,6 +34,17 @@ module.directive 'contentIf', ->
           transclude contentScope, (elem) ->
             content = elem
             element.append(content)
+
+
+module.directive 'bindHtml', ['$sanitize', ($sanitize) ->
+  A_HREF_REGEXP = /<a href/g
+  (scope, element, attrs) ->
+    scope.$watch attrs.bindHtml, (value) ->
+      value = $sanitize value
+      # hack to use target="_blank" for all links...
+      value = value.replace A_HREF_REGEXP, '<a target="_blank" href'
+      element.html(value || '')
+]
 
 
 module.directive 'logDigest', ->

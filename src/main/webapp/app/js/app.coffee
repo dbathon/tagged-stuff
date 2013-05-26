@@ -1,7 +1,8 @@
 
 # Declare app level module which depends on filters, and services
-app = angular.module 'taggedStuff',
-  ['taggedStuff.filters', 'taggedStuff.services', 'taggedStuff.directives', 'taggedStuff.controllers']
+app = angular.module 'taggedStuff', ['taggedStuff.filters', 'taggedStuff.services',
+  'taggedStuff.directives', 'taggedStuff.controllers', 'ngSanitize'
+]
 
 app.config ['$routeProvider', ($routeProvider) ->
 
