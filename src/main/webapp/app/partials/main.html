@@ -17,7 +17,7 @@
   </div>
   <div class="entries-title">{{entriesTitle()}}</div>
   <div ng-repeat="entry in entries">
-    <div class="entry-header-{{isExpanded(entry)}}" ng-click="select(entry)">
+    <div class="entry-header-{{isExpanded(entry)}}" ng-click="select(entry)" scroll-into-view="isExpanded(entry)">
       <span class="entry-header-text">{{entry.id && entry.title || 'New Entry'}}</span>
       -
       <span class="entry-header-tags">{{joinedTags(entry)}}</span>
@@ -39,7 +39,7 @@
             <button ng-switch-when="false" class="btn btn-small" ng-click="startEdit(entry)">
               <i class="icon-pencil"></i> Edit
             </button>
-            
+
             <form ng-switch-when="true" ng-submit="saveEdit(entry)" on-keydown="formKeydown($event)">
               <button class="btn btn-small btn-primary" type="submit">
                 <i class="icon-ok icon-white"></i> Save

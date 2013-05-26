@@ -54,13 +54,25 @@ for type in ['press', 'down', 'up']
     ]
 
 
-module.directive 'focusId', ['focus', (focus) ->
+module.directive 'focusId', ['focus', '$timeout', (focus, $timeout) ->
   (scope, element, attrs) ->
     focusId = attrs.focusId
     if focusId
       scope.$watch (-> focus.focusId == focusId), (newValue) ->
         if newValue
-          element[0].focus()
-          element[0].select()
-          focus.reset()
+          $timeout ->
+            element[0].focus()
+            element[0].select()
+            focus.reset()
+]
+
+
+module.directive 'scrollIntoView', ['$timeout', ($timeout) ->
+  (scope, element, attrs) ->
+    scrollIntoView = attrs.scrollIntoView
+    if scrollIntoView
+      scope.$watch scrollIntoView, (newValue, oldValue) ->
+        if newValue && !oldValue
+          $timeout ->
+            element[0].scrollIntoView(true)
 ]

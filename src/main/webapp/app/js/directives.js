@@ -91,7 +91,7 @@
   }
 
   module.directive('focusId', [
-    'focus', function(focus) {
+    'focus', '$timeout', function(focus, $timeout) {
       return function(scope, element, attrs) {
         var focusId;
         focusId = attrs.focusId;
@@ -100,9 +100,29 @@
             return focus.focusId === focusId;
           }), function(newValue) {
             if (newValue) {
-              element[0].focus();
-              element[0].select();
-              return focus.reset();
+              return $timeout(function() {
+                element[0].focus();
+                element[0].select();
+                return focus.reset();
+              });
+            }
+          });
+        }
+      };
+    }
+  ]);
+
+  module.directive('scrollIntoView', [
+    '$timeout', function($timeout) {
+      return function(scope, element, attrs) {
+        var scrollIntoView;
+        scrollIntoView = attrs.scrollIntoView;
+        if (scrollIntoView) {
+          return scope.$watch(scrollIntoView, function(newValue, oldValue) {
+            if (newValue && !oldValue) {
+              return $timeout(function() {
+                return element[0].scrollIntoView(true);
+              });
             }
           });
         }
