@@ -22,7 +22,10 @@ public class Entry extends AbstractEntityWithUuid {
 
   private String reference;
 
+  private long entryTs = Long.MIN_VALUE;
+
   private String body;
+  private boolean html;
 
   private Set<Tag> tags = new HashSet<>();
 
@@ -54,6 +57,19 @@ public class Entry extends AbstractEntityWithUuid {
     this.reference = reference;
   }
 
+  @Column(name = "ENTRY_TS", nullable = false)
+  public long getEntryTs() {
+    if (entryTs == Long.MIN_VALUE) {
+      // default to current date
+      entryTs = System.currentTimeMillis();
+    }
+    return entryTs;
+  }
+
+  public void setEntryTs(long entryTs) {
+    this.entryTs = entryTs;
+  }
+
   @Column(name = "BODY_")
   @Lob
   public String getBody() {
@@ -62,6 +78,15 @@ public class Entry extends AbstractEntityWithUuid {
 
   public void setBody(String body) {
     this.body = body;
+  }
+
+  @Column(name = "HTML_", nullable = false)
+  public boolean isHtml() {
+    return html;
+  }
+
+  public void setHtml(boolean html) {
+    this.html = html;
   }
 
   @ManyToMany(fetch = FetchType.LAZY)
