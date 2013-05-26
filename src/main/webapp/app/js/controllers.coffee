@@ -62,7 +62,7 @@ module.controller 'EntriesCtrl', ['$scope', 'entryService', 'searchService', (s,
 
   updateEntries = ->
     selectedIndex = null
-    entryService.query { orderBy: '-createdTs', query: s.data.searchString }, s.entries
+    entryService.query { orderBy: '-entryTs', query: s.data.searchString }, s.entries
 
   s.entriesTitle = ->
     if s.data.searchString

@@ -84,7 +84,7 @@
       updateEntries = function() {
         selectedIndex = null;
         return entryService.query({
-          orderBy: '-createdTs',
+          orderBy: '-entryTs',
           query: s.data.searchString
         }, s.entries);
       };
