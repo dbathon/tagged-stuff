@@ -12,4 +12,14 @@
     }
   ]);
 
+  module.filter('timestamp', [
+    '$filter', function($filter) {
+      var dateFilter;
+      dateFilter = $filter('date');
+      return function(ts) {
+        return dateFilter(ts, 'yyyy-MM-dd HH:mm:ss');
+      };
+    }
+  ]);
+
 }).call(this);

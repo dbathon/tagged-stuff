@@ -96,7 +96,11 @@ body,div {
 }
 
 .entry-header-tags {
-  color: #333;
+  color: #666;
+}
+
+.entry-header-timestamp {
+  float: right;
 }
 
 .entry-container {

@@ -18,6 +18,7 @@
   <div class="entries-title">{{entriesTitle()}}</div>
   <div ng-repeat="entry in entries">
     <div class="entry-header-{{isExpanded(entry)}}" ng-click="select(entry)" scroll-into-view="isExpanded(entry)">
+      <div class="entry-header-timestamp">{{entry.entryTs | timestamp}}</div>
       <span class="entry-header-text">{{entry.id && entry.title || 'New Entry'}}</span>
       -
       <span class="entry-header-tags">{{joinedTags(entry)}}</span>
@@ -54,7 +55,11 @@
               <label>URL<br /><input class="input-xxlarge"type="text" ng-model="edited.url" /></label>
               <label>Tags<br /><input class="input-xxlarge"type="text" ng-model="data.tagsText" focus-id="entry.tags" /></label>
               <label>Body<br /><textarea class="input-xxlarge" rows="10" ng-model="edited.body"></textarea></label>
-              <label>HTML<br /><input type="checkbox" ng-model="edited.html"></input></label>
+              <label class="checkbox"><input type="checkbox" ng-model="edited.html"></input> HTML</label>
+              <label>Timestamp ({{edited.entryTs | timestamp}}):<br />
+                <!-- TODO: date picker... -->
+                <input class="input-xxlarge"type="text" ng-model="edited.entryTs" />
+              </label>
             </form>
           </div>
         </div>
