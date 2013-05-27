@@ -60,11 +60,11 @@
   module.directive('bindHtml', [
     '$sanitize', function($sanitize) {
       var A_HREF_REGEXP;
-      A_HREF_REGEXP = /<a href/g;
+      A_HREF_REGEXP = /<a\b/g;
       return function(scope, element, attrs) {
         return scope.$watch(attrs.bindHtml, function(value) {
           value = $sanitize(value);
-          value = value.replace(A_HREF_REGEXP, '<a target="_blank" href');
+          value = value.replace(A_HREF_REGEXP, '<a target="_blank"');
           return element.html(value || '');
         });
       };

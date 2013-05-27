@@ -37,12 +37,12 @@ module.directive 'contentIf', ->
 
 
 module.directive 'bindHtml', ['$sanitize', ($sanitize) ->
-  A_HREF_REGEXP = /<a href/g
+  A_HREF_REGEXP = /<a\b/g
   (scope, element, attrs) ->
     scope.$watch attrs.bindHtml, (value) ->
       value = $sanitize value
       # hack to use target="_blank" for all links...
-      value = value.replace A_HREF_REGEXP, '<a target="_blank" href'
+      value = value.replace A_HREF_REGEXP, '<a target="_blank"'
       element.html(value || '')
 ]
 
