@@ -23,15 +23,18 @@ public class EntityServiceLookup {
   protected void initialize() {
     final Map<Class<?>, EntityService<?>> map = new HashMap<>();
 
-    for (final Bean<?> bean : beanManager.getBeans(EntityService.class)) {
-      final CreationalContext<?> creationalContext = beanManager.createCreationalContext(bean);
-      final EntityService<?> reference =
-          (EntityService<?>) beanManager.getReference(bean, EntityService.class, creationalContext);
-      final Class<?> entityClass = reference.getEntityClass();
+    for (final Bean<?> bean : beanManager.getBeans(Object.class)) {
+      if (EntityService.class.isAssignableFrom(bean.getBeanClass())) {
+        final CreationalContext<?> creationalContext = beanManager.createCreationalContext(bean);
+        final EntityService<?> reference =
+            (EntityService<?>) beanManager.getReference(bean, bean.getBeanClass(),
+                creationalContext);
+        final Class<?> entityClass = reference.getEntityClass();
 
-      if (map.put(entityClass, reference) != null) {
-        throw new IllegalStateException("duplicate EntityService found: " + entityClass + ", "
-            + reference);
+        if (map.put(entityClass, reference) != null) {
+          throw new IllegalStateException("duplicate EntityService found: " + entityClass + ", "
+              + reference);
+        }
       }
     }
 
