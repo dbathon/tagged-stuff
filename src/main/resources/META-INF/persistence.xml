@@ -4,7 +4,7 @@
   <persistence-unit name="tagged-stuff" transaction-type="JTA">
     <provider>org.hibernate.ejb.HibernatePersistence</provider>
 
-    <non-jta-data-source>java:comp/env/jdbc/tagged-stuff</non-jta-data-source>
+    <non-jta-data-source>java:jboss/datasources/TaggedStuffDS</non-jta-data-source>
 
     <shared-cache-mode>NONE</shared-cache-mode>
     <validation-mode>CALLBACK</validation-mode>
