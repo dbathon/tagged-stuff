@@ -1,0 +1,4 @@
+{
+  "typescript.preferences.quoteStyle": "double",
+  "typescript.format.semicolons": "insert"
+}
