@@ -1,2 +1,29 @@
 <h2>Entries</h2>
-<p>entries works!</p>
+<p>Database name: {{databaseInformation?.name}}</p>
+
+<hr>
+
+<div *ngFor="let entry of entries">
+  <h4>{{entry.title}}</h4>
+  <p>id: {{entry.id}}</p>
+  <p>version: {{entry.version}}</p>
+
+  <button (click)="editEntry(entry)">
+    Edit
+  </button>
+  <button (click)="deleteEntry(entry)">
+    Delete
+  </button>
+</div>
+
+<hr>
+
+<button (click)="newEntry()">
+  New entry
+</button>
+<div *ngIf="activeEntry">
+  <input type="text" [(ngModel)]="activeEntry.title">
+  <button (click)="saveEntry()">
+    Save
+  </button>
+</div>
