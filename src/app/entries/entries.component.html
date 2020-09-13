@@ -27,6 +27,6 @@
       Title
       <input type="text" formControlName="title">
     </label>
-    <button type="submit" [disabled]="!editForm.valid">Save</button>
+    <button type="submit" [disabled]="!editForm.valid || editForm.pristine">Save</button>
   </form>
 </div>

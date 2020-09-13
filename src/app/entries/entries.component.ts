@@ -13,7 +13,7 @@ import { FormBuilder, Validators } from "@angular/forms";
 export class EntriesComponent implements OnInit {
 
   editForm = this.formBuilder.group({
-    title: ["", Validators.required]
+    title: [Validators.required]
   });
 
   databaseInformation?: DatabaseInformation;
@@ -38,6 +38,7 @@ export class EntriesComponent implements OnInit {
 
   editEntry(entry: Entry) {
     this.activeEntry = entry;
+    this.editForm.reset();
     this.editForm.setValue({ title: entry.title || "" });
   }
 
