@@ -22,8 +22,11 @@
   New entry
 </button>
 <div *ngIf="activeEntry">
-  <input type="text" [(ngModel)]="activeEntry.title">
-  <button (click)="saveEntry()">
-    Save
-  </button>
+  <form [formGroup]="editForm" (ngSubmit)="saveEntry()">
+    <label>
+      Title
+      <input type="text" formControlName="title">
+    </label>
+    <button type="submit" [disabled]="!editForm.valid">Save</button>
+  </form>
 </div>

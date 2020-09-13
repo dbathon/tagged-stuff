@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { JdsClientService, DatabaseInformation } from '../shared/jds-client.service';
 import { Entry } from "../shared/entry/entry";
 import { EntryService } from "../shared/entry/entry.service";
+import { FormBuilder, Validators } from "@angular/forms";
 
 @Component({
   selector: 'app-entries',
@@ -11,13 +12,17 @@ import { EntryService } from "../shared/entry/entry.service";
 })
 export class EntriesComponent implements OnInit {
 
+  editForm = this.formBuilder.group({
+    title: ["", Validators.required]
+  });
+
   databaseInformation?: DatabaseInformation;
 
   entries: Entry[] = [];
 
   activeEntry?: Entry;
 
-  constructor(private jdsClient: JdsClientService, private entryService: EntryService) { }
+  constructor(private jdsClient: JdsClientService, private entryService: EntryService, private formBuilder: FormBuilder) { }
 
   ngOnInit(): void {
     this.jdsClient.getDatabaseInformation().subscribe(
@@ -28,15 +33,18 @@ export class EntriesComponent implements OnInit {
   }
 
   newEntry() {
-    this.activeEntry = {};
+    this.editEntry({});
   }
 
   editEntry(entry: Entry) {
     this.activeEntry = entry;
+    this.editForm.setValue({ title: entry.title || "" });
   }
 
   saveEntry() {
-    if (this.activeEntry) {
+    if (this.activeEntry && this.editForm.valid) {
+      this.activeEntry.title = this.editForm.value.title;
+
       if (this.activeEntry.id === undefined) {
         this.entries.push(this.activeEntry);
       }

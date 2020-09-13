@@ -3,14 +3,14 @@ import { CommonModule } from '@angular/common';
 
 import { EntriesRoutingModule } from './entries-routing.module';
 import { EntriesComponent } from './entries.component';
-import { FormsModule } from "@angular/forms";
+import { ReactiveFormsModule } from "@angular/forms";
 
 
 @NgModule({
   declarations: [EntriesComponent],
   imports: [
     CommonModule,
-    FormsModule,
+    ReactiveFormsModule,
     EntriesRoutingModule
   ]
 })
