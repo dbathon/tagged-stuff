@@ -88,7 +88,6 @@ export class JdsClientService {
     let params = new HttpParams();
     if (filters !== undefined) {
       params = params.set("filters", JSON.stringify(filters));
-      console.log("params", JSON.stringify(filters), params, filters);
     }
     return this.httpClient.get<QueryResult<D>>(this.getUrl("_query"), { params }).pipe(
       map(result => result.result)
