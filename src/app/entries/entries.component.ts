@@ -3,6 +3,7 @@ import { JdsClientService, DatabaseInformation } from '../shared/jds-client.serv
 import { Entry } from "../shared/entry/entry";
 import { EntryService } from "../shared/entry/entry.service";
 import { FormBuilder, Validators } from "@angular/forms";
+import { BTreeNode, RemoteBTree } from "../shared/remote-b-tree";
 
 @Component({
   selector: 'app-entries',
@@ -63,6 +64,41 @@ export class EntriesComponent implements OnInit {
     if (this.activeEntry === entry) {
       this.activeEntry = undefined;
     }
+  }
+
+  testBTree() {
+    const nodes: BTreeNode[] = [
+      {
+        id: "root",
+        keys: ["h"],
+        values: ["H"],
+        children: ["c1", "c2"]
+      },
+      {
+        id: "c1",
+        keys: ["b", "d", "f"],
+        values: ["B", "D", "F"],
+      },
+      {
+        id: "c2",
+        keys: ["m", "n", "o"],
+        values: ["M", "N", "O"],
+      }
+
+    ];
+    const nodesMap: Map<string, BTreeNode> = new Map();
+    nodes.forEach(node => nodesMap.set(node.id, node));
+    const tree = new RemoteBTree(10, id => {
+      const node = nodesMap.get(id);
+      if (node === undefined) {
+        throw new Error("node not found: " + id);
+      }
+      return node;
+    }, () => "bla");
+
+    "abcdefghijklmnopq".split("").forEach(key => {
+      console.log(key, tree.getValue(key, "root"));
+    });
   }
 
 }
