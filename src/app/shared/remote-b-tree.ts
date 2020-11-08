@@ -61,7 +61,9 @@ export class RemoteBTree {
   constructor(order: number, readonly fetchNode: (nodeId: string) => BTreeNode, readonly generateId: () => string) {
     this.order = Math.ceil(order);
     this.minChildren = Math.ceil(this.order / 2);
-    if (this.minKeys < 1 || this.maxKeys < 2) new Error("order is too low: " + order);
+    if (this.minKeys < 1 || this.maxKeys < 2) {
+      throw new Error("order is too low: " + order);
+    }
   }
 
   private assert(condition: boolean) {
