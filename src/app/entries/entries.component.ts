@@ -3,7 +3,7 @@ import { JdsClientService, DatabaseInformation } from '../shared/jds-client.serv
 import { Entry } from "../shared/entry/entry";
 import { EntryService } from "../shared/entry/entry.service";
 import { FormBuilder, Validators } from "@angular/forms";
-import { BTreeModificationResult, BTreeNode, RemoteBTree } from "../shared/remote-b-tree";
+import { BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree } from "../shared/remote-b-tree";
 
 @Component({
   selector: 'app-entries',
@@ -151,10 +151,24 @@ export class EntriesComponent implements OnInit {
     });
 
     applyResult(tree.initializeNewTree());
-    for (let i = 0; i < 2000; ++i) {
+    const testSize = 2000;
+    for (let i = 0; i < testSize; ++i) {
       applyResult(tree.setValue("" + i, "" + i, rootId));
     }
     console.log(dumpTree(rootId).join("\n"));
+
+    console.log(tree.scan(new BTreeScanParameters(20, "2"), rootId));
+    if (tree.scan(new BTreeScanParameters(), rootId).length != testSize) {
+      throw new Error("scan failed");
+    }
+
+    for (let i = 0; i < testSize; ++i) {
+      const key = "" + i;
+      const result = tree.scan(new BTreeScanParameters(1, key), rootId);
+      if (!(result.length === 1 && result[0].key === key)) {
+        throw new Error("scan failed");
+      }
+    }
   }
 
 }

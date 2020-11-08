@@ -42,6 +42,41 @@ interface InsertResult {
   splitInsert?: Insert;
 }
 
+export class BTreeScanParameters {
+  constructor(readonly maxResults?: number,
+    readonly minKey?: string, readonly maxKey?: string,
+    readonly minExclusive: boolean = false, readonly maxExclusive: boolean = true
+  ) { }
+
+  includesKey(key: string): boolean {
+    if (this.minKey !== undefined) {
+      if (this.minExclusive && !(key > this.minKey)) {
+        return false;
+      }
+      if (!this.minExclusive && !(key >= this.minKey)) {
+        return false;
+      }
+    }
+    if (this.maxKey !== undefined) {
+      if (this.maxExclusive && !(key < this.maxKey)) {
+        return false;
+      }
+      if (!this.maxExclusive && !(key <= this.maxKey)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  maxResultsReached(resultsCount: number): boolean {
+    return this.maxResults !== undefined && resultsCount >= this.maxResults;
+  }
+}
+
+export class BTreeEntry {
+  constructor(readonly key: string, readonly value: string) { }
+}
+
 /**
  * Allows accessing a B-tree whose nodes can be accessed via the fetchNode function.
  *
@@ -166,6 +201,45 @@ export class RemoteBTree {
     }
 
     return undefined;
+  }
+
+  private scanInternal(parameters: BTreeScanParameters, nodeId: string, result: BTreeEntry[]) {
+    const node = this.fetchNode(nodeId);
+    if (node.keys.length <= 0) {
+      // empty root node
+      return;
+    }
+    let index = 0;
+    if (parameters.minKey !== undefined && node.keys[0] < parameters.minKey) {
+      // use search to find the start index
+      index = this.searchKeyOrChildIndex(node, parameters.minKey).index;
+    }
+    // TODO: maybe some child scans could be skipped, e.g. if some key matches the minKey...
+    while (index < node.keys.length && !parameters.maxResultsReached(result.length)) {
+      if (node.children) {
+        this.scanInternal(parameters, node.children[index], result);
+      }
+      const key = node.keys[index];
+      if (!parameters.includesKey(key)) {
+        // we are done
+        this.assert(parameters.maxKey !== undefined && key > parameters.maxKey);
+        return;
+      }
+      if (!parameters.maxResultsReached(result.length)) {
+        result.push(new BTreeEntry(key, node.values[index]));
+      }
+      ++index;
+    }
+    // scan the last child
+    if (node.children && !parameters.maxResultsReached(result.length)) {
+      this.scanInternal(parameters, node.children[index], result);
+    }
+  }
+
+  scan(parameters: BTreeScanParameters, rootId: string): BTreeEntry[] {
+    const result: BTreeEntry[] = [];
+    this.scanInternal(parameters, rootId, result);
+    return result;
   }
 
   private copyAndInsert(strings: string[], insertIndex: number, valueToInsert: string): string[] {
