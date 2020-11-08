@@ -103,13 +103,33 @@ export class EntriesComponent implements OnInit {
     };
 
     let rootId = "root";
+    const dumpTree = (nodeId: string, indent: string = ""): string[] => {
+      const node = fetchNode(nodeId);
+      if (node.children) {
+        let result: string[] = [];
+        result.push(indent + nodeId + ":");
+        const nextIndent = indent + "    ";
+        for (let i = 0; i < node.keys.length; ++i) {
+          result.push(...dumpTree(node.children[i], nextIndent));
+          result.push(indent + "* " + node.keys[i]);
+        }
+        result.push(...dumpTree(node.children[node.keys.length], nextIndent));
+        return result;
+      }
+      else {
+        return [indent + nodeId + ": " + node.keys.join(", ")];
+      }
+    };
+
     const applyResult = (result: BTreeModificationResult) => {
+      const changed = rootId !== result.newRootId;
+      console.log("apply", changed, result.newNodes.length, result.obsoleteNodes.length);
       rootId = result.newRootId;
       result.newNodes.forEach(node => nodesMap.set(node.id, node));
       result.obsoleteNodes.forEach(node => nodesMap.delete(node.id));
     };
 
-    const tree = new RemoteBTree(3, fetchNode, generateId);
+    const tree = new RemoteBTree(50, fetchNode, generateId);
 
     const chars = "abcdefghijklmnopqrstuvwxyz".split("");
     chars.forEach(key => {
@@ -121,11 +141,20 @@ export class EntriesComponent implements OnInit {
     [...chars].reverse().forEach(key => {
       applyResult(tree.setValue(key, key.toUpperCase(), rootId));
     });
+    chars.forEach(key => {
+      applyResult(tree.setValue(key, key.toUpperCase(), rootId));
+    });
+    console.log(dumpTree(rootId).join("\n"));
 
     chars.forEach(key => {
       console.log(key, tree.getValue(key, rootId));
     });
-    console.log(nodesMap);
+
+    applyResult(tree.initializeNewTree());
+    for (let i = 0; i < 2000; ++i) {
+      applyResult(tree.setValue("" + i, "" + i, rootId));
+    }
+    console.log(dumpTree(rootId).join("\n"));
   }
 
 }
