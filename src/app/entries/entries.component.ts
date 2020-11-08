@@ -3,7 +3,7 @@ import { JdsClientService, DatabaseInformation } from '../shared/jds-client.serv
 import { Entry } from "../shared/entry/entry";
 import { EntryService } from "../shared/entry/entry.service";
 import { FormBuilder, Validators } from "@angular/forms";
-import { BTreeNode, RemoteBTree } from "../shared/remote-b-tree";
+import { BTreeModificationResult, BTreeNode, RemoteBTree } from "../shared/remote-b-tree";
 
 @Component({
   selector: 'app-entries',
@@ -88,17 +88,44 @@ export class EntriesComponent implements OnInit {
     ];
     const nodesMap: Map<string, BTreeNode> = new Map();
     nodes.forEach(node => nodesMap.set(node.id, node));
-    const tree = new RemoteBTree(10, id => {
+
+    const fetchNode = (id: string): BTreeNode => {
       const node = nodesMap.get(id);
       if (node === undefined) {
         throw new Error("node not found: " + id);
       }
       return node;
-    }, () => "bla");
+    };
+    let id = 0;
+    const generateId = () => {
+      ++id;
+      return "" + id;
+    };
 
-    "abcdefghijklmnopq".split("").forEach(key => {
-      console.log(key, tree.getValue(key, "root"));
+    let rootId = "root";
+    const applyResult = (result: BTreeModificationResult) => {
+      rootId = result.newRootId;
+      result.newNodes.forEach(node => nodesMap.set(node.id, node));
+      result.obsoleteNodes.forEach(node => nodesMap.delete(node.id));
+    };
+
+    const tree = new RemoteBTree(3, fetchNode, generateId);
+
+    const chars = "abcdefghijklmnopqrstuvwxyz".split("");
+    chars.forEach(key => {
+      console.log(key, tree.getValue(key, rootId));
     });
+
+    applyResult(tree.initializeNewTree());
+
+    [...chars].reverse().forEach(key => {
+      applyResult(tree.setValue(key, key.toUpperCase(), rootId));
+    });
+
+    chars.forEach(key => {
+      console.log(key, tree.getValue(key, rootId));
+    });
+    console.log(nodesMap);
   }
 
 }

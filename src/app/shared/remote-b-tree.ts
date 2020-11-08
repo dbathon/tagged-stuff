@@ -25,6 +25,23 @@ export class BTreeModificationResult {
   constructor(readonly newRootId: string, readonly newNodes: BTreeNode[], readonly obsoleteNodes: BTreeNode[]) { }
 }
 
+class Modifications {
+  readonly newNodes: BTreeNode[] = [];
+  readonly obsoleteNodes: BTreeNode[] = [];
+}
+
+interface Insert {
+  key: string;
+  value: string;
+  leftChildId?: string;
+  rightChildId?: string;
+}
+
+interface InsertResult {
+  newNodeId?: string;
+  splitInsert?: Insert;
+}
+
 /**
  * Allows accessing a B-tree whose nodes can be accessed via the fetchNode function.
  *
@@ -72,17 +89,36 @@ export class RemoteBTree {
     }
   }
 
-  initializeNewTree(): BTreeModificationResult {
-    const newId = this.generateId();
-    const newRoot: BTreeNode = {
-      id: newId,
-      keys: [],
-      values: []
-    };
-    return new BTreeModificationResult(newId, [newRoot], []);
+  private assertString(string?: string): string {
+    if (typeof string === 'string') {
+      return string;
+    }
+    throw new Error("not a string: " + string);
   }
 
-  private searchKeyOrChildIndex(node: BTreeNode, key: string): number {
+  private newNode(modifications: Modifications, keys: string[], values: string[], children?: string[]): BTreeNode {
+    this.assert(keys.length === values.length);
+    this.assert(!children || children.length === keys.length + 1);
+    // note: do not assert the max (or min) conditions here, existing trees that were created with a different order should just work...
+
+    const newId = this.generateId();
+    const newNode: BTreeNode = {
+      id: newId,
+      keys,
+      values,
+      children
+    };
+    modifications.newNodes.push(newNode);
+    return newNode;
+  }
+
+  initializeNewTree(): BTreeModificationResult {
+    const modifications = new Modifications();
+    const newRoot = this.newNode(modifications, [], []);
+    return new BTreeModificationResult(newRoot.id, modifications.newNodes, modifications.obsoleteNodes);
+  }
+
+  private searchKeyOrChildIndex(node: BTreeNode, key: string): { index: number, isKey: boolean; } {
     let left = 0;
     let right = node.keys.length - 1;
     if (right < 0) {
@@ -90,19 +126,19 @@ export class RemoteBTree {
     }
     // handle key after last key case
     if (key > node.keys[right]) {
-      return right + 1;
+      return { index: right + 1, isKey: false };
     }
     while (right >= left) {
       const current = Math.floor((left + right) / 2);
       const currentKey = node.keys[current];
       if (currentKey == key) {
         // found a key index
-        return current;
+        return { index: current, isKey: true };
       }
       if (currentKey > key) {
         if (current == 0 || node.keys[current - 1] < key) {
           // found a child index
-          return current;
+          return { index: current, isKey: false };
         }
         right = current - 1;
       }
@@ -121,8 +157,8 @@ export class RemoteBTree {
       // empty root node
       return undefined;
     }
-    const index = this.searchKeyOrChildIndex(node, key);
-    if (index < node.keys.length && node.keys[index] == key) {
+    const { index, isKey } = this.searchKeyOrChildIndex(node, key);
+    if (isKey) {
       return node.values[index];
     }
     else if (node.children) {
@@ -130,6 +166,123 @@ export class RemoteBTree {
     }
 
     return undefined;
+  }
+
+  private copyAndInsert(strings: string[], insertIndex: number, valueToInsert: string): string[] {
+    this.assert(insertIndex >= 0 && insertIndex <= strings.length);
+    return [...strings.slice(0, insertIndex), this.assertString(valueToInsert), ...strings.slice(insertIndex)];
+  }
+
+  private insertIntoNode(node: BTreeNode, index: number, insert: Insert, modifications: Modifications): InsertResult {
+    const newKeys = this.copyAndInsert(node.keys, index, insert.key);
+    const newValues = this.copyAndInsert(node.values, index, insert.value);
+    let newChildren = undefined;
+    if (node.children) {
+      // first set the right child at index
+      const childrenCopy = [...node.children];
+      childrenCopy[index] = this.assertString(insert.rightChildId);
+      // then insert the left child at index
+      newChildren = this.copyAndInsert(childrenCopy, index, this.assertString(insert.leftChildId));
+    }
+    else {
+      this.assert(insert.leftChildId === undefined && insert.rightChildId === undefined);
+    }
+
+    modifications.obsoleteNodes.push(node);
+
+    if (newKeys.length <= this.maxKeys) {
+      // insert into this node
+      const newNode = this.newNode(modifications, newKeys, newValues, newChildren);
+      return { newNodeId: newNode.id };
+    }
+    else {
+      // we need to split this node
+      const leftSize = this.minKeys;
+      const newNodeLeft = this.newNode(modifications, newKeys.slice(0, leftSize), newValues.slice(0, leftSize),
+        newChildren && newChildren.slice(0, leftSize + 1));
+      const newNodeRight = this.newNode(modifications, newKeys.slice(leftSize + 1), newValues.slice(leftSize + 1),
+        newChildren && newChildren.slice(leftSize + 1));
+      return {
+        splitInsert: {
+          key: newKeys[leftSize],
+          value: newValues[leftSize],
+          leftChildId: newNodeLeft.id,
+          rightChildId: newNodeRight.id
+        }
+      };
+    }
+  }
+
+  private setValueInternal(key: string, value: string, nodeId: string, modifications: Modifications): InsertResult {
+    const node = this.fetchNode(nodeId);
+    if (node.keys.length <= 0) {
+      // empty root node, just insert
+      const newNode = this.newNode(modifications, [key], [value]);
+      modifications.obsoleteNodes.push(node);
+      return { newNodeId: newNode.id };
+    }
+
+    const { index, isKey } = this.searchKeyOrChildIndex(node, key);
+
+    if (isKey) {
+      if (node.values[index] == value) {
+        // no change required
+        return {};
+      }
+      else {
+        // update this node
+        const newValues = [...node.values];
+        newValues[index] = value;
+        const newNode = this.newNode(modifications, [...node.keys], newValues, node.children && [...node.children]);
+        modifications.obsoleteNodes.push(node);
+        return { newNodeId: newNode.id };
+      }
+    }
+    else if (!node.children) {
+      // this node is a leaf node, just insert
+      return this.insertIntoNode(node, index, { key, value }, modifications);
+    }
+    else {
+      // recursively set the value in the child
+      const insertResult = this.setValueInternal(key, value, node.children[index], modifications);
+      if (insertResult.newNodeId !== undefined) {
+        // update this node with the new child id
+        const newChildren = [...node.children];
+        newChildren[index] = insertResult.newNodeId;
+        const newNode = this.newNode(modifications, [...node.keys], [...node.values], newChildren);
+        modifications.obsoleteNodes.push(node);
+        return { newNodeId: newNode.id };
+      }
+      else if (insertResult.splitInsert) {
+        // perform the split insert
+        return this.insertIntoNode(node, index, insertResult.splitInsert, modifications);
+      }
+      else {
+        // no changes, reuse the insertResult
+        return insertResult;
+      }
+    }
+  }
+
+  setValue(key: string, value: string, rootId: string): BTreeModificationResult {
+    this.assertString(key);
+    this.assertString(value);
+    const modifications = new Modifications();
+    let newRootId = rootId;
+
+    const insertResult = this.setValueInternal(key, value, rootId, modifications);
+    if (insertResult.newNodeId !== undefined) {
+      newRootId = insertResult.newNodeId;
+    }
+    else if (insertResult.splitInsert) {
+      // create new root node
+      const insert = insertResult.splitInsert;
+      const newRootNode = this.newNode(modifications, [insert.key], [insert.value],
+        [this.assertString(insert.leftChildId), this.assertString(insert.rightChildId)]);
+      newRootId = newRootNode.id;
+    }
+
+    return new BTreeModificationResult(newRootId, modifications.newNodes, modifications.obsoleteNodes);
   }
 
 }
