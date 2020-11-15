@@ -77,6 +77,18 @@ export class BTreeEntry {
   constructor(readonly key: string, readonly value: string) { }
 }
 
+interface NodeData {
+  keys: string[];
+  values: string[];
+  children?: string[];
+}
+
+interface DeleteResult {
+  // new child node to be created, but might be too small...
+  newChildData: NodeData;
+  deletedEntry: BTreeEntry;
+}
+
 /**
  * Allows accessing a B-tree whose nodes can be accessed via the fetchNode function.
  *
@@ -131,11 +143,25 @@ export class RemoteBTree {
     throw new Error("not a string: " + string);
   }
 
-  private newNode(modifications: Modifications, keys: string[], values: string[], children?: string[]): BTreeNode {
-    this.assert(keys.length === values.length);
-    this.assert(!children || children.length === keys.length + 1);
+  private assertProperNode(node: NodeData) {
+    this.assert(node.keys.length === node.values.length);
+    this.assert(!node.children || node.children.length === node.keys.length + 1);
     // note: do not assert the max (or min) conditions here, existing trees that were created with a different order should just work...
+  }
 
+  private assertProperSiblings(node1: NodeData, node2: NodeData) {
+    if ((node1.children && !node2.children) || (!node1.children && node2.children)) {
+      throw new Error("nodes are not proper siblings");
+    }
+  }
+
+  private fetchNodeWithCheck(nodeId: string): BTreeNode {
+    const result = this.fetchNode(nodeId);
+    this.assertProperNode(result);
+    return result;
+  }
+
+  private newNode(modifications: Modifications, keys: string[], values: string[], children?: string[]): BTreeNode {
     const newId = this.generateId();
     const newNode: BTreeNode = {
       id: newId,
@@ -143,8 +169,13 @@ export class RemoteBTree {
       values,
       children
     };
+    this.assertProperNode(newNode);
     modifications.newNodes.push(newNode);
     return newNode;
+  }
+
+  private newNodeFromNodeData(modifications: Modifications, nodeData: NodeData): BTreeNode {
+    return this.newNode(modifications, nodeData.keys, nodeData.values, nodeData.children);
   }
 
   initializeNewTree(): BTreeModificationResult {
@@ -187,7 +218,7 @@ export class RemoteBTree {
   }
 
   getValue(key: string, rootId: string): string | undefined {
-    const node = this.fetchNode(rootId);
+    const node = this.fetchNodeWithCheck(rootId);
     if (node.keys.length <= 0) {
       // empty root node
       return undefined;
@@ -204,7 +235,7 @@ export class RemoteBTree {
   }
 
   private scanInternal(parameters: BTreeScanParameters, nodeId: string, result: BTreeEntry[]) {
-    const node = this.fetchNode(nodeId);
+    const node = this.fetchNodeWithCheck(nodeId);
     if (node.keys.length <= 0) {
       // empty root node
       return;
@@ -288,7 +319,7 @@ export class RemoteBTree {
   }
 
   private setValueInternal(key: string, value: string, nodeId: string, modifications: Modifications): InsertResult {
-    const node = this.fetchNode(nodeId);
+    const node = this.fetchNodeWithCheck(nodeId);
     if (node.keys.length <= 0) {
       // empty root node, just insert
       const newNode = this.newNode(modifications, [key], [value]);
@@ -354,6 +385,212 @@ export class RemoteBTree {
       const newRootNode = this.newNode(modifications, [insert.key], [insert.value],
         [this.assertString(insert.leftChildId), this.assertString(insert.rightChildId)]);
       newRootId = newRootNode.id;
+    }
+
+    return new BTreeModificationResult(newRootId, modifications.newNodes, modifications.obsoleteNodes);
+  }
+
+  private copyAndDelete(strings: string[], deleteIndex: number): string[] {
+    this.assert(deleteIndex >= 0 && deleteIndex < strings.length);
+    return [...strings.slice(0, deleteIndex), ...strings.slice(deleteIndex + 1)];
+  }
+
+  private deleteKeyInternal(key: string | undefined, nodeId: string, modifications: Modifications): DeleteResult | undefined {
+    const node = this.fetchNodeWithCheck(nodeId);
+    if (node.keys.length <= 0) {
+      // node is empty, nothing to do
+      return undefined;
+    }
+
+    // if key is undefined, then we want to delete the largest key in this tree
+    const { index, isKey } = key !== undefined ?
+      this.searchKeyOrChildIndex(node, key) :
+      {
+        index: node.children ? node.children.length - 1 : node.keys.length - 1,
+        isKey: !node.children
+      };
+
+    if (!node.children) {
+      if (isKey) {
+        modifications.obsoleteNodes.push(node);
+        return {
+          newChildData: {
+            keys: this.copyAndDelete(node.keys, index),
+            values: this.copyAndDelete(node.values, index)
+          },
+          deletedEntry: new BTreeEntry(node.keys[index], node.values[index])
+        };
+      }
+      else {
+        // key is not in the tree
+        return undefined;
+      }
+    }
+    else {
+      /**
+       * If !isKey then we can just delete the key from the child, otherwise just delete the largest key from the right
+       * sub-tree, that entry will then be used to replace the entry in this node, that is supposed to be deleted.
+       *
+       * TODO: maybe optimize this and potentially also delete from the left sub-tree in the isKey case.
+       */
+      const deleteResult = this.deleteKeyInternal(!isKey ? key : undefined, node.children[index], modifications);
+
+      if (deleteResult !== undefined) {
+        const newChildData = deleteResult.newChildData;
+        let deletedEntry = deleteResult.deletedEntry!;
+
+        // this node will be replaced/deleted in any case
+        modifications.obsoleteNodes.push(node);
+
+        let newKeys = [...node.keys];
+        let newValues = [...node.values];
+        let newChildren = [...node.children];
+
+        if (isKey) {
+          newKeys[index] = deletedEntry.key;
+          newValues[index] = deletedEntry.value;
+
+          // replace deletedEntry with the "real" one
+          deletedEntry = new BTreeEntry(node.keys[index], node.values[index]);
+        }
+
+        if (newChildData.keys.length >= this.minKeys) {
+          // just create the new node
+          const newNode = this.newNodeFromNodeData(modifications, newChildData);
+          newChildren[index] = newNode.id;
+        }
+        else {
+          // borrow or merge
+          let borrowMergeDone = false;
+          // TODO: handle children in child nodes...
+          let leftSibling: BTreeNode | undefined = undefined;
+          if (index > 0) {
+            // check if we can borrow from left sibling
+            leftSibling = this.fetchNodeWithCheck(node.children[index - 1]);
+            this.assertProperSiblings(leftSibling, newChildData);
+            if (leftSibling.keys.length > this.minKeys) {
+              const newLeftSiblingKeyCount = leftSibling.keys.length - 1;
+              const newChildNode = this.newNode(modifications,
+                [newKeys[index - 1], ...newChildData.keys],
+                [newValues[index - 1], ...newChildData.values],
+                leftSibling.children && newChildData.children && [leftSibling.children[newLeftSiblingKeyCount + 1], ...newChildData.children]
+              );
+              newChildren[index] = newChildNode.id;
+
+              const newLeftSibling = this.newNode(modifications,
+                leftSibling.keys.slice(0, newLeftSiblingKeyCount),
+                leftSibling.values.slice(0, newLeftSiblingKeyCount),
+                leftSibling.children && leftSibling.children.slice(0, newLeftSiblingKeyCount + 1)
+              );
+              newChildren[index - 1] = newLeftSibling.id;
+              modifications.obsoleteNodes.push(leftSibling);
+
+              newKeys[index - 1] = leftSibling.keys[newLeftSiblingKeyCount];
+              newValues[index - 1] = leftSibling.values[newLeftSiblingKeyCount];
+
+              borrowMergeDone = true;
+            }
+          }
+
+          let rightSibling: BTreeNode | undefined = undefined;
+          if (!borrowMergeDone && index < node.children.length - 1) {
+            // check if we can borrow from right sibling
+            rightSibling = this.fetchNodeWithCheck(node.children[index + 1]);
+            this.assertProperSiblings(newChildData, rightSibling);
+            if (rightSibling.keys.length > this.minKeys) {
+              const newChildNode = this.newNode(modifications,
+                [...newChildData.keys, newKeys[index]],
+                [...newChildData.values, newValues[index]],
+                newChildData.children && rightSibling.children && [...newChildData.children, rightSibling.children[0]]
+              );
+              newChildren[index] = newChildNode.id;
+
+              const newRightSibling = this.newNode(modifications,
+                rightSibling.keys.slice(1),
+                rightSibling.values.slice(1),
+                rightSibling.children && rightSibling.children.slice(1)
+              );
+              newChildren[index + 1] = newRightSibling.id;
+              modifications.obsoleteNodes.push(rightSibling);
+
+              newKeys[index] = rightSibling.keys[0];
+              newValues[index] = rightSibling.values[0];
+
+              borrowMergeDone = true;
+            }
+          }
+
+          if (!borrowMergeDone) {
+            // no borrowing possible, merge two child nodes
+            let deleteIndex: number | undefined = undefined;
+            let newMergedChildNode: BTreeNode | undefined = undefined;
+            if (leftSibling !== undefined) {
+              deleteIndex = index - 1;
+              newMergedChildNode = this.newNode(modifications,
+                [...leftSibling.keys, newKeys[deleteIndex], ...newChildData.keys],
+                [...leftSibling.values, newValues[deleteIndex], ...newChildData.values],
+                leftSibling.children && newChildData.children && [...leftSibling.children, ...newChildData.children]
+              );
+
+              modifications.obsoleteNodes.push(leftSibling);
+            }
+            else if (rightSibling !== undefined) {
+              deleteIndex = index;
+              newMergedChildNode = this.newNode(modifications,
+                [...newChildData.keys, newKeys[deleteIndex], ...rightSibling.keys],
+                [...newChildData.values, newValues[deleteIndex], ...rightSibling.values],
+                newChildData.children && rightSibling.children && [...newChildData.children, ...rightSibling.children]
+              );
+
+              modifications.obsoleteNodes.push(rightSibling);
+            }
+            else {
+              // cannot happen
+              throw new Error("merge not possible");
+            }
+
+            newKeys = this.copyAndDelete(newKeys, deleteIndex);
+            newValues = this.copyAndDelete(newValues, deleteIndex);
+            newChildren = this.copyAndDelete(newChildren, deleteIndex);
+            newChildren[deleteIndex] = newMergedChildNode.id;
+          }
+        }
+        return {
+          newChildData: {
+            keys: newKeys,
+            values: newValues,
+            children: newChildren
+          },
+          deletedEntry
+        };
+      }
+      else {
+        this.assert(!isKey);
+
+        // nothing to do
+        return undefined;
+      }
+    }
+  }
+
+  deleteKey(key: string, rootId: string): BTreeModificationResult {
+    this.assertString(key);
+    const modifications = new Modifications();
+    let newRootId = rootId;
+
+    const delteResult = this.deleteKeyInternal(key, rootId, modifications);
+    if (delteResult !== undefined) {
+      this.assert(delteResult.deletedEntry.key === key);
+
+      if (delteResult.newChildData.keys.length > 0 || !delteResult.newChildData.children) {
+        const newRoot = this.newNodeFromNodeData(modifications, delteResult.newChildData);
+        newRootId = newRoot.id;
+      }
+      else {
+        // the tree depth is reduced by one
+        this.assert(delteResult.newChildData.children.length === 1);
+        newRootId = delteResult.newChildData.children[0];
+      }
     }
 
     return new BTreeModificationResult(newRootId, modifications.newNodes, modifications.obsoleteNodes);
