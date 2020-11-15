@@ -7,6 +7,31 @@
   Test B-tree
 </button>
 
+<div>
+  <input type="text" [(ngModel)]="treeElement">
+  <input type="number" [(ngModel)]="treeOrder">
+</div>
+
+<div>
+  <button (click)="treeInit()">
+    init
+  </button>
+  <button (click)="treeInsert()">
+    insert
+  </button>
+  <button (click)="treeInsertRandom()">
+    insert random
+  </button>
+  <button (click)="treeDelete()">
+    delete
+  </button>
+  <button (click)="treeDelete10()">
+    delete 10
+  </button>
+</div>
+
+<pre>{{treeDump}}</pre>
+
 <hr>
 
 <div *ngFor="let entry of entries">
