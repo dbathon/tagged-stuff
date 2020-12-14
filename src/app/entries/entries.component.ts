@@ -72,7 +72,10 @@ export class EntriesComponent implements OnInit {
         id: "root",
         keys: ["h"],
         values: ["H"],
-        children: ["c1", "c2"]
+        children: {
+          ids: ["c1", "c2"],
+          sizes: [3, 3]
+        }
       },
       {
         id: "c1",
@@ -110,10 +113,10 @@ export class EntriesComponent implements OnInit {
         result.push(indent + nodeId + ":");
         const nextIndent = indent + "    ";
         for (let i = 0; i < node.keys.length; ++i) {
-          result.push(...dumpTree(node.children[i], nextIndent));
+          result.push(...dumpTree(node.children.ids[i], nextIndent));
           result.push(indent + "* " + node.keys[i]);
         }
-        result.push(...dumpTree(node.children[node.keys.length], nextIndent));
+        result.push(...dumpTree(node.children.ids[node.keys.length], nextIndent));
         return result;
       }
       else {
@@ -171,7 +174,7 @@ export class EntriesComponent implements OnInit {
     }
   }
 
-  private dumpTree(nodeId: string, indent: string = ""): string[] {
+  private dumpTree(nodeId: string, indent: string = "", sizeFromParent?: number): string[] {
     const fetchNode = (id: string): BTreeNode => {
       const node = this.nodesMap.get(id);
       if (node === undefined) {
@@ -180,19 +183,20 @@ export class EntriesComponent implements OnInit {
       return node;
     };
     const node = fetchNode(nodeId);
+    const sizeFromParentString = sizeFromParent !== undefined ? " (" + sizeFromParent + ")" : "";
     if (node.children) {
       let result: string[] = [];
-      result.push(indent + nodeId + ":");
+      result.push(indent + nodeId + sizeFromParentString + ":");
       const nextIndent = indent + "    ";
       for (let i = 0; i < node.keys.length; ++i) {
-        result.push(...this.dumpTree(node.children[i], nextIndent));
+        result.push(...this.dumpTree(node.children.ids[i], nextIndent, node.children.sizes[i]));
         result.push(indent + "* " + node.keys[i]);
       }
-      result.push(...this.dumpTree(node.children[node.keys.length], nextIndent));
+      result.push(...this.dumpTree(node.children.ids[node.keys.length], nextIndent, node.children.sizes[node.keys.length]));
       return result;
     }
     else {
-      return [indent + nodeId + ": " + node.keys.join(", ")];
+      return [indent + nodeId + sizeFromParentString + ": " + node.keys.join(", ")];
     }
   };
 
