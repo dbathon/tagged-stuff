@@ -324,6 +324,10 @@ export class RemoteBTree {
     return result;
   }
 
+  getSize(rootId: string): number {
+    return this.nodeSize(this.fetchNodeWithCheck(rootId));
+  }
+
   private toInsertChild(node: BTreeNode): InsertChild {
     return {
       id: node.id,
