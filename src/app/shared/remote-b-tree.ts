@@ -139,7 +139,7 @@ export class RemoteBTree {
    * @param fetchNode the function used to get the nodes, TODO: change this to be an Observable
    * @param generateId used to generate ids for new nodes, needs to return ids that are not used yet
    */
-  constructor(order: number, readonly fetchNode: (nodeId: string) => BTreeNode, readonly generateId: () => string) {
+  constructor(order: number, readonly fetchNode: (nodeId: string) => Promise<BTreeNode>, readonly generateId: () => string) {
     this.order = Math.ceil(order);
     this.minChildren = Math.ceil(this.order / 2);
     if (this.minKeys < 1 || this.maxKeys < 2) {
@@ -184,8 +184,8 @@ export class RemoteBTree {
     }
   }
 
-  private fetchNodeWithCheck(nodeId: string): BTreeNode {
-    const result = this.fetchNode(nodeId);
+  private async fetchNodeWithCheck(nodeId: string): Promise<BTreeNode> {
+    const result = await this.fetchNode(nodeId);
     this.assertProperNode(result);
     return result;
   }
@@ -246,8 +246,8 @@ export class RemoteBTree {
     throw new Error("searchKeyOrChildIndex did not find an index: " + key + ", " + node.id);
   }
 
-  getValue(key: string, rootId: string): string | undefined {
-    const node = this.fetchNodeWithCheck(rootId);
+  async getValue(key: string, rootId: string): Promise<string | undefined> {
+    const node = await this.fetchNodeWithCheck(rootId);
     if (node.keys.length <= 0) {
       // empty root node
       return undefined;
@@ -263,8 +263,8 @@ export class RemoteBTree {
     return undefined;
   }
 
-  private scanInternal(parameters: BTreeScanParameters, nodeId: string, result: BTreeEntry[]) {
-    const node = this.fetchNodeWithCheck(nodeId);
+  private async scanInternal(parameters: BTreeScanParameters, nodeId: string, result: BTreeEntry[]) {
+    const node = await this.fetchNodeWithCheck(nodeId);
     if (node.keys.length <= 0) {
       // empty root node
       return;
@@ -277,7 +277,7 @@ export class RemoteBTree {
     // TODO: maybe some child scans could be skipped, e.g. if some key matches the minKey...
     while (index < node.keys.length && !parameters.maxResultsReached(result.length)) {
       if (node.children) {
-        this.scanInternal(parameters, node.children.ids[index], result);
+        await this.scanInternal(parameters, node.children.ids[index], result);
       }
       const key = node.keys[index];
       if (!parameters.includesKey(key)) {
@@ -292,13 +292,13 @@ export class RemoteBTree {
     }
     // scan the last child
     if (node.children && !parameters.maxResultsReached(result.length)) {
-      this.scanInternal(parameters, node.children.ids[index], result);
+      await this.scanInternal(parameters, node.children.ids[index], result);
     }
   }
 
-  scan(parameters: BTreeScanParameters, rootId: string): BTreeEntry[] {
+  async scan(parameters: BTreeScanParameters, rootId: string): Promise<BTreeEntry[]> {
     const result: BTreeEntry[] = [];
-    this.scanInternal(parameters, rootId, result);
+    await this.scanInternal(parameters, rootId, result);
     return result;
   }
 
@@ -324,8 +324,8 @@ export class RemoteBTree {
     return result;
   }
 
-  getSize(rootId: string): number {
-    return this.nodeSize(this.fetchNodeWithCheck(rootId));
+  async getSize(rootId: string): Promise<number> {
+    return this.nodeSize(await this.fetchNodeWithCheck(rootId));
   }
 
   private toInsertChild(node: BTreeNode): InsertChild {
@@ -388,8 +388,8 @@ export class RemoteBTree {
     }
   }
 
-  private setValueInternal(key: string, value: string, nodeId: string, modifications: Modifications): InsertResult {
-    const node = this.fetchNodeWithCheck(nodeId);
+  private async setValueInternal(key: string, value: string, nodeId: string, modifications: Modifications): Promise<InsertResult> {
+    const node = await this.fetchNodeWithCheck(nodeId);
     if (node.keys.length <= 0) {
       // empty root node, just insert
       const newNode = this.newNode(modifications, [key], [value]);
@@ -419,7 +419,7 @@ export class RemoteBTree {
     }
     else {
       // recursively set the value in the child
-      const insertResult = this.setValueInternal(key, value, node.children.ids[index], modifications);
+      const insertResult = await this.setValueInternal(key, value, node.children.ids[index], modifications);
       if (insertResult.newNode !== undefined) {
         // update this node with the new child id
         const newChildren = this.sliceChildren(node.children, 0);
@@ -440,13 +440,13 @@ export class RemoteBTree {
     }
   }
 
-  setValue(key: string, value: string, rootId: string): BTreeModificationResult {
+  async setValue(key: string, value: string, rootId: string): Promise<BTreeModificationResult> {
     this.assertString(key);
     this.assertString(value);
     const modifications = new Modifications();
     let newRootId = rootId;
 
-    const insertResult = this.setValueInternal(key, value, rootId, modifications);
+    const insertResult = await this.setValueInternal(key, value, rootId, modifications);
     if (insertResult.newNode !== undefined) {
       newRootId = insertResult.newNode.id;
     }
@@ -468,8 +468,8 @@ export class RemoteBTree {
     return [...values.slice(0, deleteIndex), ...values.slice(deleteIndex + 1)];
   }
 
-  private deleteKeyInternal(key: string | undefined, nodeId: string, modifications: Modifications): DeleteResult | undefined {
-    const node = this.fetchNodeWithCheck(nodeId);
+  private async deleteKeyInternal(key: string | undefined, nodeId: string, modifications: Modifications): Promise<DeleteResult | undefined> {
+    const node = await this.fetchNodeWithCheck(nodeId);
     if (node.keys.length <= 0) {
       // node is empty, nothing to do
       return undefined;
@@ -506,7 +506,7 @@ export class RemoteBTree {
        *
        * TODO: maybe optimize this and potentially also delete from the left sub-tree in the isKey case.
        */
-      const deleteResult = this.deleteKeyInternal(!isKey ? key : undefined, node.children.ids[index], modifications);
+      const deleteResult = await this.deleteKeyInternal(!isKey ? key : undefined, node.children.ids[index], modifications);
 
       if (deleteResult !== undefined) {
         const newChildData = deleteResult.newChildData;
@@ -540,7 +540,7 @@ export class RemoteBTree {
           let leftSibling: BTreeNode | undefined = undefined;
           if (index > 0) {
             // check if we can borrow from left sibling
-            leftSibling = this.fetchNodeWithCheck(node.children.ids[index - 1]);
+            leftSibling = await this.fetchNodeWithCheck(node.children.ids[index - 1]);
             this.assertProperSiblings(leftSibling, newChildData);
             if (leftSibling.keys.length > this.minKeys) {
               const newLeftSiblingKeyCount = leftSibling.keys.length - 1;
@@ -574,7 +574,7 @@ export class RemoteBTree {
           let rightSibling: BTreeNode | undefined = undefined;
           if (!borrowMergeDone && index < node.children.ids.length - 1) {
             // check if we can borrow from right sibling
-            rightSibling = this.fetchNodeWithCheck(node.children.ids[index + 1]);
+            rightSibling = await this.fetchNodeWithCheck(node.children.ids[index + 1]);
             this.assertProperSiblings(newChildData, rightSibling);
             if (rightSibling.keys.length > this.minKeys) {
               const newChildNode = this.newNode(modifications,
@@ -667,12 +667,12 @@ export class RemoteBTree {
     }
   }
 
-  deleteKey(key: string, rootId: string): BTreeModificationResult {
+  async deleteKey(key: string, rootId: string): Promise<BTreeModificationResult> {
     this.assertString(key);
     const modifications = new Modifications();
     let newRootId = rootId;
 
-    const deleteResult = this.deleteKeyInternal(key, rootId, modifications);
+    const deleteResult = await this.deleteKeyInternal(key, rootId, modifications);
     if (deleteResult !== undefined) {
       this.assert(deleteResult.deletedEntry.key === key);
 
