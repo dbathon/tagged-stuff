@@ -217,6 +217,33 @@ export class EntriesComponent implements OnInit {
     }
   }
 
+  bTreeBenchmark() {
+    [100, 500, 1000, 5000, 30000].forEach(entryCount => {
+      console.log("start", entryCount);
+      [3, 5, 10, 30, 100, 500].forEach(order => {
+        const start = new Date().getTime();
+        const tree: BTreeMap = new BTreeMap(order);
+        for (let i = 0; i < entryCount; ++i) {
+          const str = "" + i;
+          tree.set(str, str);
+        }
+        if (tree.getSize() !== entryCount) {
+          throw new Error();
+        }
+        for (let i = entryCount - 1; i >= 0; --i) {
+          const str = "" + i;
+          tree.delete(str);
+        }
+        if (tree.getSize() !== 0) {
+          throw new Error();
+        }
+
+        const end = new Date().getTime();
+        console.log(end - start, order, tree.rootId);
+      });
+    });
+  }
+
   treeElement = "";
   treeOrder = "3";
 
