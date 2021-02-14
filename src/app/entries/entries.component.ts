@@ -4,6 +4,8 @@ import { Entry } from "../shared/entry/entry";
 import { EntryService } from "../shared/entry/entry.service";
 import { FormBuilder, Validators } from "@angular/forms";
 import { BTreeEntry, BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree } from "../shared/remote-b-tree";
+import { Observable, of, range } from "rxjs";
+import { flatMap, last } from "rxjs/operators";
 
 class BTreeMap {
 
@@ -20,12 +22,26 @@ class BTreeMap {
       }
       return node;
     };
+    const fetchNode2 = (id: string): Observable<BTreeNode> => {
+      const node = this.data.get(id);
+      if (node === undefined) {
+        throw new Error("node not found: " + id);
+      }
+      return of(node);
+    };
+    const fetchNode3 = (id: string): BTreeNode => {
+      const node = this.data.get(id);
+      if (node === undefined) {
+        throw new Error("node not found: " + id);
+      }
+      return node;
+    };
     let id = 0;
     const generateId = () => {
       ++id;
       return "" + id;
     };
-    this.tree = new RemoteBTree(Math.max(treeOrder, 3), this.fetchNode, generateId);
+    this.tree = new RemoteBTree(Math.max(treeOrder, 3), this.fetchNode, generateId, fetchNode2, fetchNode3);
 
     // dummy assignment for the type checker
     this.rootId = "";
@@ -40,6 +56,14 @@ class BTreeMap {
 
   async get(key: string): Promise<string | undefined> {
     return await this.tree.getValue(key, this.rootId);
+  }
+
+  get2(key: string): Observable<string | undefined> {
+    return this.tree.getValue2(key, this.rootId);
+  }
+
+  get3(key: string): string | undefined {
+    return this.tree.getValue3(key, this.rootId);
   }
 
   async set(key: string, value: string) {
@@ -243,6 +267,78 @@ export class EntriesComponent implements OnInit {
       }
     }
   }
+
+  testSize = 5000;
+  testOrder = 100;
+  testTree: BTreeMap | undefined;
+
+  async bTreeBenchmarkSetup() {
+    const start = new Date().getTime();
+    const tree: BTreeMap = new BTreeMap(this.testOrder);
+    const entryCount = this.testSize;
+    for (let i = 0; i < entryCount; ++i) {
+      const str = "" + i;
+      await tree.set(str, str);
+    }
+    if (await tree.getSize() !== entryCount) {
+      throw new Error();
+    }
+    const insertDone = new Date().getTime();
+    console.log("insert done", insertDone - start);
+    this.testTree = tree;
+  }
+
+  async bTreeBenchmark1() {
+    const start = new Date().getTime();
+    let result: string | undefined;
+    const entryCount = this.testSize;
+    const tree = this.testTree;
+    if (tree == undefined) {
+      return;
+    }
+    for (let i = 0; i < entryCount; ++i) {
+      const str = "" + i;
+      result = await tree.get(str);
+    }
+
+    const end = new Date().getTime();
+    console.log("getValuess", end - start, result);
+  }
+
+  bTreeBenchmark2() {
+    const start = new Date().getTime();
+    let result: string | undefined;
+    const entryCount = this.testSize;
+    const tree = this.testTree;
+    if (tree == undefined) {
+      return;
+    }
+    range(0, entryCount).pipe(
+      flatMap(i => tree.get2("" + i)),
+      last()
+    ).subscribe(result => {
+      const end = new Date().getTime();
+      console.log("getValues", end - start, result);
+    });
+  }
+
+  bTreeBenchmark3() {
+    const start = new Date().getTime();
+    let result: string | undefined;
+    const entryCount = this.testSize;
+    const tree = this.testTree;
+    if (tree == undefined) {
+      return;
+    }
+    for (let i = 0; i < entryCount; ++i) {
+      const str = "" + i;
+      result = tree.get3(str);
+    }
+
+    const end = new Date().getTime();
+    console.log("getValuess", end - start, result);
+  }
+
 
   treeElement = "";
   treeOrder = "3";

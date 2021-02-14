@@ -1,3 +1,5 @@
+import { Observable, of } from "rxjs";
+import { flatMap, map } from "rxjs/operators";
 
 export interface BTreeNodeChildren {
   /**
@@ -139,7 +141,9 @@ export class RemoteBTree {
    * @param fetchNode the function used to get the nodes, TODO: change this to be an Observable
    * @param generateId used to generate ids for new nodes, needs to return ids that are not used yet
    */
-  constructor(order: number, readonly fetchNode: (nodeId: string) => Promise<BTreeNode>, readonly generateId: () => string) {
+  constructor(order: number, readonly fetchNode: (nodeId: string) => Promise<BTreeNode>, readonly generateId: () => string,
+    readonly fetchNode2?: (nodeId: string) => Observable<BTreeNode>,
+    readonly fetchNode3?: (nodeId: string) => BTreeNode) {
     this.order = Math.ceil(order);
     this.minChildren = Math.ceil(this.order / 2);
     if (this.minKeys < 1 || this.maxKeys < 2) {
@@ -186,6 +190,27 @@ export class RemoteBTree {
 
   private async fetchNodeWithCheck(nodeId: string): Promise<BTreeNode> {
     const result = await this.fetchNode(nodeId);
+    this.assertProperNode(result);
+    return result;
+  }
+
+  private fetchNodeWithCheck2(nodeId: string): Observable<BTreeNode> {
+    if (this.fetchNode2 === undefined) {
+      throw new Error();
+    }
+    return this.fetchNode2(nodeId).pipe(
+      map(node => {
+        this.assertProperNode(node);
+        return node;
+      })
+    );
+  }
+
+  private fetchNodeWithCheck3(nodeId: string): BTreeNode {
+    if (this.fetchNode3 === undefined) {
+      throw new Error();
+    }
+    const result = this.fetchNode3(nodeId);
     this.assertProperNode(result);
     return result;
   }
@@ -258,6 +283,41 @@ export class RemoteBTree {
     }
     else if (node.children) {
       return this.getValue(key, node.children.ids[index]);
+    }
+
+    return undefined;
+  }
+
+  getValue2(key: string, rootId: string): Observable<string | undefined> {
+    return this.fetchNodeWithCheck2(rootId).pipe(
+      flatMap(node => {
+        if (node.keys.length > 0) {
+          const { index, isKey } = this.searchKeyOrChildIndex(node, key);
+          if (isKey) {
+            return of(node.values[index]);
+          }
+          else if (node.children) {
+            return this.getValue2(key, node.children.ids[index]);
+          }
+        }
+
+        return of(undefined);
+      })
+    );
+  }
+
+  getValue3(key: string, rootId: string): string | undefined {
+    const node = this.fetchNodeWithCheck3(rootId);
+    if (node.keys.length <= 0) {
+      // empty root node
+      return undefined;
+    }
+    const { index, isKey } = this.searchKeyOrChildIndex(node, key);
+    if (isKey) {
+      return node.values[index];
+    }
+    else if (node.children) {
+      return this.getValue3(key, node.children.ids[index]);
     }
 
     return undefined;
