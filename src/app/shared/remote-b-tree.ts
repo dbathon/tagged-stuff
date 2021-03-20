@@ -1,5 +1,3 @@
-import { Observable, of } from "rxjs";
-import { flatMap, map } from "rxjs/operators";
 
 export class Result<T> {
   private constructor(private readonly _value?: T, private readonly _promise?: Promise<T>) { }
@@ -191,13 +189,11 @@ export class RemoteBTree {
 
   /**
    * @param order
-   * @param fetchNode the function used to get the nodes, TODO: change this to be an Observable
+   * @param fetchNode the function used to get the nodes
    * @param generateId used to generate ids for new nodes, needs to return ids that are not used yet
    */
-  constructor(order: number, readonly fetchNode: (nodeId: string) => Promise<BTreeNode>, readonly generateId: () => string,
-    readonly fetchNode2?: (nodeId: string) => Observable<BTreeNode>,
-    readonly fetchNode3?: (nodeId: string) => BTreeNode,
-    readonly fetchNode4?: (nodeId: string) => Result<BTreeNode>) {
+  constructor(order: number, readonly fetchNode: (nodeId: string) => Result<BTreeNode>, readonly generateId: () => string,
+    readonly fetchNodeP: (nodeId: string) => Promise<BTreeNode>) {
     this.order = Math.ceil(order);
     this.minChildren = Math.ceil(this.order / 2);
     if (this.minKeys < 1 || this.maxKeys < 2) {
@@ -242,38 +238,17 @@ export class RemoteBTree {
     }
   }
 
-  private async fetchNodeWithCheck(nodeId: string): Promise<BTreeNode> {
-    const result = await this.fetchNode(nodeId);
+  private async fetchNodePWithCheck(nodeId: string): Promise<BTreeNode> {
+    const result = await this.fetchNodeP(nodeId);
     this.assertProperNode(result);
     return result;
   }
 
-  private fetchNodeWithCheck2(nodeId: string): Observable<BTreeNode> {
-    if (this.fetchNode2 === undefined) {
+  private fetchNodeWithCheck(nodeId: string): Result<BTreeNode> {
+    if (this.fetchNode === undefined) {
       throw new Error();
     }
-    return this.fetchNode2(nodeId).pipe(
-      map(node => {
-        this.assertProperNode(node);
-        return node;
-      })
-    );
-  }
-
-  private fetchNodeWithCheck3(nodeId: string): BTreeNode {
-    if (this.fetchNode3 === undefined) {
-      throw new Error();
-    }
-    const result = this.fetchNode3(nodeId);
-    this.assertProperNode(result);
-    return result;
-  }
-
-  private fetchNodeWithCheck4(nodeId: string): Result<BTreeNode> {
-    if (this.fetchNode4 === undefined) {
-      throw new Error();
-    }
-    return this.fetchNode4(nodeId).transform(node => {
+    return this.fetchNode(nodeId).transform(node => {
       this.assertProperNode(node);
       return node;
     });
@@ -335,80 +310,26 @@ export class RemoteBTree {
     throw new Error("searchKeyOrChildIndex did not find an index: " + key + ", " + node.id);
   }
 
-  async getValue(key: string, rootId: string): Promise<string | undefined> {
-    const node = await this.fetchNodeWithCheck(rootId);
-    if (node.keys.length <= 0) {
-      // empty root node
+  getValue(key: string, rootId: string): Result<string | undefined> {
+    return this.fetchNodeWithCheck(rootId).transform(node => {
+      if (node.keys.length <= 0) {
+        // empty root node
+        return undefined;
+      }
+      const { index, isKey } = this.searchKeyOrChildIndex(node, key);
+      if (isKey) {
+        return node.values[index];
+      }
+      else if (node.children) {
+        return this.getValue(key, node.children.ids[index]);
+      }
+
       return undefined;
-    }
-    const { index, isKey } = this.searchKeyOrChildIndex(node, key);
-    if (isKey) {
-      return node.values[index];
-    }
-    else if (node.children) {
-      return this.getValue(key, node.children.ids[index]);
-    }
-
-    return undefined;
-  }
-
-  getValue2(key: string, rootId: string): Observable<string | undefined> {
-    return this.fetchNodeWithCheck2(rootId).pipe(
-      flatMap(node => {
-        if (node.keys.length > 0) {
-          const { index, isKey } = this.searchKeyOrChildIndex(node, key);
-          if (isKey) {
-            return of(node.values[index]);
-          }
-          else if (node.children) {
-            return this.getValue2(key, node.children.ids[index]);
-          }
-        }
-
-        return of(undefined);
-      })
-    );
-  }
-
-  getValue3(key: string, rootId: string): string | undefined {
-    const node = this.fetchNodeWithCheck3(rootId);
-    if (node.keys.length <= 0) {
-      // empty root node
-      return undefined;
-    }
-    const { index, isKey } = this.searchKeyOrChildIndex(node, key);
-    if (isKey) {
-      return node.values[index];
-    }
-    else if (node.children) {
-      return this.getValue3(key, node.children.ids[index]);
-    }
-
-    return undefined;
-  }
-
-  private getValue4Inner(key: string, node: BTreeNode): Result<string | undefined> {
-    if (node.keys.length <= 0) {
-      // empty root node
-      return Result.withValue(undefined);
-    }
-    const { index, isKey } = this.searchKeyOrChildIndex(node, key);
-    if (isKey) {
-      return Result.withValue(node.values[index]);
-    }
-    else if (node.children) {
-      return this.getValue4(key, node.children.ids[index]);
-    }
-
-    return Result.withValue(undefined);
-  }
-
-  getValue4(key: string, rootId: string): Result<string | undefined> {
-    return this.fetchNodeWithCheck4(rootId).transform(node => this.getValue4Inner(key, node));
+    });
   }
 
   private async scanInternal(parameters: BTreeScanParameters, nodeId: string, result: BTreeEntry[]) {
-    const node = await this.fetchNodeWithCheck(nodeId);
+    const node = await this.fetchNodePWithCheck(nodeId);
     if (node.keys.length <= 0) {
       // empty root node
       return;
@@ -469,7 +390,7 @@ export class RemoteBTree {
   }
 
   async getSize(rootId: string): Promise<number> {
-    return this.nodeSize(await this.fetchNodeWithCheck(rootId));
+    return this.nodeSize(await this.fetchNodePWithCheck(rootId));
   }
 
   private toInsertChild(node: BTreeNode): InsertChild {
@@ -533,7 +454,7 @@ export class RemoteBTree {
   }
 
   private async setValueInternal(key: string, value: string, nodeId: string, modifications: Modifications): Promise<InsertResult> {
-    const node = await this.fetchNodeWithCheck(nodeId);
+    const node = await this.fetchNodePWithCheck(nodeId);
     if (node.keys.length <= 0) {
       // empty root node, just insert
       const newNode = this.newNode(modifications, [key], [value]);
@@ -613,7 +534,7 @@ export class RemoteBTree {
   }
 
   private async deleteKeyInternal(key: string | undefined, nodeId: string, modifications: Modifications): Promise<DeleteResult | undefined> {
-    const node = await this.fetchNodeWithCheck(nodeId);
+    const node = await this.fetchNodePWithCheck(nodeId);
     if (node.keys.length <= 0) {
       // node is empty, nothing to do
       return undefined;
@@ -684,7 +605,7 @@ export class RemoteBTree {
           let leftSibling: BTreeNode | undefined = undefined;
           if (index > 0) {
             // check if we can borrow from left sibling
-            leftSibling = await this.fetchNodeWithCheck(node.children.ids[index - 1]);
+            leftSibling = await this.fetchNodePWithCheck(node.children.ids[index - 1]);
             this.assertProperSiblings(leftSibling, newChildData);
             if (leftSibling.keys.length > this.minKeys) {
               const newLeftSiblingKeyCount = leftSibling.keys.length - 1;
@@ -718,7 +639,7 @@ export class RemoteBTree {
           let rightSibling: BTreeNode | undefined = undefined;
           if (!borrowMergeDone && index < node.children.ids.length - 1) {
             // check if we can borrow from right sibling
-            rightSibling = await this.fetchNodeWithCheck(node.children.ids[index + 1]);
+            rightSibling = await this.fetchNodePWithCheck(node.children.ids[index + 1]);
             this.assertProperSiblings(newChildData, rightSibling);
             if (rightSibling.keys.length > this.minKeys) {
               const newChildNode = this.newNode(modifications,

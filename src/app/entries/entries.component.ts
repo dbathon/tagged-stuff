@@ -4,49 +4,42 @@ import { Entry } from "../shared/entry/entry";
 import { EntryService } from "../shared/entry/entry.service";
 import { FormBuilder, Validators } from "@angular/forms";
 import { BTreeEntry, BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree, Result } from "../shared/remote-b-tree";
-import { Observable, of, range } from "rxjs";
-import { flatMap, last } from "rxjs/operators";
 
 class BTreeMap {
 
   readonly data: Map<string, BTreeNode> = new Map();
   readonly tree: RemoteBTree;
-  readonly fetchNode: (id: string) => Promise<BTreeNode>;
+  readonly fetchNodeP: (id: string) => Promise<BTreeNode>;
   rootId: string;
-  fetchNode4WithPromise = false;
+  fetchNodeWithPromise = false;
 
   constructor(treeOrder: number) {
-    const fetchNode = async (id: string): Promise<BTreeNode> => {
+    const fetchNodeP = async (id: string): Promise<BTreeNode> => {
       const node = this.data.get(id);
       if (node === undefined) {
         throw new Error("node not found: " + id);
       }
       return node;
     };
-    this.fetchNode = fetchNode;
-    const fetchNode2 = (id: string): Observable<BTreeNode> => {
-      const node = this.data.get(id);
-      if (node === undefined) {
-        throw new Error("node not found: " + id);
+    this.fetchNodeP = fetchNodeP;
+    const fetchNode = (id: string): Result<BTreeNode> => {
+      if (this.fetchNodeWithPromise) {
+        return Result.withPromise(fetchNodeP(id));
       }
-      return of(node);
-    };
-    const fetchNode3 = (id: string): BTreeNode => {
-      const node = this.data.get(id);
-      if (node === undefined) {
-        throw new Error("node not found: " + id);
+      else {
+        const node = this.data.get(id);
+        if (node === undefined) {
+          throw new Error("node not found: " + id);
+        }
+        return Result.withValue(node);
       }
-      return node;
-    };
-    const fetchNode4 = (id: string): Result<BTreeNode> => {
-      return this.fetchNode4WithPromise ? Result.withPromise(fetchNode(id)) : Result.withValue(fetchNode3(id));
     };
     let id = 0;
     const generateId = () => {
       ++id;
       return "" + id;
     };
-    this.tree = new RemoteBTree(Math.max(treeOrder, 3), this.fetchNode, generateId, fetchNode2, fetchNode3, fetchNode4);
+    this.tree = new RemoteBTree(Math.max(treeOrder, 3), fetchNode, generateId, fetchNodeP);
 
     // dummy assignment for the type checker
     this.rootId = "";
@@ -59,20 +52,8 @@ class BTreeMap {
     modificationResult.newNodes.forEach(node => this.data.set(node.id, node));
   }
 
-  async get(key: string): Promise<string | undefined> {
-    return await this.tree.getValue(key, this.rootId);
-  }
-
-  get2(key: string): Observable<string | undefined> {
-    return this.tree.getValue2(key, this.rootId);
-  }
-
-  get3(key: string): string | undefined {
-    return this.tree.getValue3(key, this.rootId);
-  }
-
-  get4(key: string): Result<string | undefined> {
-    return this.tree.getValue4(key, this.rootId);
+  get(key: string): Result<string | undefined> {
+    return this.tree.getValue(key, this.rootId);
   }
 
   async set(key: string, value: string) {
@@ -97,7 +78,7 @@ class BTreeMap {
   }
 
   private async dumpTreeInternal(nodeId: string, indent: string = "", sizeFromParent?: number): Promise<string[]> {
-    const node = await this.fetchNode(nodeId);
+    const node = await this.fetchNodeP(nodeId);
     const sizeFromParentString = sizeFromParent !== undefined ? " (" + sizeFromParent + ")" : "";
     if (node.children) {
       let result: string[] = [];
@@ -279,9 +260,8 @@ export class EntriesComponent implements OnInit {
 
   testSize = 5000;
   testOrder = 100;
-  testTree: BTreeMap | undefined;
 
-  async bTreeBenchmarkSetup() {
+  async bTreeBenchmark2() {
     const start = new Date().getTime();
     const tree: BTreeMap = new BTreeMap(this.testOrder);
     const entryCount = this.testSize;
@@ -294,75 +274,16 @@ export class EntriesComponent implements OnInit {
     }
     const insertDone = new Date().getTime();
     console.log("insert done", insertDone - start);
-    this.testTree = tree;
-  }
 
-  async bTreeBenchmark1() {
-    const start = new Date().getTime();
-    let result: string | undefined;
-    const entryCount = this.testSize;
-    const tree = this.testTree;
-    if (tree == undefined) {
-      return;
-    }
-    for (let i = 0; i < entryCount; ++i) {
-      const str = "" + i;
-      result = await tree.get(str);
-    }
-
-    const end = new Date().getTime();
-    console.log("getValuess", end - start, result);
-  }
-
-  bTreeBenchmark2() {
-    const start = new Date().getTime();
-    let result: string | undefined;
-    const entryCount = this.testSize;
-    const tree = this.testTree;
-    if (tree == undefined) {
-      return;
-    }
-    range(0, entryCount).pipe(
-      flatMap(i => tree.get2("" + i)),
-      last()
-    ).subscribe(result => {
-      const end = new Date().getTime();
-      console.log("getValues", end - start, result);
-    });
-  }
-
-  bTreeBenchmark3() {
-    const start = new Date().getTime();
-    let result: string | undefined;
-    const entryCount = this.testSize;
-    const tree = this.testTree;
-    if (tree == undefined) {
-      return;
-    }
-    for (let i = 0; i < entryCount; ++i) {
-      const str = "" + i;
-      result = tree.get3(str);
-    }
-
-    const end = new Date().getTime();
-    console.log("getValues", end - start, result);
-  }
-
-  async bTreeBenchmark4() {
-    let result: string | undefined;
-    const entryCount = this.testSize;
-    const tree = this.testTree;
-    if (tree == undefined) {
-      return;
-    }
     for (const withPromise of [false, true]) {
-      tree.fetchNode4WithPromise = withPromise;
+      tree.fetchNodeWithPromise = withPromise;
       for (let j = 0; j < 4; ++j) {
         const start = new Date().getTime();
+        let result: string | undefined;
         try {
           for (let i = 0; i < entryCount; ++i) {
             const str = "" + i;
-            const getResult = tree.get4(str);
+            const getResult = tree.get(str);
             if (getResult.hasValue) {
               result = getResult.value;
             }
@@ -380,7 +301,6 @@ export class EntriesComponent implements OnInit {
       }
     };
   }
-
 
   treeElement = "";
   treeOrder = "3";
