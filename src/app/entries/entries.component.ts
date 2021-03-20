@@ -3,7 +3,7 @@ import { JdsClientService, DatabaseInformation } from '../shared/jds-client.serv
 import { Entry } from "../shared/entry/entry";
 import { EntryService } from "../shared/entry/entry.service";
 import { FormBuilder, Validators } from "@angular/forms";
-import { BTreeEntry, BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree } from "../shared/remote-b-tree";
+import { BTreeEntry, BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree, Result } from "../shared/remote-b-tree";
 import { Observable, of, range } from "rxjs";
 import { flatMap, last } from "rxjs/operators";
 
@@ -13,15 +13,17 @@ class BTreeMap {
   readonly tree: RemoteBTree;
   readonly fetchNode: (id: string) => Promise<BTreeNode>;
   rootId: string;
+  fetchNode4WithPromise = false;
 
   constructor(treeOrder: number) {
-    this.fetchNode = async (id: string): Promise<BTreeNode> => {
+    const fetchNode = async (id: string): Promise<BTreeNode> => {
       const node = this.data.get(id);
       if (node === undefined) {
         throw new Error("node not found: " + id);
       }
       return node;
     };
+    this.fetchNode = fetchNode;
     const fetchNode2 = (id: string): Observable<BTreeNode> => {
       const node = this.data.get(id);
       if (node === undefined) {
@@ -36,12 +38,15 @@ class BTreeMap {
       }
       return node;
     };
+    const fetchNode4 = (id: string): Result<BTreeNode> => {
+      return this.fetchNode4WithPromise ? Result.withPromise(fetchNode(id)) : Result.withValue(fetchNode3(id));
+    };
     let id = 0;
     const generateId = () => {
       ++id;
       return "" + id;
     };
-    this.tree = new RemoteBTree(Math.max(treeOrder, 3), this.fetchNode, generateId, fetchNode2, fetchNode3);
+    this.tree = new RemoteBTree(Math.max(treeOrder, 3), this.fetchNode, generateId, fetchNode2, fetchNode3, fetchNode4);
 
     // dummy assignment for the type checker
     this.rootId = "";
@@ -64,6 +69,10 @@ class BTreeMap {
 
   get3(key: string): string | undefined {
     return this.tree.getValue3(key, this.rootId);
+  }
+
+  get4(key: string): Result<string | undefined> {
+    return this.tree.getValue4(key, this.rootId);
   }
 
   async set(key: string, value: string) {
@@ -336,7 +345,40 @@ export class EntriesComponent implements OnInit {
     }
 
     const end = new Date().getTime();
-    console.log("getValuess", end - start, result);
+    console.log("getValues", end - start, result);
+  }
+
+  async bTreeBenchmark4() {
+    let result: string | undefined;
+    const entryCount = this.testSize;
+    const tree = this.testTree;
+    if (tree == undefined) {
+      return;
+    }
+    for (const withPromise of [false, true]) {
+      tree.fetchNode4WithPromise = withPromise;
+      for (let j = 0; j < 4; ++j) {
+        const start = new Date().getTime();
+        try {
+          for (let i = 0; i < entryCount; ++i) {
+            const str = "" + i;
+            const getResult = tree.get4(str);
+            if (getResult.hasValue) {
+              result = getResult.value;
+            }
+            else {
+              result = await getResult.promise;
+            }
+          }
+        }
+        catch (e) {
+          console.log(e);
+        }
+
+        const end = new Date().getTime();
+        console.log("getValues", withPromise, j, end - start, result);
+      }
+    };
   }
 
 

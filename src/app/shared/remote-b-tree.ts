@@ -1,6 +1,59 @@
 import { Observable, of } from "rxjs";
 import { flatMap, map } from "rxjs/operators";
 
+export class Result<T> {
+  private constructor(private readonly _value?: T, private readonly _promise?: Promise<T>) { }
+
+  static withValue<T>(value: T): Result<T> {
+    return new Result<T>(value);
+  };
+
+  static withPromise<T>(promise: Promise<T>): Result<T> {
+    return new Result<T>(undefined, promise);
+  };
+
+  get hasValue(): boolean {
+    return this._promise === undefined;
+  }
+
+  get value(): T {
+    if (this._promise !== undefined) {
+      throw new Error("result does not have value, use promise instead");
+    }
+    return this._value as T;
+  }
+
+  get promise(): Promise<T> {
+    if (this._promise === undefined) {
+      throw new Error("result does not have promise, use value instead");
+    }
+    return this._promise;
+  }
+
+  transform<R>(transformFunction: (t: T) => R | Result<R>): Result<R> {
+    if (this.hasValue) {
+      const valueOrResult = transformFunction(this.value);
+      return valueOrResult instanceof Result ? valueOrResult : Result.withValue(valueOrResult);
+    }
+    else {
+      return Result.withPromise(this.promise.then(result => {
+        const valueOrResult = transformFunction(result);
+        if (valueOrResult instanceof Result) {
+          if (valueOrResult.hasValue) {
+            return valueOrResult.value;
+          }
+          else {
+            return valueOrResult.promise;
+          }
+        }
+        else {
+          return valueOrResult;
+        }
+      }));
+    }
+  }
+}
+
 export interface BTreeNodeChildren {
   /**
    * The child node ids.
@@ -143,7 +196,8 @@ export class RemoteBTree {
    */
   constructor(order: number, readonly fetchNode: (nodeId: string) => Promise<BTreeNode>, readonly generateId: () => string,
     readonly fetchNode2?: (nodeId: string) => Observable<BTreeNode>,
-    readonly fetchNode3?: (nodeId: string) => BTreeNode) {
+    readonly fetchNode3?: (nodeId: string) => BTreeNode,
+    readonly fetchNode4?: (nodeId: string) => Result<BTreeNode>) {
     this.order = Math.ceil(order);
     this.minChildren = Math.ceil(this.order / 2);
     if (this.minKeys < 1 || this.maxKeys < 2) {
@@ -213,6 +267,16 @@ export class RemoteBTree {
     const result = this.fetchNode3(nodeId);
     this.assertProperNode(result);
     return result;
+  }
+
+  private fetchNodeWithCheck4(nodeId: string): Result<BTreeNode> {
+    if (this.fetchNode4 === undefined) {
+      throw new Error();
+    }
+    return this.fetchNode4(nodeId).transform(node => {
+      this.assertProperNode(node);
+      return node;
+    });
   }
 
   private newNode(modifications: Modifications, keys: string[], values: string[], children?: BTreeNodeChildren): BTreeNode {
@@ -321,6 +385,26 @@ export class RemoteBTree {
     }
 
     return undefined;
+  }
+
+  private getValue4Inner(key: string, node: BTreeNode): Result<string | undefined> {
+    if (node.keys.length <= 0) {
+      // empty root node
+      return Result.withValue(undefined);
+    }
+    const { index, isKey } = this.searchKeyOrChildIndex(node, key);
+    if (isKey) {
+      return Result.withValue(node.values[index]);
+    }
+    else if (node.children) {
+      return this.getValue4(key, node.children.ids[index]);
+    }
+
+    return Result.withValue(undefined);
+  }
+
+  getValue4(key: string, rootId: string): Result<string | undefined> {
+    return this.fetchNodeWithCheck4(rootId).transform(node => this.getValue4Inner(key, node));
   }
 
   private async scanInternal(parameters: BTreeScanParameters, nodeId: string, result: BTreeEntry[]) {
