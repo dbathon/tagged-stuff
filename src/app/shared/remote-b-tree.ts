@@ -28,6 +28,15 @@ export class Result<T> {
     return this._promise;
   }
 
+  toPromise(): Promise<T> {
+    if (this.hasValue) {
+      return Promise.resolve(this.value);
+    }
+    else {
+      return this.promise;
+    }
+  }
+
   transform<R>(transformFunction: (t: T) => R | Result<R>): Result<R> {
     if (this.hasValue) {
       const valueOrResult = transformFunction(this.value);
@@ -192,8 +201,7 @@ export class RemoteBTree {
    * @param fetchNode the function used to get the nodes
    * @param generateId used to generate ids for new nodes, needs to return ids that are not used yet
    */
-  constructor(order: number, readonly fetchNode: (nodeId: string) => Result<BTreeNode>, readonly generateId: () => string,
-    readonly fetchNodeP: (nodeId: string) => Promise<BTreeNode>) {
+  constructor(order: number, readonly fetchNode: (nodeId: string) => Result<BTreeNode>, readonly generateId: () => string) {
     this.order = Math.ceil(order);
     this.minChildren = Math.ceil(this.order / 2);
     if (this.minKeys < 1 || this.maxKeys < 2) {
@@ -236,12 +244,6 @@ export class RemoteBTree {
     if ((node1.children && !node2.children) || (!node1.children && node2.children)) {
       throw new Error("nodes are not proper siblings");
     }
-  }
-
-  private async fetchNodePWithCheck(nodeId: string): Promise<BTreeNode> {
-    const result = await this.fetchNodeP(nodeId);
-    this.assertProperNode(result);
-    return result;
   }
 
   private fetchNodeWithCheck(nodeId: string): Result<BTreeNode> {
@@ -328,43 +330,62 @@ export class RemoteBTree {
     });
   }
 
-  private async scanInternal(parameters: BTreeScanParameters, nodeId: string, result: BTreeEntry[]) {
-    const node = await this.fetchNodePWithCheck(nodeId);
-    if (node.keys.length <= 0) {
-      // empty root node
-      return;
-    }
-    let index = 0;
-    if (parameters.minKey !== undefined && node.keys[0] < parameters.minKey) {
-      // use search to find the start index
-      index = this.searchKeyOrChildIndex(node, parameters.minKey).index;
-    }
-    // TODO: maybe some child scans could be skipped, e.g. if some key matches the minKey...
-    while (index < node.keys.length && !parameters.maxResultsReached(result.length)) {
-      if (node.children) {
-        await this.scanInternal(parameters, node.children.ids[index], result);
-      }
-      const key = node.keys[index];
-      if (!parameters.includesKey(key)) {
-        // we are done
-        this.assert(parameters.maxKey !== undefined && key > parameters.maxKey);
+  private scanInternal(parameters: BTreeScanParameters, nodeId: string, result: BTreeEntry[]): Result<void> {
+    return this.fetchNodeWithCheck(nodeId).transform(node => {
+      if (node.keys.length <= 0) {
+        // empty root node
         return;
       }
-      if (!parameters.maxResultsReached(result.length)) {
-        result.push(new BTreeEntry(key, node.values[index]));
+      let startIndex = 0;
+      if (parameters.minKey !== undefined && node.keys[0] < parameters.minKey) {
+        // use search to find the start index
+        startIndex = this.searchKeyOrChildIndex(node, parameters.minKey).index;
       }
-      ++index;
-    }
-    // scan the last child
-    if (node.children && !parameters.maxResultsReached(result.length)) {
-      await this.scanInternal(parameters, node.children.ids[index], result);
-    }
+
+      const step = (index: number): Result<void> => {
+        let childScanResult: Result<void>;
+        if (node.children && index < node.children.ids.length && !parameters.maxResultsReached(result.length)) {
+          childScanResult = this.scanInternal(parameters, node.children.ids[index], result);
+        }
+        else {
+          childScanResult = Result.withValue(undefined);
+        }
+
+        const doneResult: Result<boolean> = childScanResult.transform(_ => {
+          if (index < node.keys.length && !parameters.maxResultsReached(result.length)) {
+            const key = node.keys[index];
+            if (!parameters.includesKey(key)) {
+              // we are done
+              this.assert(parameters.maxKey !== undefined && key > parameters.maxKey);
+              return true;
+            }
+            else {
+              result.push(new BTreeEntry(key, node.values[index]));
+              return false;
+            }
+          }
+          else {
+            return true;
+          }
+        });
+
+        return doneResult.transform(done => {
+          if (done) {
+            return;
+          }
+          else {
+            return step(index + 1);
+          }
+        });
+      };
+
+      return step(startIndex);
+    });
   }
 
-  async scan(parameters: BTreeScanParameters, rootId: string): Promise<BTreeEntry[]> {
+  scan(parameters: BTreeScanParameters, rootId: string): Result<BTreeEntry[]> {
     const result: BTreeEntry[] = [];
-    await this.scanInternal(parameters, rootId, result);
-    return result;
+    return this.scanInternal(parameters, rootId, result).transform(_ => result);
   }
 
   private copyAndInsert<T>(values: T[], insertIndex: number, valueToInsert: T): T[] {
@@ -389,8 +410,8 @@ export class RemoteBTree {
     return result;
   }
 
-  async getSize(rootId: string): Promise<number> {
-    return this.nodeSize(await this.fetchNodePWithCheck(rootId));
+  getSize(rootId: string): Result<number> {
+    return this.fetchNodeWithCheck(rootId).transform(node => this.nodeSize(node));
   }
 
   private toInsertChild(node: BTreeNode): InsertChild {
@@ -453,79 +474,82 @@ export class RemoteBTree {
     }
   }
 
-  private async setValueInternal(key: string, value: string, nodeId: string, modifications: Modifications): Promise<InsertResult> {
-    const node = await this.fetchNodePWithCheck(nodeId);
-    if (node.keys.length <= 0) {
-      // empty root node, just insert
-      const newNode = this.newNode(modifications, [key], [value]);
-      modifications.obsoleteNodes.push(node);
-      return { newNode: this.toInsertChild(newNode) };
-    }
-
-    const { index, isKey } = this.searchKeyOrChildIndex(node, key);
-
-    if (isKey) {
-      if (node.values[index] == value) {
-        // no change required
-        return {};
-      }
-      else {
-        // update this node
-        const newValues = [...node.values];
-        newValues[index] = value;
-        const newNode = this.newNode(modifications, [...node.keys], newValues, node.children && this.sliceChildren(node.children, 0));
+  private setValueInternal(key: string, value: string, nodeId: string, modifications: Modifications): Result<InsertResult> {
+    return this.fetchNodeWithCheck(nodeId).transform(node => {
+      if (node.keys.length <= 0) {
+        // empty root node, just insert
+        const newNode = this.newNode(modifications, [key], [value]);
         modifications.obsoleteNodes.push(node);
         return { newNode: this.toInsertChild(newNode) };
       }
-    }
-    else if (!node.children) {
-      // this node is a leaf node, just insert
-      return this.insertIntoNode(node, index, { key, value }, modifications);
-    }
-    else {
-      // recursively set the value in the child
-      const insertResult = await this.setValueInternal(key, value, node.children.ids[index], modifications);
-      if (insertResult.newNode !== undefined) {
-        // update this node with the new child id
-        const newChildren = this.sliceChildren(node.children, 0);
-        newChildren.ids[index] = insertResult.newNode.id;
-        newChildren.sizes[index] = insertResult.newNode.size;
-        const newNode = this.newNode(modifications, [...node.keys], [...node.values], newChildren);
-        modifications.obsoleteNodes.push(node);
-        return { newNode: this.toInsertChild(newNode) };
+
+      const { index, isKey } = this.searchKeyOrChildIndex(node, key);
+
+      if (isKey) {
+        if (node.values[index] == value) {
+          // no change required
+          return {};
+        }
+        else {
+          // update this node
+          const newValues = [...node.values];
+          newValues[index] = value;
+          const newNode = this.newNode(modifications, [...node.keys], newValues, node.children && this.sliceChildren(node.children, 0));
+          modifications.obsoleteNodes.push(node);
+          return { newNode: this.toInsertChild(newNode) };
+        }
       }
-      else if (insertResult.splitInsert) {
-        // perform the split insert
-        return this.insertIntoNode(node, index, insertResult.splitInsert, modifications);
+      else if (!node.children) {
+        // this node is a leaf node, just insert
+        return this.insertIntoNode(node, index, { key, value }, modifications);
       }
       else {
-        // no changes, reuse the insertResult
-        return insertResult;
+        // recursively set the value in the child
+        return this.setValueInternal(key, value, node.children.ids[index], modifications).transform(insertResult => {
+          if (insertResult.newNode !== undefined) {
+            // update this node with the new child id
+            const newChildren = this.sliceChildren(node.children!, 0);
+            newChildren.ids[index] = insertResult.newNode.id;
+            newChildren.sizes[index] = insertResult.newNode.size;
+            const newNode = this.newNode(modifications, [...node.keys], [...node.values], newChildren);
+            modifications.obsoleteNodes.push(node);
+            return { newNode: this.toInsertChild(newNode) };
+          }
+          else if (insertResult.splitInsert) {
+            // perform the split insert
+            return this.insertIntoNode(node, index, insertResult.splitInsert, modifications);
+          }
+          else {
+            // no changes, reuse the insertResult
+            return insertResult;
+          }
+        });
       }
-    }
+    });
   }
 
-  async setValue(key: string, value: string, rootId: string): Promise<BTreeModificationResult> {
+  setValue(key: string, value: string, rootId: string): Result<BTreeModificationResult> {
     this.assertString(key);
     this.assertString(value);
     const modifications = new Modifications();
     let newRootId = rootId;
 
-    const insertResult = await this.setValueInternal(key, value, rootId, modifications);
-    if (insertResult.newNode !== undefined) {
-      newRootId = insertResult.newNode.id;
-    }
-    else if (insertResult.splitInsert) {
-      // create new root node
-      const insert = insertResult.splitInsert;
-      const newRootNode = this.newNode(modifications, [insert.key], [insert.value], {
-        ids: [this.assertString(insert.leftChild?.id), this.assertString(insert.rightChild?.id)],
-        sizes: [this.assertNumber(insert.leftChild?.size), this.assertNumber(insert.rightChild?.size)],
-      });
-      newRootId = newRootNode.id;
-    }
+    return this.setValueInternal(key, value, rootId, modifications).transform(insertResult => {
+      if (insertResult.newNode !== undefined) {
+        newRootId = insertResult.newNode.id;
+      }
+      else if (insertResult.splitInsert) {
+        // create new root node
+        const insert = insertResult.splitInsert;
+        const newRootNode = this.newNode(modifications, [insert.key], [insert.value], {
+          ids: [this.assertString(insert.leftChild?.id), this.assertString(insert.rightChild?.id)],
+          sizes: [this.assertNumber(insert.leftChild?.size), this.assertNumber(insert.rightChild?.size)],
+        });
+        newRootId = newRootNode.id;
+      }
 
-    return new BTreeModificationResult(newRootId, modifications.newNodes, modifications.obsoleteNodes);
+      return new BTreeModificationResult(newRootId, modifications.newNodes, modifications.obsoleteNodes);
+    });
   }
 
   private copyAndDelete<T>(values: T[], deleteIndex: number): T[] {
@@ -533,226 +557,280 @@ export class RemoteBTree {
     return [...values.slice(0, deleteIndex), ...values.slice(deleteIndex + 1)];
   }
 
-  private async deleteKeyInternal(key: string | undefined, nodeId: string, modifications: Modifications): Promise<DeleteResult | undefined> {
-    const node = await this.fetchNodePWithCheck(nodeId);
-    if (node.keys.length <= 0) {
-      // node is empty, nothing to do
-      return undefined;
-    }
-
-    // if key is undefined, then we want to delete the largest key in this tree
-    const { index, isKey } = key !== undefined ?
-      this.searchKeyOrChildIndex(node, key) :
-      {
-        index: node.children ? node.children.ids.length - 1 : node.keys.length - 1,
-        isKey: !node.children
-      };
-
-    if (!node.children) {
-      if (isKey) {
-        modifications.obsoleteNodes.push(node);
-        return {
-          newChildData: {
-            keys: this.copyAndDelete(node.keys, index),
-            values: this.copyAndDelete(node.values, index)
-          },
-          deletedEntry: new BTreeEntry(node.keys[index], node.values[index])
-        };
-      }
-      else {
-        // key is not in the tree
+  private deleteKeyInternal(key: string | undefined, nodeId: string, modifications: Modifications): Result<DeleteResult | undefined> {
+    return this.fetchNodeWithCheck(nodeId).transform(node => {
+      if (node.keys.length <= 0) {
+        // node is empty, nothing to do
         return undefined;
       }
-    }
-    else {
-      /**
-       * If !isKey then we can just delete the key from the child, otherwise just delete the largest key from the right
-       * sub-tree, that entry will then be used to replace the entry in this node, that is supposed to be deleted.
-       *
-       * TODO: maybe optimize this and potentially also delete from the left sub-tree in the isKey case.
-       */
-      const deleteResult = await this.deleteKeyInternal(!isKey ? key : undefined, node.children.ids[index], modifications);
 
-      if (deleteResult !== undefined) {
-        const newChildData = deleteResult.newChildData;
-        let deletedEntry = deleteResult.deletedEntry!;
+      // if key is undefined, then we want to delete the largest key in this tree
+      const { index, isKey } = key !== undefined ?
+        this.searchKeyOrChildIndex(node, key) :
+        {
+          index: node.children ? node.children.ids.length - 1 : node.keys.length - 1,
+          isKey: !node.children
+        };
 
-        // this node will be replaced/deleted in any case
-        modifications.obsoleteNodes.push(node);
-
-        let newKeys = [...node.keys];
-        let newValues = [...node.values];
-        let newChildren = this.sliceChildren(node.children, 0);
-
+      if (!node.children) {
         if (isKey) {
-          newKeys[index] = deletedEntry.key;
-          newValues[index] = deletedEntry.value;
-
-          // replace deletedEntry with the "real" one
-          deletedEntry = new BTreeEntry(node.keys[index], node.values[index]);
-        }
-
-        if (newChildData.keys.length >= this.minKeys) {
-          // just create the new node
-          const newNode = this.newNodeFromNodeData(modifications, newChildData);
-          newChildren.ids[index] = newNode.id;
-          newChildren.sizes[index] = this.nodeSize(newNode);
+          modifications.obsoleteNodes.push(node);
+          return {
+            newChildData: {
+              keys: this.copyAndDelete(node.keys, index),
+              values: this.copyAndDelete(node.values, index)
+            },
+            deletedEntry: new BTreeEntry(node.keys[index], node.values[index])
+          };
         }
         else {
-          // borrow or merge
-          let borrowMergeDone = false;
-          // TODO: handle children in child nodes...
-          let leftSibling: BTreeNode | undefined = undefined;
-          if (index > 0) {
-            // check if we can borrow from left sibling
-            leftSibling = await this.fetchNodePWithCheck(node.children.ids[index - 1]);
-            this.assertProperSiblings(leftSibling, newChildData);
-            if (leftSibling.keys.length > this.minKeys) {
-              const newLeftSiblingKeyCount = leftSibling.keys.length - 1;
-              const newChildNode = this.newNode(modifications,
-                [newKeys[index - 1], ...newChildData.keys],
-                [newValues[index - 1], ...newChildData.values],
-                leftSibling.children && newChildData.children && {
-                  ids: [leftSibling.children.ids[newLeftSiblingKeyCount + 1], ...newChildData.children.ids],
-                  sizes: [leftSibling.children.sizes[newLeftSiblingKeyCount + 1], ...newChildData.children.sizes]
-                }
-              );
-              newChildren.ids[index] = newChildNode.id;
-              newChildren.sizes[index] = this.nodeSize(newChildNode);
-
-              const newLeftSibling = this.newNode(modifications,
-                leftSibling.keys.slice(0, newLeftSiblingKeyCount),
-                leftSibling.values.slice(0, newLeftSiblingKeyCount),
-                leftSibling.children && this.sliceChildren(leftSibling.children, 0, newLeftSiblingKeyCount + 1)
-              );
-              newChildren.ids[index - 1] = newLeftSibling.id;
-              newChildren.sizes[index - 1] = this.nodeSize(newLeftSibling);
-              modifications.obsoleteNodes.push(leftSibling);
-
-              newKeys[index - 1] = leftSibling.keys[newLeftSiblingKeyCount];
-              newValues[index - 1] = leftSibling.values[newLeftSiblingKeyCount];
-
-              borrowMergeDone = true;
-            }
-          }
-
-          let rightSibling: BTreeNode | undefined = undefined;
-          if (!borrowMergeDone && index < node.children.ids.length - 1) {
-            // check if we can borrow from right sibling
-            rightSibling = await this.fetchNodePWithCheck(node.children.ids[index + 1]);
-            this.assertProperSiblings(newChildData, rightSibling);
-            if (rightSibling.keys.length > this.minKeys) {
-              const newChildNode = this.newNode(modifications,
-                [...newChildData.keys, newKeys[index]],
-                [...newChildData.values, newValues[index]],
-                newChildData.children && rightSibling.children && {
-                  ids: [...newChildData.children.ids, rightSibling.children.ids[0]],
-                  sizes: [...newChildData.children.sizes, rightSibling.children.sizes[0]]
-                }
-              );
-              newChildren.ids[index] = newChildNode.id;
-              newChildren.sizes[index] = this.nodeSize(newChildNode);
-
-              const newRightSibling = this.newNode(modifications,
-                rightSibling.keys.slice(1),
-                rightSibling.values.slice(1),
-                rightSibling.children && this.sliceChildren(rightSibling.children, 1)
-              );
-              newChildren.ids[index + 1] = newRightSibling.id;
-              newChildren.sizes[index + 1] = this.nodeSize(newRightSibling);
-              modifications.obsoleteNodes.push(rightSibling);
-
-              newKeys[index] = rightSibling.keys[0];
-              newValues[index] = rightSibling.values[0];
-
-              borrowMergeDone = true;
-            }
-          }
-
-          if (!borrowMergeDone) {
-            // no borrowing possible, merge two child nodes
-            let deleteIndex: number | undefined = undefined;
-            let newMergedChildNode: BTreeNode | undefined = undefined;
-            if (leftSibling !== undefined) {
-              deleteIndex = index - 1;
-              newMergedChildNode = this.newNode(modifications,
-                [...leftSibling.keys, newKeys[deleteIndex], ...newChildData.keys],
-                [...leftSibling.values, newValues[deleteIndex], ...newChildData.values],
-                leftSibling.children && newChildData.children && {
-                  ids: [...leftSibling.children.ids, ...newChildData.children.ids],
-                  sizes: [...leftSibling.children.sizes, ...newChildData.children.sizes]
-                }
-              );
-
-              modifications.obsoleteNodes.push(leftSibling);
-            }
-            else if (rightSibling !== undefined) {
-              deleteIndex = index;
-              newMergedChildNode = this.newNode(modifications,
-                [...newChildData.keys, newKeys[deleteIndex], ...rightSibling.keys],
-                [...newChildData.values, newValues[deleteIndex], ...rightSibling.values],
-                newChildData.children && rightSibling.children && {
-                  ids: [...newChildData.children.ids, ...rightSibling.children.ids],
-                  sizes: [...newChildData.children.sizes, ...rightSibling.children.sizes]
-                }
-              );
-
-              modifications.obsoleteNodes.push(rightSibling);
-            }
-            else {
-              // cannot happen
-              throw new Error("merge not possible");
-            }
-
-            newKeys = this.copyAndDelete(newKeys, deleteIndex);
-            newValues = this.copyAndDelete(newValues, deleteIndex);
-            newChildren = {
-              ids: this.copyAndDelete(newChildren.ids, deleteIndex),
-              sizes: this.copyAndDelete(newChildren.sizes, deleteIndex)
-            };
-            newChildren.ids[deleteIndex] = newMergedChildNode.id;
-            newChildren.sizes[deleteIndex] = this.nodeSize(newMergedChildNode);
-          }
+          // key is not in the tree
+          return undefined;
         }
-        return {
-          newChildData: {
-            keys: newKeys,
-            values: newValues,
-            children: newChildren
-          },
-          deletedEntry
-        };
       }
       else {
-        this.assert(!isKey);
+        // capture node.children in a variable that is not undefined to help the type checker
+        const nodeChildren: BTreeNodeChildren = node.children;
 
-        // nothing to do
-        return undefined;
+        /**
+         * If !isKey then we can just delete the key from the child, otherwise just delete the largest key from the right
+         * sub-tree, that entry will then be used to replace the entry in this node, that is supposed to be deleted.
+         *
+         * TODO: maybe optimize this and potentially also delete from the left sub-tree in the isKey case.
+         */
+        return this.deleteKeyInternal(!isKey ? key : undefined, node.children.ids[index], modifications).transform(deleteResult => {
+          if (deleteResult === undefined) {
+            this.assert(!isKey);
+
+            // nothing to do
+            return undefined;
+          }
+          else {
+            const newChildData = deleteResult.newChildData;
+
+            // this node will be replaced/deleted in any case
+            modifications.obsoleteNodes.push(node);
+
+            const newKeys = [...node.keys];
+            const newValues = [...node.values];
+            const newChildren = this.sliceChildren(nodeChildren, 0);
+
+            if (isKey) {
+              newKeys[index] = deleteResult.deletedEntry.key;
+              newValues[index] = deleteResult.deletedEntry.value;
+            }
+            const deletedEntry = isKey ?
+              // replace deletedEntry with the "real" one
+              new BTreeEntry(node.keys[index], node.values[index]) :
+              deleteResult.deletedEntry;
+
+            const result: DeleteResult = {
+              newChildData: {
+                keys: newKeys,
+                values: newValues,
+                children: newChildren
+              },
+              deletedEntry
+            };
+
+            if (newChildData.keys.length >= this.minKeys) {
+              // just create the new node
+              const newNode = this.newNodeFromNodeData(modifications, newChildData);
+              newChildren.ids[index] = newNode.id;
+              newChildren.sizes[index] = this.nodeSize(newNode);
+              return result;
+            }
+            else {
+              // borrow or merge
+              // TODO: maybe always fetch both siblings (if available) at once (once we have "multi fetch")
+              let mergeStateResult: Result<{
+                borrowMergeDone: boolean;
+                leftSibling?: BTreeNode;
+                rightSibling?: BTreeNode;
+              }>;
+
+              if (index > 0) {
+                // check if we can borrow from left sibling
+                mergeStateResult = this.fetchNodeWithCheck(nodeChildren.ids[index - 1]).transform(leftSibling => {
+                  this.assertProperSiblings(leftSibling, newChildData);
+                  if (leftSibling.keys.length > this.minKeys) {
+                    const newLeftSiblingKeyCount = leftSibling.keys.length - 1;
+                    const newChildNode = this.newNode(modifications,
+                      [newKeys[index - 1], ...newChildData.keys],
+                      [newValues[index - 1], ...newChildData.values],
+                      leftSibling.children && newChildData.children && {
+                        ids: [leftSibling.children.ids[newLeftSiblingKeyCount + 1], ...newChildData.children.ids],
+                        sizes: [leftSibling.children.sizes[newLeftSiblingKeyCount + 1], ...newChildData.children.sizes]
+                      }
+                    );
+                    newChildren.ids[index] = newChildNode.id;
+                    newChildren.sizes[index] = this.nodeSize(newChildNode);
+
+                    const newLeftSibling = this.newNode(modifications,
+                      leftSibling.keys.slice(0, newLeftSiblingKeyCount),
+                      leftSibling.values.slice(0, newLeftSiblingKeyCount),
+                      leftSibling.children && this.sliceChildren(leftSibling.children, 0, newLeftSiblingKeyCount + 1)
+                    );
+                    newChildren.ids[index - 1] = newLeftSibling.id;
+                    newChildren.sizes[index - 1] = this.nodeSize(newLeftSibling);
+                    modifications.obsoleteNodes.push(leftSibling);
+
+                    newKeys[index - 1] = leftSibling.keys[newLeftSiblingKeyCount];
+                    newValues[index - 1] = leftSibling.values[newLeftSiblingKeyCount];
+
+                    return {
+                      borrowMergeDone: true,
+                      leftSibling
+                    };
+                  }
+                  else {
+                    return {
+                      borrowMergeDone: false,
+                      leftSibling
+                    };
+                  }
+                });
+              }
+              else {
+                mergeStateResult = Result.withValue({
+                  borrowMergeDone: false,
+                });
+              }
+
+              mergeStateResult = mergeStateResult.transform(mergeState => {
+                if (!mergeState.borrowMergeDone && index < nodeChildren.ids.length - 1) {
+                  // check if we can borrow from right sibling
+                  return this.fetchNodeWithCheck(nodeChildren.ids[index + 1]).transform(rightSibling => {
+                    this.assertProperSiblings(newChildData, rightSibling);
+                    if (rightSibling.keys.length > this.minKeys) {
+                      const newChildNode = this.newNode(modifications,
+                        [...newChildData.keys, newKeys[index]],
+                        [...newChildData.values, newValues[index]],
+                        newChildData.children && rightSibling.children && {
+                          ids: [...newChildData.children.ids, rightSibling.children.ids[0]],
+                          sizes: [...newChildData.children.sizes, rightSibling.children.sizes[0]]
+                        }
+                      );
+                      newChildren.ids[index] = newChildNode.id;
+                      newChildren.sizes[index] = this.nodeSize(newChildNode);
+
+                      const newRightSibling = this.newNode(modifications,
+                        rightSibling.keys.slice(1),
+                        rightSibling.values.slice(1),
+                        rightSibling.children && this.sliceChildren(rightSibling.children, 1)
+                      );
+                      newChildren.ids[index + 1] = newRightSibling.id;
+                      newChildren.sizes[index + 1] = this.nodeSize(newRightSibling);
+                      modifications.obsoleteNodes.push(rightSibling);
+
+                      newKeys[index] = rightSibling.keys[0];
+                      newValues[index] = rightSibling.values[0];
+
+                      return {
+                        ...mergeState,
+                        borrowMergeDone: true,
+                        rightSibling,
+                      };
+                    }
+                    else {
+                      return {
+                        ...mergeState,
+                        rightSibling
+                      };
+                    }
+                  });
+                }
+                else {
+                  return mergeState;
+                }
+              });
+
+              return mergeStateResult.transform(({ borrowMergeDone, leftSibling, rightSibling }) => {
+                if (borrowMergeDone) {
+                  return result;
+                }
+                else {
+                  // no borrowing possible, merge two child nodes
+                  let deleteIndex: number | undefined = undefined;
+                  let newMergedChildNode: BTreeNode | undefined = undefined;
+                  if (leftSibling !== undefined) {
+                    deleteIndex = index - 1;
+                    newMergedChildNode = this.newNode(modifications,
+                      [...leftSibling.keys, newKeys[deleteIndex], ...newChildData.keys],
+                      [...leftSibling.values, newValues[deleteIndex], ...newChildData.values],
+                      leftSibling.children && newChildData.children && {
+                        ids: [...leftSibling.children.ids, ...newChildData.children.ids],
+                        sizes: [...leftSibling.children.sizes, ...newChildData.children.sizes]
+                      }
+                    );
+
+                    modifications.obsoleteNodes.push(leftSibling);
+                  }
+                  else if (rightSibling !== undefined) {
+                    deleteIndex = index;
+                    newMergedChildNode = this.newNode(modifications,
+                      [...newChildData.keys, newKeys[deleteIndex], ...rightSibling.keys],
+                      [...newChildData.values, newValues[deleteIndex], ...rightSibling.values],
+                      newChildData.children && rightSibling.children && {
+                        ids: [...newChildData.children.ids, ...rightSibling.children.ids],
+                        sizes: [...newChildData.children.sizes, ...rightSibling.children.sizes]
+                      }
+                    );
+
+                    modifications.obsoleteNodes.push(rightSibling);
+                  }
+                  else {
+                    // cannot happen
+                    throw new Error("merge not possible");
+                  }
+
+                  const newChildrenIds = this.copyAndDelete(newChildren.ids, deleteIndex);
+                  const newChildrenSizes = this.copyAndDelete(newChildren.sizes, deleteIndex);
+                  newChildrenIds[deleteIndex] = newMergedChildNode.id;
+                  newChildrenSizes[deleteIndex] = this.nodeSize(newMergedChildNode);
+
+                  return {
+                    newChildData: {
+                      keys: this.copyAndDelete(newKeys, deleteIndex),
+                      values: this.copyAndDelete(newValues, deleteIndex),
+                      children: {
+                        ids: newChildrenIds,
+                        sizes: newChildrenSizes
+                      }
+                    },
+                    deletedEntry
+                  };
+                }
+              });
+            }
+          }
+        });
       }
-    }
+    });
   }
 
-  async deleteKey(key: string, rootId: string): Promise<BTreeModificationResult> {
+  deleteKey(key: string, rootId: string): Result<BTreeModificationResult> {
     this.assertString(key);
     const modifications = new Modifications();
     let newRootId = rootId;
 
-    const deleteResult = await this.deleteKeyInternal(key, rootId, modifications);
-    if (deleteResult !== undefined) {
-      this.assert(deleteResult.deletedEntry.key === key);
+    return this.deleteKeyInternal(key, rootId, modifications).transform(deleteResult => {
+      if (deleteResult !== undefined) {
+        this.assert(deleteResult.deletedEntry.key === key);
 
-      if (deleteResult.newChildData.keys.length > 0 || !deleteResult.newChildData.children) {
-        const newRoot = this.newNodeFromNodeData(modifications, deleteResult.newChildData);
-        newRootId = newRoot.id;
+        if (deleteResult.newChildData.keys.length > 0 || !deleteResult.newChildData.children) {
+          const newRoot = this.newNodeFromNodeData(modifications, deleteResult.newChildData);
+          newRootId = newRoot.id;
+        }
+        else {
+          // the tree depth is reduced by one
+          this.assert(deleteResult.newChildData.children.ids.length === 1);
+          newRootId = deleteResult.newChildData.children.ids[0];
+        }
       }
-      else {
-        // the tree depth is reduced by one
-        this.assert(deleteResult.newChildData.children.ids.length === 1);
-        newRootId = deleteResult.newChildData.children.ids[0];
-      }
-    }
 
-    return new BTreeModificationResult(newRootId, modifications.newNodes, modifications.obsoleteNodes);
+      return new BTreeModificationResult(newRootId, modifications.newNodes, modifications.obsoleteNodes);
+    });
   }
 
 }
