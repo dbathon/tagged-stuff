@@ -1,8 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
 import { SettingsService } from './settings.service';
-import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
 
 export interface DatabaseInformation {
   name: string;
@@ -27,7 +24,7 @@ export class JdsClientService {
 
   baseUrl?: string;
 
-  constructor(private httpClient: HttpClient, settingsService: SettingsService) {
+  constructor(settingsService: SettingsService) {
     settingsService.settings$.subscribe(settings => this.baseUrl = settings?.jdsUrl);
   }
 
@@ -41,8 +38,25 @@ export class JdsClientService {
     return baseUrlWithSlash + pathWithoutSlash;
   }
 
-  getDatabaseInformation() {
-    return this.httpClient.get<DatabaseInformation>(this.getUrl(''));
+  private async request<T>(method: "GET" | "POST" | "PUT" | "DELETE", url: string, body?: any): Promise<T> {
+    const init: RequestInit = {
+      method
+    };
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
+      init.headers = {
+        "Content-Type": "application/json"
+      };
+    }
+    const response = await fetch(url, init);
+    if (!response.ok) {
+      throw new Error(`request to ${url} failed with status ${response.status}`);
+    }
+    return response.json() as Promise<T>;
+  }
+
+  getDatabaseInformation(): Promise<DatabaseInformation> {
+    return this.request<DatabaseInformation>("GET", this.getUrl(''));
   }
 
   private validateId(id?: string): string {
@@ -52,14 +66,14 @@ export class JdsClientService {
     return id;
   }
 
-  get<D extends JdsDocument>(id: string): Observable<D> {
+  get<D extends JdsDocument>(id: string): Promise<D> {
     this.validateId(id);
-    return this.httpClient.get<D>(this.getUrl(id));
+    return this.request<D>("GET", this.getUrl(id));
   }
 
-  put(document: JdsDocument): Observable<JdsDocument> {
+  put(document: JdsDocument): Promise<JdsDocument> {
     const id = this.validateId(document.id);
-    return this.httpClient.put<JdsDocument>(this.getUrl(id), document);
+    return this.request<JdsDocument>("PUT", this.getUrl(id), document);
   }
 
   extractIdAndVersion(idOrDocument: string | undefined | JdsDocument): JdsDocument {
@@ -75,23 +89,21 @@ export class JdsClientService {
     }
   }
 
-  delete(idOrDocument: string | undefined | JdsDocument): Observable<Object> {
+  delete(idOrDocument: string | undefined | JdsDocument): Promise<Object> {
     const document = this.extractIdAndVersion(idOrDocument);
-    let params = new HttpParams();
+    let url = this.getUrl(document.id!);
     if (document.version !== undefined) {
-      params = params.set("version", document.version);
+      url += "?" + new URLSearchParams({ version: document.version });
     }
-    return this.httpClient.delete<Object>(this.getUrl(document.id!), { params });
+    return this.request<Object>("DELETE", url);
   }
 
-  query<D extends JdsDocument>(filters?: any): Observable<D[]> {
-    let params = new HttpParams();
+  async query<D extends JdsDocument>(filters?: any): Promise<D[]> {
+    let url = this.getUrl("_query");
     if (filters !== undefined) {
-      params = params.set("filters", JSON.stringify(filters));
+      url += "?" + new URLSearchParams({ filters: JSON.stringify(filters) });
     }
-    return this.httpClient.get<QueryResult<D>>(this.getUrl("_query"), { params }).pipe(
-      map(result => result.result)
-    );
+    return (await this.request<QueryResult<D>>("GET", url)).result;
   }
 
 }

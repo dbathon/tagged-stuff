@@ -121,11 +121,9 @@ export class EntriesComponent implements OnInit {
   constructor(private jdsClient: JdsClientService, private entryService: EntryService, private formBuilder: FormBuilder) { }
 
   ngOnInit(): void {
-    this.jdsClient.getDatabaseInformation().subscribe(
-      info => this.databaseInformation = info
-    );
+    this.jdsClient.getDatabaseInformation().then(info => this.databaseInformation = info);
 
-    this.entryService.query().subscribe(entries => this.entries = entries);
+    this.entryService.query().then(entries => this.entries = entries);
   }
 
   newEntry() {
@@ -145,7 +143,7 @@ export class EntriesComponent implements OnInit {
       if (this.activeEntry.id === undefined) {
         this.entries.push(this.activeEntry);
       }
-      this.entryService.save(this.activeEntry).subscribe();
+      this.entryService.save(this.activeEntry);
       this.activeEntry = undefined;
     }
   }
@@ -154,7 +152,7 @@ export class EntriesComponent implements OnInit {
     const index = this.entries.indexOf(entry);
     if (index >= 0) {
       this.entries.splice(index, 1);
-      this.entryService.delete(entry).subscribe();
+      this.entryService.delete(entry);
     }
     if (this.activeEntry === entry) {
       this.activeEntry = undefined;
