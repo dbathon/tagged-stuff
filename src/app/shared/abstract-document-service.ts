@@ -2,7 +2,11 @@ import { JdsDocument, JdsClientService } from "./jds-client.service";
 
 export abstract class AbstractDocumentService<D extends JdsDocument> {
 
-  constructor(protected jdsClientService: JdsClientService) { }
+  protected readonly jdsClientService: JdsClientService;
+
+  constructor(protected readonly baseUrl: string) {
+    this.jdsClientService = new JdsClientService(baseUrl);
+  }
 
   protected abstract readonly typeName: string;
 

@@ -1,5 +1,5 @@
 import { Component, OnInit } from '@angular/core';
-import { SettingsService, Settings } from '../shared/settings.service';
+import { Settings, getSettings, saveSettings } from '../shared/settings.service';
 import { Router } from '@angular/router';
 
 @Component({
@@ -12,15 +12,15 @@ export class SettingsComponent implements OnInit {
 
   settings: Settings;
 
-  constructor(private settingsService: SettingsService, private router: Router) {
-    this.settings = settingsService.settings || new Settings();
+  constructor(private router: Router) {
+    this.settings = getSettings() || new Settings();
   }
 
   ngOnInit(): void {
   }
 
   saveSettings(navigate: boolean) {
-    this.settingsService.saveSetting(this.settings);
+    saveSettings(this.settings);
 
     if (navigate) {
       this.router.navigate(['']);

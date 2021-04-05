@@ -4,6 +4,7 @@ import { Entry } from "../shared/entry/entry";
 import { EntryService } from "../shared/entry/entry.service";
 import { FormBuilder, Validators } from "@angular/forms";
 import { BTreeEntry, BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree, Result } from "../shared/remote-b-tree";
+import { getSettings } from "../shared/settings.service";
 
 class BTreeMap {
 
@@ -108,6 +109,9 @@ class BTreeMap {
 })
 export class EntriesComponent implements OnInit {
 
+  private readonly jdsClient: JdsClientService;
+  private readonly entryService: EntryService;
+
   editForm = this.formBuilder.group({
     title: [Validators.required]
   });
@@ -118,7 +122,14 @@ export class EntriesComponent implements OnInit {
 
   activeEntry?: Entry;
 
-  constructor(private jdsClient: JdsClientService, private entryService: EntryService, private formBuilder: FormBuilder) { }
+  constructor(private formBuilder: FormBuilder) {
+    const settings = getSettings();
+    if (settings === undefined || settings.jdsUrl === undefined) {
+      throw new Error("jdsUrl not available");
+    }
+    this.jdsClient = new JdsClientService(settings.jdsUrl);
+    this.entryService = new EntryService(settings.jdsUrl);
+  }
 
   ngOnInit(): void {
     this.jdsClient.getDatabaseInformation().then(info => this.databaseInformation = info);

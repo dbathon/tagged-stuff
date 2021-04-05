@@ -1,5 +1,3 @@
-import { Injectable } from '@angular/core';
-import { SettingsService } from './settings.service';
 
 export interface DatabaseInformation {
   name: string;
@@ -17,22 +15,12 @@ interface QueryResult<D extends JdsDocument> {
 
 const ID_REGEXP = /^[a-zA-Z0-9][a-zA-Z0-9_\-]{0,199}$/;
 
-@Injectable({
-  providedIn: 'root'
-})
 export class JdsClientService {
 
-  baseUrl?: string;
+  constructor(readonly baseUrl: string) { }
 
-  constructor(settingsService: SettingsService) {
-    settingsService.settings$.subscribe(settings => this.baseUrl = settings?.jdsUrl);
-  }
-
-  private getUrl(path: string, baseUrl = this.baseUrl) {
-    if (!baseUrl) {
-      throw new Error("no baseUrl");
-    }
-    const baseUrlWithSlash = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+  private getUrl(path: string) {
+    const baseUrlWithSlash = this.baseUrl.endsWith('/') ? this.baseUrl : this.baseUrl + '/';
     // TODO maybe handle multiple slashes...
     const pathWithoutSlash = path.startsWith('/') ? path.substr(1) : path;
     return baseUrlWithSlash + pathWithoutSlash;
