@@ -1,4 +1,4 @@
-import { JdsDocument } from "../jds-client.service";
+import { JdsDocument } from "../jds-client";
 
 export interface Entry extends JdsDocument {
   title?: string;

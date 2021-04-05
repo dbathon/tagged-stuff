@@ -1,10 +1,10 @@
 import { Component, OnInit } from '@angular/core';
-import { JdsClientService, DatabaseInformation } from '../shared/jds-client.service';
+import { JdsClient, DatabaseInformation } from '../shared/jds-client';
 import { Entry } from "../shared/entry/entry";
-import { EntryService } from "../shared/entry/entry.service";
+import { EntryService } from "../shared/entry/entry-service";
 import { FormBuilder, Validators } from "@angular/forms";
 import { BTreeEntry, BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree, Result } from "../shared/remote-b-tree";
-import { getSettings } from "../shared/settings.service";
+import { getSettings } from "../shared/settings";
 
 class BTreeMap {
 
@@ -109,7 +109,7 @@ class BTreeMap {
 })
 export class EntriesComponent implements OnInit {
 
-  private readonly jdsClient: JdsClientService;
+  private readonly jdsClient: JdsClient;
   private readonly entryService: EntryService;
 
   editForm = this.formBuilder.group({
@@ -127,7 +127,7 @@ export class EntriesComponent implements OnInit {
     if (settings === undefined || settings.jdsUrl === undefined) {
       throw new Error("jdsUrl not available");
     }
-    this.jdsClient = new JdsClientService(settings.jdsUrl);
+    this.jdsClient = new JdsClient(settings.jdsUrl);
     this.entryService = new EntryService(settings.jdsUrl);
   }
 

@@ -15,7 +15,7 @@ interface QueryResult<D extends JdsDocument> {
 
 const ID_REGEXP = /^[a-zA-Z0-9][a-zA-Z0-9_\-]{0,199}$/;
 
-export class JdsClientService {
+export class JdsClient {
 
   constructor(readonly baseUrl: string) { }
 

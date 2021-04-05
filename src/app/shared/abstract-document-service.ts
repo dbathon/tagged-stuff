@@ -1,11 +1,11 @@
-import { JdsDocument, JdsClientService } from "./jds-client.service";
+import { JdsDocument, JdsClient } from "./jds-client";
 
 export abstract class AbstractDocumentService<D extends JdsDocument> {
 
-  protected readonly jdsClientService: JdsClientService;
+  protected readonly jdsClient: JdsClient;
 
   constructor(protected readonly baseUrl: string) {
-    this.jdsClientService = new JdsClientService(baseUrl);
+    this.jdsClient = new JdsClient(baseUrl);
   }
 
   protected abstract readonly typeName: string;
@@ -34,7 +34,7 @@ export abstract class AbstractDocumentService<D extends JdsDocument> {
 
   get(id: string): Promise<D> {
     this.validateId(id);
-    return this.jdsClientService.get(id);
+    return this.jdsClient.get(id);
   }
 
   async save(document: D): Promise<D> {
@@ -44,7 +44,7 @@ export abstract class AbstractDocumentService<D extends JdsDocument> {
     }
     this.validateId(document.id);
 
-    const responseDocument = await this.jdsClientService.put(document);
+    const responseDocument = await this.jdsClient.put(document);
 
     // update the original document and return it
     if (document.id !== responseDocument.id) {
@@ -55,8 +55,8 @@ export abstract class AbstractDocumentService<D extends JdsDocument> {
   }
 
   delete(idOrDocument: string | D): Promise<Object> {
-    this.validateId(this.jdsClientService.extractIdAndVersion(idOrDocument).id);
-    return this.jdsClientService.delete(idOrDocument);
+    this.validateId(this.jdsClient.extractIdAndVersion(idOrDocument).id);
+    return this.jdsClient.delete(idOrDocument);
   }
 
   query(): Promise<D[]> {
@@ -67,7 +67,7 @@ export abstract class AbstractDocumentService<D extends JdsDocument> {
         "<": this.typeName + "."
       }
     };
-    return this.jdsClientService.query(filters);
+    return this.jdsClient.query(filters);
   }
 
 }

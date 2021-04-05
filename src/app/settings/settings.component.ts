@@ -1,5 +1,5 @@
 import { Component, OnInit } from '@angular/core';
-import { Settings, getSettings, saveSettings } from '../shared/settings.service';
+import { Settings, getSettings, saveSettings } from '../shared/settings';
 import { Router } from '@angular/router';
 
 @Component({
