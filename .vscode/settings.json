@@ -1,4 +1,5 @@
 {
   "typescript.preferences.quoteStyle": "double",
-  "typescript.format.semicolons": "insert"
+  "typescript.format.semicolons": "insert",
+  "volar.tsPlugin": true
 }
