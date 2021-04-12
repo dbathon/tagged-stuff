@@ -1,4 +1,5 @@
-import { BTreeEntry, BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree, Result } from "../shared/remote-b-tree";
+import { BTreeEntry, BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree } from "./remote-b-tree";
+import { Result } from "./result";
 
 export class BTreeMap {
 
