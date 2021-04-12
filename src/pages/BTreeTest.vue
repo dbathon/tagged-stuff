@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BTreeNode } from "../shared/remote-b-tree";
 import { BTreeScanParameters } from "../shared/remote-b-tree";
-import { BTreeMap } from "../shared/b-tree-map";
+import { BTreeSet } from "../shared/b-tree-set";
 import { ref } from "@vue/reactivity";
 
 async function testBTree() {
@@ -9,7 +9,6 @@ async function testBTree() {
     {
       id: "root",
       keys: ["h"],
-      values: ["H"],
       children: {
         ids: ["c1", "c2"],
         sizes: [3, 3]
@@ -18,43 +17,41 @@ async function testBTree() {
     {
       id: "c1",
       keys: ["b", "d", "f"],
-      values: ["B", "D", "F"],
     },
     {
       id: "c2",
       keys: ["m", "n", "o"],
-      values: ["M", "N", "O"],
     }
 
   ];
-  const tree = new BTreeMap(50);
+  const tree = new BTreeSet(50);
   tree.data.clear();
   nodes.forEach(node => tree.data.set(node.id, node));
   tree.rootId = "root";
 
   const chars = "abcdefghijklmnopqrstuvwxyz".split("");
   for (const key of chars) {
-    console.log(key, await tree.get(key).toPromise());
+    console.log(key, await tree.contains(key).toPromise());
   }
 
   tree.clear();
 
   for (const key of [...chars].reverse()) {
-    await tree.set(key, key.toUpperCase()).toPromise();
+    await tree.insert(key).toPromise();
   }
   for (const key of chars) {
-    await tree.set(key, key.toUpperCase()).toPromise();
+    await tree.insert(key).toPromise();
   }
   console.log((await tree.dumpTree()).join("\n"));
 
   for (const key of chars) {
-    console.log(key, await tree.get(key));
+    console.log(key, await tree.contains(key).toPromise());
   }
 
   tree.clear();
   const testSize = 2000;
   for (let i = 0; i < testSize; ++i) {
-    await tree.set("" + i, "" + i).toPromise();
+    await tree.insert("" + i).toPromise();
   }
   console.log((await tree.dumpTree()).join("\n"));
 
@@ -66,7 +63,7 @@ async function testBTree() {
   for (let i = 0; i < testSize; ++i) {
     const key = "" + i;
     const result = await tree.scan(new BTreeScanParameters(1, key)).toPromise();
-    if (!(result.length === 1 && result[0].key === key)) {
+    if (!(result.length === 1 && result[0] === key)) {
       throw new Error("scan failed");
     }
   }
@@ -77,10 +74,10 @@ async function bTreeBenchmark() {
     console.log("start", entryCount);
     for (const order of [3, 5, 10, 30, 100, 500]) {
       const start = new Date().getTime();
-      const tree: BTreeMap = new BTreeMap(order);
+      const tree: BTreeSet = new BTreeSet(order);
       for (let i = 0; i < entryCount; ++i) {
         const str = "" + i;
-        await tree.set(str, str).toPromise();
+        await tree.insert(str).toPromise();
       }
       if (await tree.getSize().toPromise() !== entryCount) {
         throw new Error();
@@ -106,12 +103,12 @@ async function bTreeBenchmark2() {
     for (let j = 0; j < 4; ++j) {
       console.log("bTreeBenchmark2", withPromise, j);
       let start = new Date().getTime();
-      const tree: BTreeMap = new BTreeMap(testOrder);
+      const tree: BTreeSet = new BTreeSet(testOrder);
       tree.fetchNodeWithPromise = withPromise;
       const entryCount = testSize;
       for (let i = 0; i < entryCount; ++i) {
         const str = "" + i;
-        const setResult = tree.set(str, str);
+        const setResult = tree.insert(str);
         if (!setResult.hasValue) {
           await setResult.promise;
         }
@@ -123,16 +120,16 @@ async function bTreeBenchmark2() {
       }
 
       start = new Date().getTime();
-      let result: string | undefined;
+      let result = false;
       try {
         for (let i = 0; i < entryCount; ++i) {
           const str = "" + i;
-          const getResult = tree.get(str);
-          if (getResult.hasValue) {
-            result = getResult.value;
+          const containsResult = tree.contains(str);
+          if (containsResult.hasValue) {
+            result = containsResult.value;
           }
           else {
-            result = await getResult.promise;
+            result = await containsResult.promise;
           }
         }
       }
@@ -161,25 +158,25 @@ async function bTreeBenchmark2() {
 let treeElement = ref("");
 let treeOrder = ref("3");
 
-let tree: BTreeMap = new BTreeMap(3);
+let tree: BTreeSet = new BTreeSet(3);
 let treeDump = ref("");
 
 async function updateTreeDump() {
   const entries = await tree.scan(new BTreeScanParameters()).toPromise();
   treeDump.value = "size: " + entries.length + ", " + (await tree.getSize().toPromise())
     + "\norder: " + tree.tree.order
-    + "\nentries: " + entries.map(entry => entry.key).join(", ")
+    + "\nentries: " + entries.join(", ")
     + "\nnodesMap size: " + tree.data.size
     + "\n\n" + (await tree.dumpTree()).join("\n");
 }
 
 async function treeInit() {
-  tree = new BTreeMap(Math.max(parseInt(treeOrder.value), 3));
+  tree = new BTreeSet(Math.max(parseInt(treeOrder.value), 3));
   await updateTreeDump();
 }
 
 async function treeInsert() {
-  await tree.set(treeElement.value, treeElement.value.toUpperCase()).toPromise();
+  await tree.insert(treeElement.value).toPromise();
   treeElement.value = "" + Math.floor(Math.random() * 10000);
   await updateTreeDump();
 }
@@ -187,16 +184,16 @@ async function treeInsert() {
 async function treeInsertRandom() {
   for (let i = 0; i < 10; ++i) {
     const element: string = "" + Math.floor(Math.random() * 10000);
-    await tree.set(element, element).toPromise();
+    await tree.insert(element).toPromise();
   }
   await updateTreeDump();
 }
 
 async function treeDelete() {
   await tree.delete(treeElement.value).toPromise();
-  const firstEntry = (await tree.scan(new BTreeScanParameters(1)).toPromise())[0];
-  if (firstEntry) {
-    treeElement.value = firstEntry.key;
+  const scanResult = await tree.scan(new BTreeScanParameters(1)).toPromise();
+  if (scanResult.length > 0) {
+    treeElement.value = scanResult[0];
   }
   await updateTreeDump();
 }
@@ -206,7 +203,7 @@ async function treeDelete10() {
   // "randomize" the order
   entries.sort(() => Math.random() - 0.5);
   for (const entry of entries) {
-    await tree.delete(entry.key).toPromise();
+    await tree.delete(entry).toPromise();
   }
   await updateTreeDump();
 }

@@ -1,7 +1,7 @@
-import { BTreeEntry, BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree } from "./remote-b-tree";
+import { BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree } from "./remote-b-tree";
 import { Result } from "./result";
 
-export class BTreeMap {
+export class BTreeSet {
 
   readonly data: Map<string, BTreeNode> = new Map();
   readonly tree: RemoteBTree;
@@ -46,19 +46,19 @@ export class BTreeMap {
     return modificationResult.obsoleteNodes.length > 0 || modificationResult.newNodes.length > 0;
   }
 
-  get(key: string): Result<string | undefined> {
-    return this.tree.getValue(key, this.rootId);
+  contains(key: string): Result<boolean> {
+    return this.tree.containsKey(key, this.rootId);
   }
 
-  set(key: string, value: string): Result<boolean> {
-    return this.tree.setValue(key, value, this.rootId).transform(result => this.apply(result));
+  insert(key: string): Result<boolean> {
+    return this.tree.insertKey(key, this.rootId).transform(result => this.apply(result));
   }
 
   delete(key: string): Result<boolean> {
     return this.tree.deleteKey(key, this.rootId).transform(result => this.apply(result));
   }
 
-  scan(parameters?: BTreeScanParameters): Result<BTreeEntry[]> {
+  scan(parameters?: BTreeScanParameters): Result<string[]> {
     return this.tree.scan(parameters || new BTreeScanParameters(), this.rootId);
   }
 
