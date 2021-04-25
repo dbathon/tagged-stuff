@@ -105,7 +105,11 @@ class QueuedOperation {
 const ID_SEPARATOR = "|";
 
 class DocumentInfo {
-  constructor(readonly version: string, readonly remoteId: string) { }
+  constructor(readonly id: string, readonly version: string, readonly remoteId: string) { }
+
+  buildKey() {
+    return this.id + ID_SEPARATOR + this.version + ID_SEPARATOR + this.remoteId;
+  }
 
   getNextVersion() {
     // TODO: maybe change this to something else..., maybe like in jds
@@ -237,7 +241,7 @@ export class DataStore {
         return undefined;
       }
       const [version, remoteId] = keys[0].substr(keyPrefix.length).split(ID_SEPARATOR);
-      return new DocumentInfo(version, remoteId);
+      return new DocumentInfo(id, version, remoteId);
     });
   }
 
@@ -248,6 +252,46 @@ export class DataStore {
     return id;
   }
 
+  private async fetchDocuments<D extends Document>(documentInfos: DocumentInfo[]): Promise<D[]> {
+    if (documentInfos.length === 0) {
+      return [];
+    }
+    // fetch in batches fo 50 (jds has a limited result size and the URL gets too long and we can even fetch in parallel)
+    let remoteIdsBatch: string[] = [];
+    const promises: Promise<DataDocument[]>[] = [];
+    for (const documentInfo of documentInfos) {
+      remoteIdsBatch.push(documentInfo.remoteId);
+      if (remoteIdsBatch.length >= 50) {
+        promises.push(this.jdsClient.query<DataDocument>({ id: { in: remoteIdsBatch } }));
+        remoteIdsBatch = [];
+      }
+    }
+    // handle the last batch
+    if (remoteIdsBatch.length > 0) {
+      promises.push(this.jdsClient.query<DataDocument>({ id: { in: remoteIdsBatch } }));
+    }
+
+    const batchResults = await Promise.all(promises);
+
+    const remoteIdToDocument = new Map<string, D>();
+    for (const batchResult of batchResults) {
+      for (const dataDocument of batchResult) {
+        remoteIdToDocument.set(dataDocument.id!, JSON.parse(dataDocument.data));
+      }
+    }
+
+    return documentInfos.map(documentInfo => {
+      const document = remoteIdToDocument.get(documentInfo.remoteId);
+      if (document === undefined) {
+        throw new ConflictError("remote document not found: " + documentInfo.id + ", " + documentInfo.remoteId);
+      }
+      if (document.id !== documentInfo.id) {
+        throw new Error("document id does not match the expected id: " + document.id + ", " + documentInfo.id);
+      }
+      return document;
+    });
+  }
+
   get<D extends Document>(id: string): Promise<D | undefined> {
     return this.readOperation(async () => {
       const rootId = (await this.getStoreDocument()).rootId;
@@ -255,8 +299,8 @@ export class DataStore {
         if (documentInfo === undefined) {
           return undefined;
         }
-        return Result.withPromise(this.jdsClient.get<DataDocument>(documentInfo.remoteId))
-          .transform(dataDocument => JSON.parse(dataDocument.data));
+        return Result.withPromise(this.fetchDocuments<D>([documentInfo]))
+          .transform(dataDocuments => dataDocuments[0]);
       }).toPromise();
     });
   }
@@ -273,23 +317,19 @@ export class DataStore {
         minId === undefined ? undefined : this.validateId(minId),
         maxIdExclusive === undefined ? undefined : this.validateId(maxIdExclusive)), rootId)
         .transform(keys => {
-          const remoteIds: string[] = [];
+          const documentInfos: DocumentInfo[] = [];
           for (const key of keys) {
             // TODO: some more validation, sanity checks etc.
             const [id, version, remoteId] = key.split(ID_SEPARATOR);
             if ((minId === undefined || minId <= id)
               && (maxIdExclusive === undefined || id < maxIdExclusive)) {
-              remoteIds.push(remoteId);
+              documentInfos.push(new DocumentInfo(id, version, remoteId));
             }
           }
-          if (remoteIds.length === 0) {
+          if (documentInfos.length === 0) {
             return [];
           }
-          return Result.withPromise(this.jdsClient.query<DataDocument>({ id: { in: remoteIds } }));
-        })
-        .transform(dataDocuments => {
-          // TODO: keep the order and check that all ids were returned
-          return dataDocuments.map(dataDocument => JSON.parse(dataDocument.data));
+          return Result.withPromise(this.fetchDocuments<D>(documentInfos));
         })
         .toPromise();
     });
@@ -302,10 +342,6 @@ export class DataStore {
     }
     this.validateId(document.id);
     return document.id;
-  }
-
-  private buildKey(id: string, documentInfo: DocumentInfo): string {
-    return id + ID_SEPARATOR + documentInfo.version + ID_SEPARATOR + documentInfo.remoteId;
   }
 
   putAndDelete(parameters: { put?: Document[], delete?: Document[]; }): Promise<void> {
@@ -349,7 +385,7 @@ export class DataStore {
 
               // TODO: maybe only update if the document actually changed..., that would require loading the old one or some hash over the document...
               deleteDocuments.push({ id: documentInfo.remoteId });
-              treeDeletions.push(this.buildKey(id, documentInfo));
+              treeDeletions.push(documentInfo.buildKey());
               newVersion = documentInfo.getNextVersion();
             }
             else {
@@ -374,7 +410,7 @@ export class DataStore {
               };
 
               putDocuments.push(newDataDocument);
-              treeInserts.push(this.buildKey(id, new DocumentInfo(newVersion, newRemoteId)));
+              treeInserts.push(new DocumentInfo(id, newVersion, newRemoteId).buildKey());
 
               successActions.push(() => document.version = newVersion);
             }
