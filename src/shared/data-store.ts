@@ -292,9 +292,9 @@ export class DataStore {
       if (document === undefined) {
         throw new ConflictError("remote document not found: " + documentInfo.id + ", " + documentInfo.remoteId);
       }
-      if (document.id !== documentInfo.id) {
-        throw new Error("document id does not match the expected id: " + document.id + ", " + documentInfo.id);
-      }
+      // restore id and version in the document
+      document.id = documentInfo.id;
+      document.version = documentInfo.version;
       return document;
     });
   }
@@ -405,10 +405,11 @@ export class DataStore {
             }
 
             if (isPut) {
-              const newDocument: Document = {
-                ...document,
-                version: newVersion
-              };
+              const newDocument: Document = { ...document };
+              // do not save the id and version in the remote document (it is part of the key anyway)
+              newDocument.id = undefined;
+              newDocument.version = undefined;
+
               const newRemoteId = randomId();
               const newDataDocument: DataDocument = {
                 id: newRemoteId,
