@@ -1,11 +1,12 @@
-import { JdsDocument, JdsClient } from "./jds-client";
+import { DataStore } from "./data-store";
+import { Document } from "./document";
 
-export abstract class AbstractDocumentService<D extends JdsDocument> {
+export abstract class AbstractDocumentService<D extends Document> {
 
-  protected readonly jdsClient: JdsClient;
+  protected readonly dataStore: DataStore;
 
   constructor(protected readonly baseUrl: string) {
-    this.jdsClient = new JdsClient(baseUrl);
+    this.dataStore = new DataStore(baseUrl, "store");
   }
 
   protected abstract readonly typeName: string;
@@ -32,42 +33,29 @@ export abstract class AbstractDocumentService<D extends JdsDocument> {
     return id;
   }
 
-  get(id: string): Promise<D> {
+  get(id: string): Promise<D | undefined> {
     this.validateId(id);
-    return this.jdsClient.get(id);
+    return this.dataStore.get(id);
   }
 
-  async save(document: D): Promise<D> {
+  async save(document: D): Promise<void> {
     if (document.id === undefined) {
       // new document, generate the id before saving
       document.id = this.idPrefix + this.generateIdForNewDocument(document);
     }
     this.validateId(document.id);
 
-    const responseDocument = await this.jdsClient.put(document);
-
-    // update the original document and return it
-    if (document.id !== responseDocument.id) {
-      throw new Error("unexpected id in response: " + document.id + ", " + responseDocument.id);
-    }
-    document.version = responseDocument.version;
-    return document;
+    await this.dataStore.put(document);
   }
 
-  delete(idOrDocument: string | D): Promise<Object> {
-    this.validateId(this.jdsClient.extractIdAndVersion(idOrDocument).id);
-    return this.jdsClient.delete(idOrDocument);
+  delete(document: D): Promise<void> {
+    return this.dataStore.delete(document);
   }
 
   query(): Promise<D[]> {
-    const filters = {
-      id: {
-        ">=": this.idPrefix,
-        // TODO hack...
-        "<": this.typeName + "."
-      }
-    };
-    return this.jdsClient.query(filters);
+    // TODO hack...
+    const maxIdExclusive = this.typeName + ".";
+    return this.dataStore.scan(undefined, this.idPrefix, maxIdExclusive);
   }
 
 }
