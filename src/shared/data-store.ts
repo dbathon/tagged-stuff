@@ -107,6 +107,14 @@ const ID_SEPARATOR = "|";
 class DocumentInfo {
   constructor(readonly id: string, readonly version: string, readonly remoteId: string) { }
 
+  static parseFromKey(key: string): DocumentInfo {
+    const [id, version, remoteId] = key.split(ID_SEPARATOR);
+    if (!id || !version || !remoteId) {
+      throw new Error("unexpected key: " + key);
+    }
+    return new DocumentInfo(id, version, remoteId);
+  }
+
   buildKey() {
     return this.id + ID_SEPARATOR + this.version + ID_SEPARATOR + this.remoteId;
   }
@@ -240,8 +248,7 @@ export class DataStore {
       if (keys.length === 0 || !keys[0].startsWith(keyPrefix)) {
         return undefined;
       }
-      const [version, remoteId] = keys[0].substr(keyPrefix.length).split(ID_SEPARATOR);
-      return new DocumentInfo(id, version, remoteId);
+      return DocumentInfo.parseFromKey(keys[0]);
     });
   }
 
@@ -312,23 +319,22 @@ export class DataStore {
         return [];
       }
 
-      // TODO: the minId/maxId logic needs to be improved
       return this.tree.scan(new BTreeScanParameters(maxResults,
         minId === undefined ? undefined : this.validateId(minId),
         maxIdExclusive === undefined ? undefined : this.validateId(maxIdExclusive)), rootId)
         .transform(keys => {
-          const documentInfos: DocumentInfo[] = [];
-          for (const key of keys) {
-            // TODO: some more validation, sanity checks etc.
-            const [id, version, remoteId] = key.split(ID_SEPARATOR);
-            if ((minId === undefined || minId <= id)
-              && (maxIdExclusive === undefined || id < maxIdExclusive)) {
-              documentInfos.push(new DocumentInfo(id, version, remoteId));
-            }
-          }
-          if (documentInfos.length === 0) {
+          if (keys.length === 0) {
             return [];
           }
+          const documentInfos = keys.map(key => {
+            const documentInfo = DocumentInfo.parseFromKey(key);
+            if ((minId !== undefined && documentInfo.id < minId)
+              || (maxIdExclusive !== undefined && maxIdExclusive <= documentInfo.id)) {
+              // this should not happen
+              throw new Error("got unexpected id: " + documentInfo.id + ", " + minId + ", " + maxIdExclusive);
+            }
+            return documentInfo;
+          });
           return Result.withPromise(this.fetchDocuments<D>(documentInfos));
         })
         .toPromise();
