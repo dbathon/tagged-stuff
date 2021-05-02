@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from "@vue/reactivity";
 import { computed } from "@vue/runtime-core";
+import { CachingDataStoreBackend } from "../shared/caching-data-store-backend";
 import { DataStore } from "../shared/data-store";
 import type { Entry } from "../shared/entry/entry";
 import { EntryService } from "../shared/entry/entry-service";
@@ -13,7 +14,8 @@ if (settings === undefined || settings.jdsUrl === undefined) {
   throw new Error("jdsUrl not available");
 }
 const jdsDataStoreBackend = new JdsDataStoreBackend(settings.jdsUrl, "store");
-const dataStore = new DataStore(jdsDataStoreBackend);
+const cachingDataStoreBackend = new CachingDataStoreBackend(jdsDataStoreBackend, settings.jdsUrl)
+const dataStore = new DataStore(cachingDataStoreBackend);
 const entryService = new EntryService(dataStore);
 
 const databaseInformation = ref<DatabaseInformation>();
