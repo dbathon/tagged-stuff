@@ -3,7 +3,7 @@ import { JdsClient } from "./jds-client";
 
 export class JdsDataStoreBackend implements DataStoreBackend {
 
-  private readonly jdsClient: JdsClient;
+  readonly jdsClient: JdsClient;
 
   constructor(jdsBaseUrl: string, readonly storeId: string) {
     this.jdsClient = new JdsClient(jdsBaseUrl);

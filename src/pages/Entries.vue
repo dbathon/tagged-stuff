@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { reactive, ref } from "@vue/reactivity";
 import { computed } from "@vue/runtime-core";
+import { DataStore } from "../shared/data-store";
 import type { Entry } from "../shared/entry/entry";
 import { EntryService } from "../shared/entry/entry-service";
 import type { DatabaseInformation } from "../shared/jds-client";
-import { JdsClient } from "../shared/jds-client";
+import { JdsDataStoreBackend } from "../shared/jds-data-store-backend";
 import { getSettings } from "../shared/settings";
 
 const settings = getSettings();
 if (settings === undefined || settings.jdsUrl === undefined) {
   throw new Error("jdsUrl not available");
 }
-const jdsClient = new JdsClient(settings.jdsUrl);
-const entryService = new EntryService(settings.jdsUrl);
+const jdsDataStoreBackend = new JdsDataStoreBackend(settings.jdsUrl, "store");
+const dataStore = new DataStore(jdsDataStoreBackend);
+const entryService = new EntryService(dataStore);
 
 const databaseInformation = ref<DatabaseInformation>();
 
@@ -20,7 +22,7 @@ const entries = reactive<Entry[]>([]);
 const activeEntry = ref<Entry>();
 
 function refreshData() {
-  jdsClient.getDatabaseInformation().then(info => databaseInformation.value = info);
+  jdsDataStoreBackend.jdsClient.getDatabaseInformation().then(info => databaseInformation.value = info);
 
   entryService.query().then(result => {
     entries.length = 0;
