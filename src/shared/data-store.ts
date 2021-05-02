@@ -1,5 +1,4 @@
 import { Document } from "./document";
-import { JdsClient } from "./jds-client";
 import { BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree } from "./remote-b-tree";
 import { Result } from "./result";
 
@@ -9,12 +8,40 @@ export class ConflictError extends Error {
   }
 }
 
-interface StoreDocument extends Document {
+export interface StoreDocument extends Document {
   rootId?: string;
 }
 
-interface DataDocument extends Document {
+export interface DataDocument extends Document {
   data: string;
+}
+
+export interface DataStoreBackend {
+
+  /**
+   * @returns the current version of the StoreDocument (never undefined) as a Promise
+   */
+  getStoreDocument(): Promise<StoreDocument>;
+
+  /**
+   * @param dataDocumentIds the ids of DataDocuments to get
+   * @returns the DataDocuments that were found/exist as a Promise
+   */
+  getDataDocuments(dataDocumentIds: string[]): Promise<Record<string, DataDocument | undefined>>;
+
+  /**
+   * Tries to perform an update of the StoreDocument and all the given DataDocuments. If it is successful then true is
+   * returned, if the update is not possible because the StoreDocument is based on an old version then false is
+   * returned. In all other cases (e.g. data documents cannot be created/deleted or some IO errors or anything else
+   * that is unexpected) an Error is thrown.
+   *
+   * @param newStoreDocument
+   * @param newDataDocuments
+   * @param obsoleteDataDocumentIds
+   * @returns whether the update was performed as a Promise
+   */
+  update(newStoreDocument: StoreDocument, newDataDocuments: DataDocument[], obsoleteDataDocumentIds: string[]): Promise<boolean>;
+
 }
 
 /** This number is slightly greater than 2 * 31, so about 31 bits */
@@ -131,8 +158,6 @@ class DocumentInfo {
 
 export class DataStore {
 
-  private readonly jdsClient: JdsClient;
-
   private readonly tree: RemoteBTree;
 
   private readonly nodeCache = new Map<string, BTreeNode>();
@@ -142,11 +167,12 @@ export class DataStore {
   private activeReads = 0;
   private activeWriteOperation?: WriteOperation;
 
-  constructor(jdsBaseUrl: string, readonly storeId: string) {
-    this.jdsClient = new JdsClient(jdsBaseUrl);
-
+  constructor(private readonly backend: DataStoreBackend) {
     const getAndCacheNode = async (nodeId: string) => {
-      const document: DataDocument = await this.jdsClient.get(nodeId);
+      const document = (await backend.getDataDocuments([nodeId]))[nodeId];
+      if (document === undefined) {
+        throw new Error("node not found: " + nodeId);
+      }
       const node: BTreeNode = JSON.parse(document.data);
       this.nodeCache.set(nodeId, node);
       return node;
@@ -225,18 +251,8 @@ export class DataStore {
     }
   }
 
-  // TODO: use Result once caching is implemented
-  private async getStoreDocument(): Promise<StoreDocument> {
-    const queryResult: StoreDocument[] = await this.jdsClient.query({ id: this.storeId });
-    if (queryResult.length === 0) {
-      // does not exist yet, return a new one
-      return {
-        id: this.storeId
-      };
-    }
-    else {
-      return queryResult[0];
-    }
+  private getStoreDocument(): Promise<StoreDocument> {
+    return this.backend.getStoreDocument();
   }
 
   private getDocumentInfo(id: string, rootId: string | undefined): Result<DocumentInfo | undefined> {
@@ -263,35 +279,15 @@ export class DataStore {
     if (documentInfos.length === 0) {
       return [];
     }
-    // fetch in batches fo 50 (jds has a limited result size and the URL gets too long and we can even fetch in parallel)
-    let remoteIdsBatch: string[] = [];
-    const promises: Promise<DataDocument[]>[] = [];
-    for (const documentInfo of documentInfos) {
-      remoteIdsBatch.push(documentInfo.remoteId);
-      if (remoteIdsBatch.length >= 50) {
-        promises.push(this.jdsClient.query<DataDocument>({ id: { in: remoteIdsBatch } }));
-        remoteIdsBatch = [];
-      }
-    }
-    // handle the last batch
-    if (remoteIdsBatch.length > 0) {
-      promises.push(this.jdsClient.query<DataDocument>({ id: { in: remoteIdsBatch } }));
-    }
 
-    const batchResults = await Promise.all(promises);
-
-    const remoteIdToDocument = new Map<string, D>();
-    for (const batchResult of batchResults) {
-      for (const dataDocument of batchResult) {
-        remoteIdToDocument.set(dataDocument.id!, JSON.parse(dataDocument.data));
-      }
-    }
+    const getResult = await this.backend.getDataDocuments(documentInfos.map(documentInfo => documentInfo.remoteId));
 
     return documentInfos.map(documentInfo => {
-      const document = remoteIdToDocument.get(documentInfo.remoteId);
-      if (document === undefined) {
-        throw new ConflictError("remote document not found: " + documentInfo.id + ", " + documentInfo.remoteId);
+      const dataDocument = getResult[documentInfo.remoteId];
+      if (dataDocument === undefined) {
+        throw new ConflictError(documentInfo.id, "remote document not found: " + documentInfo.remoteId);
       }
+      const document: D = JSON.parse(dataDocument.data);
       // restore id and version in the document
       document.id = documentInfo.id;
       document.version = documentInfo.version;
@@ -362,8 +358,8 @@ export class DataStore {
 
       const treeInserts: string[] = [];
       const treeDeletions: string[] = [];
-      const putDocuments: Document[] = [];
-      const deleteDocuments: Document[] = [];
+      const putDocuments: DataDocument[] = [];
+      const deleteDocumentIds: string[] = [];
 
       const successActions: (() => void)[] = [];
 
@@ -390,7 +386,7 @@ export class DataStore {
               }
 
               // TODO: maybe only update if the document actually changed..., that would require loading the old one or some hash over the document...
-              deleteDocuments.push({ id: documentInfo.remoteId });
+              deleteDocumentIds.push(documentInfo.remoteId);
               treeDeletions.push(documentInfo.buildKey());
               newVersion = documentInfo.getNextVersion();
             }
@@ -459,7 +455,7 @@ export class DataStore {
       });
 
       writeOperation.deletedNodes?.forEach(node => {
-        deleteDocuments.push({ id: node.id });
+        deleteDocumentIds.push(node.id);
       });
 
 
@@ -467,22 +463,12 @@ export class DataStore {
         ...storeDocument,
         rootId: writeOperation.rootId
       };
-      putDocuments.push(newStoreDocument);
 
-      const result = await this.jdsClient.multiPutAndDelete({
-        put: putDocuments,
-        delete: deleteDocuments
-      });
+      const success = await this.backend.update(newStoreDocument, putDocuments, deleteDocumentIds);
 
-      if (result.errorDocumentId !== undefined) {
-        // something failed
-        if (result.errorDocumentId === storeDocument.id) {
-          // TODO: retry a few times...
-          throw new ConflictError("", "the storeDocument was updated concurrently, please try again");
-        }
-        else {
-          throw new Error("an unexpeceted put or delete failed: " + result.errorDocumentId);
-        }
+      if (!success) {
+        // TODO: retry a few times...
+        throw new ConflictError("", "the storeDocument was updated concurrently, please try again");
       }
       else {
         // everything was successful

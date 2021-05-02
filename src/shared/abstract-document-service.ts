@@ -1,12 +1,13 @@
 import { DataStore } from "./data-store";
 import { Document } from "./document";
+import { JdsDataStoreBackend } from "./jds-data-store-backend";
 
 export abstract class AbstractDocumentService<D extends Document> {
 
   protected readonly dataStore: DataStore;
 
   constructor(protected readonly baseUrl: string) {
-    this.dataStore = new DataStore(baseUrl, "store");
+    this.dataStore = new DataStore(new JdsDataStoreBackend(baseUrl, "store"));
   }
 
   protected abstract readonly typeName: string;
