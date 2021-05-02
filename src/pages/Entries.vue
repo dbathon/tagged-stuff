@@ -75,17 +75,6 @@ function deleteEntry(entry: Entry) {
 
   <hr />
 
-  <div v-for="entry in entries" :key="entry.id">
-    <h4>{{ entry.title }}</h4>
-    <p>id: {{ entry.id }}</p>
-    <p>version: {{ entry.version }}</p>
-
-    <button @click="editEntry(entry)">Edit</button>
-    <button @click="deleteEntry(entry)">Delete</button>
-  </div>
-
-  <hr />
-
   <button @click="newEntry()">New entry</button>
 
   <div v-if="activeEntry">
@@ -97,6 +86,17 @@ function deleteEntry(entry: Entry) {
       <!-- TODO: somehow handle "disabled if pristine"... -->
       <button type="submit" :disabled="!formValid">Save</button>
     </form>
+  </div>
+
+  <div>{{ entries.length }} entries</div>
+
+  <div v-for="entry in entries" :key="entry.id">
+    <h4>{{ entry.title }}</h4>
+    <p>id: {{ entry.id }}</p>
+    <p>version: {{ entry.version }}</p>
+
+    <button @click="editEntry(entry)">Edit</button>
+    <button @click="deleteEntry(entry)">Delete</button>
   </div>
 </template>
 
