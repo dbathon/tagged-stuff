@@ -132,18 +132,18 @@ class QueuedOperation {
 const ID_SEPARATOR = "|";
 
 class DocumentInfo {
-  constructor(readonly id: string, readonly version: string, readonly remoteId: string) { }
+  constructor(readonly id: string, readonly version: string, readonly backendId: string) { }
 
   static parseFromKey(key: string): DocumentInfo {
-    const [id, version, remoteId] = key.split(ID_SEPARATOR);
-    if (!id || !version || !remoteId) {
+    const [id, version, backendId] = key.split(ID_SEPARATOR);
+    if (!id || !version || !backendId) {
       throw new Error("unexpected key: " + key);
     }
-    return new DocumentInfo(id, version, remoteId);
+    return new DocumentInfo(id, version, backendId);
   }
 
   buildKey() {
-    return this.id + ID_SEPARATOR + this.version + ID_SEPARATOR + this.remoteId;
+    return this.id + ID_SEPARATOR + this.version + ID_SEPARATOR + this.backendId;
   }
 
   getNextVersion() {
@@ -280,12 +280,12 @@ export class DataStore {
       return [];
     }
 
-    const getResult = await this.backend.getDataDocuments(documentInfos.map(documentInfo => documentInfo.remoteId));
+    const getResult = await this.backend.getDataDocuments(documentInfos.map(documentInfo => documentInfo.backendId));
 
     return documentInfos.map(documentInfo => {
-      const dataDocument = getResult[documentInfo.remoteId];
+      const dataDocument = getResult[documentInfo.backendId];
       if (dataDocument === undefined) {
-        throw new ConflictError(documentInfo.id, "remote document not found: " + documentInfo.remoteId);
+        throw new ConflictError(documentInfo.id, "backend document not found: " + documentInfo.backendId);
       }
       const document: D = JSON.parse(dataDocument.data);
       // restore id and version in the document
@@ -386,7 +386,7 @@ export class DataStore {
               }
 
               // TODO: maybe only update if the document actually changed..., that would require loading the old one or some hash over the document...
-              deleteDocumentIds.push(documentInfo.remoteId);
+              deleteDocumentIds.push(documentInfo.backendId);
               treeDeletions.push(documentInfo.buildKey());
               newVersion = documentInfo.getNextVersion();
             }
@@ -402,18 +402,18 @@ export class DataStore {
 
             if (isPut) {
               const newDocument: Document = { ...document };
-              // do not save the id and version in the remote document (it is part of the key anyway)
+              // do not save the id and version in the backend document (it is part of the key anyway)
               newDocument.id = undefined;
               newDocument.version = undefined;
 
-              const newRemoteId = randomId();
+              const newBackendId = randomId();
               const newDataDocument: DataDocument = {
-                id: newRemoteId,
+                id: newBackendId,
                 data: JSON.stringify(newDocument)
               };
 
               putDocuments.push(newDataDocument);
-              treeInserts.push(new DocumentInfo(id, newVersion, newRemoteId).buildKey());
+              treeInserts.push(new DocumentInfo(id, newVersion, newBackendId).buildKey());
 
               successActions.push(() => document.version = newVersion);
             }
