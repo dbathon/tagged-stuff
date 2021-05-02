@@ -17,7 +17,7 @@ interface DataDocument extends Document {
   data: string;
 }
 
-/** This number is slightly greater than 2 * 31, so about 32 bits */
+/** This number is slightly greater than 2 * 31, so about 31 bits */
 const MAX_BASE36_6CHARS = parseInt("zzzzzz", 36);
 function uint32ToStringForRandomId(input: number): string {
   const encodedNumber = input > MAX_BASE36_6CHARS ? input - MAX_BASE36_6CHARS : input;
