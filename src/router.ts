@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import Entries from "./pages/Entries.vue";
 import BTreeTest from "./pages/BTreeTest.vue";
+import CryptoTest from "./pages/CryptoTest.vue";
 import Settings from "./pages/Settings.vue";
 import NotFound from "./pages/NotFound.vue";
 import { getSettings } from "./shared/settings";
@@ -24,6 +25,11 @@ export const router = createRouter({
       path: "/tagged-stuff/b-tree-test",
       name: "BTreeTest",
       component: BTreeTest
+    },
+    {
+      path: "/tagged-stuff/crypto-test",
+      name: "CryptoTest",
+      component: CryptoTest
     },
     {
       path: "/tagged-stuff/settings",
