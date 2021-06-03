@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { encodeBytes, decodeBytes } from "../shared/encode-bytes";
 
 async function test() {
   let start = new Date().getTime();
@@ -47,10 +48,51 @@ async function test() {
 
   console.log("done", new Date().getTime() - start);
 }
+
+function checkEqual(array1: Uint8Array, array2: Uint8Array) {
+  const length = array1.length;
+  if (length !== array2.length) {
+    throw Error("different length");
+  }
+  for (let i = 0; i < length; ++i) {
+    if (array1[i] !== array2[i]) {
+      throw Error("different data");
+    }
+  }
+}
+
+function testEncDecWithLength(length: number) {
+  const buffer = new Uint8Array(length);
+  console.log(encodeBytes(buffer));
+  buffer[0] = 255
+  console.log(encodeBytes(buffer));
+  buffer[length - 1] = 255
+  console.log(encodeBytes(buffer));
+  for (let i = 0; i < length; ++i) {
+    buffer[i] = 255
+  }
+  console.log(encodeBytes(buffer));
+
+  for (let i = 0; i < 10; ++i) {
+    crypto.getRandomValues(buffer);
+    console.log(buffer)
+    const encoded = encodeBytes(buffer)
+    console.log(encoded);
+    checkEqual(buffer, decodeBytes(encoded));
+  }
+}
+
+function testEncDec() {
+  testEncDecWithLength(0)
+  testEncDecWithLength(1)
+  testEncDecWithLength(3)
+  testEncDecWithLength(16)
+}
 </script>
 
 <template>
   <button @click="test()">Crypto Test</button>
+  <button @click="testEncDec()">Encode/Decode Test</button>
 </template>
 
 <style scoped>
