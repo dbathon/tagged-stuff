@@ -1,4 +1,5 @@
 import { Document } from "./document";
+import { encodeBytes } from "./encode-bytes";
 import { BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree } from "./remote-b-tree";
 import { Result } from "./result";
 
@@ -44,23 +45,13 @@ export interface DataStoreBackend {
 
 }
 
-/** This number is slightly greater than 2 * 31, so about 31 bits */
-const MAX_BASE36_6CHARS = parseInt("zzzzzz", 36);
-function uint32ToStringForRandomId(input: number): string {
-  const encodedNumber = input > MAX_BASE36_6CHARS ? input - MAX_BASE36_6CHARS : input;
-  return encodedNumber.toString(36).padStart(6, "0");
-}
-
-const randomBuffer = new Uint32Array(4);
+const randomBuffer = new Uint8Array(16);
 /**
- * @returns about 124 bits of randomness encoded with base36 in a string with length 24.
+ * @returns 128 bits of randomness encoded with base64 in a string with length 22
  */
 function randomId(): string {
   crypto.getRandomValues(randomBuffer);
-  return uint32ToStringForRandomId(randomBuffer[0])
-    + uint32ToStringForRandomId(randomBuffer[1])
-    + uint32ToStringForRandomId(randomBuffer[2])
-    + uint32ToStringForRandomId(randomBuffer[3]);
+  return encodeBytes(randomBuffer);
 }
 
 class WriteOperation {
