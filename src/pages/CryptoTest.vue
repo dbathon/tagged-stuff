@@ -88,11 +88,61 @@ function testEncDec() {
   testEncDecWithLength(3)
   testEncDecWithLength(16)
 }
+
+async function test2() {
+  try {
+    const subtleCrypto = crypto.subtle;
+    const buffer = new Uint8Array(16);
+
+    crypto.getRandomValues(buffer);
+
+    const orgKey = encodeBytes(buffer);
+    const orgKeyBytes = decodeBytes(orgKey);
+    console.log("orgKey", orgKey, orgKeyBytes)
+
+    const keyEncryptKey = await subtleCrypto.importKey("raw", orgKeyBytes, "AES-CBC", false, ["encrypt"]);
+
+    const encKeyBytes = new Uint8Array(await subtleCrypto.encrypt({ name: "AES-CBC", iv: new Uint8Array(16) }, keyEncryptKey, new Uint8Array(1)));
+    const encKey = encodeBytes(encKeyBytes);
+
+    console.log("encKey", encKey, encKeyBytes)
+
+    const dataKey = await subtleCrypto.importKey("raw", orgKeyBytes, "AES-GCM", false, ["encrypt", "decrypt"]);
+    const aesGcmParams: AesGcmParams = {
+      name: "AES-GCM",
+      iv: new Uint8Array(16),
+      tagLength: 128
+    }
+
+    const dataBytes = [
+      new Uint8Array(1),
+      new Uint8Array(5),
+      new Uint8Array(20),
+      new TextEncoder().encode("test"),
+      new TextEncoder().encode("hello world"),
+    ]
+    for (const orgDataBytes of dataBytes) {
+      const encDataBytes = new Uint8Array(await subtleCrypto.encrypt(aesGcmParams, dataKey, orgDataBytes));
+
+      console.log("orgDataBytes", orgDataBytes)
+      console.log("encDataBytes", encDataBytes)
+
+      const decDataBytes = new Uint8Array(await subtleCrypto.decrypt(aesGcmParams, dataKey, encDataBytes));
+
+      console.log("decDataBytes", decDataBytes)
+      checkEqual(orgDataBytes, decDataBytes)
+    }
+  }
+  catch (e) {
+    console.error("something failed", e)
+  }
+}
 </script>
 
 <template>
   <button @click="test()">Crypto Test</button>
   <button @click="testEncDec()">Encode/Decode Test</button>
+  <button @click="test2()">Crypto Test 2</button>
 </template>
 
 <style scoped>
