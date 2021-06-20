@@ -16,23 +16,24 @@ function save(navigate: boolean) {
 
 <template>
   <h2>Settings</h2>
+  <form @submit.prevent="save(true)">
+    <div>
+      <label>
+        jds URL:
+        <input v-model="settings.jdsUrl" placeholder="https://..." />
+      </label>
+    </div>
+    <div>
+      <label>
+        Store Id:
+        <input v-model="settings.storeId" />
+      </label>
+    </div>
 
-  <div>
-    <label>
-      jds URL:
-      <input v-model="settings.jdsUrl" placeholder="https://..." />
-    </label>
-  </div>
-  <div>
-    <label>
-      Store Id:
-      <input v-model="settings.storeId" />
-    </label>
-  </div>
-
-  <div>
-    <button @click="save(true)">Save</button>
-  </div>
+    <div>
+      <button type="submit">Save</button>
+    </div>
+  </form>
 </template>
 
 <style scoped>

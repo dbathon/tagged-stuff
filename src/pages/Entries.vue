@@ -83,7 +83,7 @@ function deleteEntry(entry: Entry) {
   <button @click="newEntry()">New entry</button>
 
   <div v-if="activeEntry">
-    <form @submit="saveEntry()">
+    <form @submit.prevent="saveEntry()">
       <label>
         Title
         <input type="text" v-model="formValues.title" />
