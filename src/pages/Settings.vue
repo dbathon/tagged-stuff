@@ -29,6 +29,12 @@ function save(navigate: boolean) {
         <input v-model="settings.storeId" />
       </label>
     </div>
+    <div>
+      <label>
+        Secret:
+        <input v-model="settings.secret" />
+      </label>
+    </div>
 
     <div>
       <button type="submit">Save</button>

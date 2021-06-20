@@ -3,11 +3,13 @@ import { reactive, ref } from "@vue/reactivity";
 import { computed } from "@vue/runtime-core";
 import { CachingDataStoreBackend } from "../shared/caching-data-store-backend";
 import { DataStore } from "../shared/data-store";
+import type { DataStoreBackend } from "../shared/data-store";
 import type { Entry } from "../shared/entry/entry";
 import { EntryService } from "../shared/entry/entry-service";
 import type { DatabaseInformation } from "../shared/jds-client";
 import { JdsDataStoreBackend } from "../shared/jds-data-store-backend";
 import { getSettings } from "../shared/settings";
+import { EncryptingDataStoreBackend } from "../shared/encrypting-data-store-backend";
 
 const settings = getSettings();
 if (settings === undefined || settings.jdsUrl === undefined) {
@@ -16,7 +18,11 @@ if (settings === undefined || settings.jdsUrl === undefined) {
 const storeId = settings.storeId || "store";
 const jdsDataStoreBackend = new JdsDataStoreBackend(settings.jdsUrl, storeId);
 const cachingDataStoreBackend = new CachingDataStoreBackend(jdsDataStoreBackend, JSON.stringify([settings.jdsUrl, storeId]))
-const dataStore = new DataStore(cachingDataStoreBackend);
+let dataStoreBackend: DataStoreBackend = cachingDataStoreBackend;
+if (settings.secret !== undefined && settings.secret.length > 0) {
+  dataStoreBackend = new EncryptingDataStoreBackend(dataStoreBackend, settings.secret);
+}
+const dataStore = new DataStore(dataStoreBackend);
 const entryService = new EntryService(dataStore);
 
 const databaseInformation = ref<DatabaseInformation>();

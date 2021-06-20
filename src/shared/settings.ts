@@ -2,6 +2,7 @@
 export class Settings {
   jdsUrl?: string;
   storeId?: string;
+  secret?: string;
 }
 
 const SETTINGS_KEY = "taggedStuff.settings";

@@ -11,6 +11,8 @@ export class ConflictError extends Error {
 
 export interface StoreDocument extends Document {
   rootId?: string;
+  /** extraProperties can be used by DataStoreBackend implementations to store extra information */
+  extraProperties?: Record<string, any>;
 }
 
 export interface DataDocument extends Document {
