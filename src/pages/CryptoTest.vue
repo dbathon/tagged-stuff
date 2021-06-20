@@ -137,12 +137,54 @@ async function test2() {
     console.error("something failed", e)
   }
 }
+
+function toHexString(byteArray: Uint8Array) {
+  return Array.from(byteArray, byte => ('0' + byte.toString(16)).slice(-2)).join('')
+}
+
+async function testPbkdf2() {
+  try {
+    const subtleCrypto = crypto.subtle;
+
+    const secretBytes = new TextEncoder().encode("secret");
+    for (const iterations of [10000, 50000, 100000, 200000, 500000, 1000000, 5000000]) {
+      const start = new Date().getTime();
+
+      // zero salt for testing
+      const salt = new Uint8Array(16)
+      const rawKey = await subtleCrypto.importKey("raw", secretBytes, "PBKDF2", false, ["deriveKey"]);
+
+      const key = await subtleCrypto.deriveKey(
+        {
+          name: "PBKDF2",
+          salt: salt,
+          iterations: iterations,
+          hash: "SHA-256"
+        },
+        rawKey,
+        {
+          name: "AES-GCM",
+          length: 128
+        },
+        true,
+        ["encrypt", "decrypt"]);
+
+      const exportedKey = await subtleCrypto.exportKey("raw", key);
+
+      console.log(iterations, new Date().getTime() - start, toHexString(new Uint8Array(exportedKey)));
+    }
+  }
+  catch (e) {
+    console.error("something failed", e)
+  }
+}
 </script>
 
 <template>
   <button @click="test()">Crypto Test</button>
   <button @click="testEncDec()">Encode/Decode Test</button>
   <button @click="test2()">Crypto Test 2</button>
+  <button @click="testPbkdf2()">PBKDF2 Test</button>
 </template>
 
 <style scoped>
