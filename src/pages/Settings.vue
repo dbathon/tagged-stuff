@@ -23,6 +23,12 @@ function save(navigate: boolean) {
       <input v-model="settings.jdsUrl" placeholder="https://..." />
     </label>
   </div>
+  <div>
+    <label>
+      Store Id:
+      <input v-model="settings.storeId" />
+    </label>
+  </div>
 
   <div>
     <button @click="save(true)">Save</button>

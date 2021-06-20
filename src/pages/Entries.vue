@@ -13,8 +13,9 @@ const settings = getSettings();
 if (settings === undefined || settings.jdsUrl === undefined) {
   throw new Error("jdsUrl not available");
 }
-const jdsDataStoreBackend = new JdsDataStoreBackend(settings.jdsUrl, "store");
-const cachingDataStoreBackend = new CachingDataStoreBackend(jdsDataStoreBackend, settings.jdsUrl)
+const storeId = settings.storeId || "store";
+const jdsDataStoreBackend = new JdsDataStoreBackend(settings.jdsUrl, storeId);
+const cachingDataStoreBackend = new CachingDataStoreBackend(jdsDataStoreBackend, JSON.stringify([settings.jdsUrl, storeId]))
 const dataStore = new DataStore(cachingDataStoreBackend);
 const entryService = new EntryService(dataStore);
 
