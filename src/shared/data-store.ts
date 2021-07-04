@@ -359,6 +359,8 @@ export class DataStore {
 
       const successActions: (() => void)[] = [];
 
+      const seenIds: Record<string, string> = {};
+
       for (const { isPut, documents } of [
         { isPut: true, documents: parameters.put },
         { isPut: false, documents: parameters.delete },
@@ -366,6 +368,11 @@ export class DataStore {
         if (documents) {
           for (const document of documents) {
             const id = this.getId(document);
+            if (seenIds.hasOwnProperty(id)) {
+              throw new Error("multiple documents with the same id: " + id);
+            }
+            seenIds[id] = id;
+
             const documentInfoResult = this.getDocumentInfo(id, writeOperation.rootId);
             let documentInfo: DocumentInfo | undefined;
             if (documentInfoResult.hasValue) {
