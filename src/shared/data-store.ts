@@ -166,7 +166,10 @@ export class DataStore {
       if (document === undefined) {
         throw new Error("node not found: " + nodeId);
       }
-      const node: BTreeNode = JSON.parse(document.data);
+      const node: BTreeNode = {
+        ...JSON.parse(document.data),
+        id: nodeId
+      };
       this.nodeCache.set(nodeId, node);
       return node;
     };
@@ -440,9 +443,13 @@ export class DataStore {
       }
 
       writeOperation.newNodes?.forEach(node => {
+        const nodeWithoutId: any = {
+          ...node
+        };
+        nodeWithoutId.id = undefined;
         const newNodeDataDocument: DataDocument = {
           id: node.id,
-          data: JSON.stringify(node)
+          data: JSON.stringify(nodeWithoutId)
         };
         putDocuments.push(newNodeDataDocument);
       });
