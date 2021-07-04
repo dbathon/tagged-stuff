@@ -55,6 +55,10 @@ export class JdsDataStoreBackend implements DataStoreBackend {
     return result;
   }
 
+  convertIdsToDeleteIds(dataDocumentIds: string[]): undefined {
+    return undefined;
+  }
+
   async update(newStoreDocument: StoreDocument, newDataDocuments: DataDocument[], obsoleteDataDocumentIds: string[]): Promise<boolean> {
     if (newStoreDocument.id !== this.storeId) {
       throw new Error("unexpected store document id: " + this.storeId + ", " + JSON.stringify(newStoreDocument));

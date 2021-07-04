@@ -91,6 +91,10 @@ export class CachingDataStoreBackend implements DataStoreBackend {
     return { ...cachedDocuments, ...backendResult };
   }
 
+  convertIdsToDeleteIds(dataDocumentIds: string[]): Promise<string[]> | undefined {
+    return this.nextDataStoreBackend.convertIdsToDeleteIds(dataDocumentIds);
+  }
+
   async update(newStoreDocument: StoreDocument, newDataDocuments: DataDocument[], obsoleteDataDocumentIds: string[]): Promise<boolean> {
     const success = await this.nextDataStoreBackend.update(newStoreDocument, newDataDocuments, obsoleteDataDocumentIds);
 

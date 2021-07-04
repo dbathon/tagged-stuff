@@ -167,6 +167,16 @@ export class EncryptingDataStoreBackend implements DataStoreBackend {
     return result;
   }
 
+  /**
+   * Encrypt the ids here, so that it will not be possible to read the documents even though the data is not deleted
+   * yet. And other clients with older store document versions will still be able to read and decrypt them.
+   */
+  async convertIdsToDeleteIds(dataDocumentIds: string[]): Promise<string[]> {
+    const encryptedIds = await Promise.all(dataDocumentIds.map(encryptDataDocumentId));
+    const nextBackendIds = this.nextDataStoreBackend.convertIdsToDeleteIds(encryptedIds);
+    return nextBackendIds === undefined ? encryptedIds : nextBackendIds;
+  }
+
   async update(newStoreDocument: StoreDocument, newDataDocuments: DataDocument[], obsoleteDataDocumentIds: string[]): Promise<boolean> {
     const storeDocumentToEncrypt: StoreDocument = { ...newStoreDocument };
 
@@ -215,9 +225,7 @@ export class EncryptingDataStoreBackend implements DataStoreBackend {
       });
     }
 
-    const encryptedObsoleteDataDocumentIds = await Promise.all(obsoleteDataDocumentIds.map(encryptDataDocumentId));
-
-    const result = await this.nextDataStoreBackend.update(encryptedNewStoreDocument, encryptedNewDataDocuments, encryptedObsoleteDataDocumentIds);
+    const result = await this.nextDataStoreBackend.update(encryptedNewStoreDocument, encryptedNewDataDocuments, obsoleteDataDocumentIds);
 
     if (result) {
       // update the version and the encrypted properties in the original document

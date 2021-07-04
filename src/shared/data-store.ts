@@ -11,6 +11,19 @@ export class ConflictError extends Error {
 
 export interface StoreDocument extends Document {
   rootId?: string;
+  /**
+   * Pending deletes: pairs of the timestamp at which the id should be deleted and the id.
+   * This is useful to keep data around for some time for other clients to read.
+   */
+  deletes?: [number, string][];
+
+  /**
+   * If deletes gets to large (e.g. if there are many changes in a short time), then whole batches of ids to delete can
+   * be stored as a DataDocument. This property contains pairs of the timestamp at which the batch should be deleted
+   * and the id of the DataDocument with the id array.
+   */
+  deleteBatches?: [number, string][];
+
   /** extraProperties can be used by DataStoreBackend implementations to store extra information */
   extraProperties?: Record<string, any>;
 }
@@ -31,6 +44,14 @@ export interface DataStoreBackend {
    * @returns the DataDocuments that were found/exist as a Promise
    */
   getDataDocuments(dataDocumentIds: string[]): Promise<Record<string, DataDocument | undefined>>;
+
+  /**
+   * This is an "optional" operation mainly for "encrypting" backends, it allows the backend to convert the ids that
+   * will be deleted later to some other representation. That representation might be sufficient for deletion, but
+   * might no longer allow reading the data. If the method returns undefined, then no conversion is necessary.
+   * Otherwise the obsoleteDataDocumentIds passed to update() will have been converted with this method.
+   */
+  convertIdsToDeleteIds(dataDocumentIds: string[]): Promise<string[]> | undefined;
 
   /**
    * Tries to perform an update of the StoreDocument and all the given DataDocuments. If it is successful then true is
@@ -148,6 +169,11 @@ class DocumentInfo {
     return (oldVersionNumber + 1).toString();
   }
 }
+
+// delay deletes of DataDocuments for one hour, so that they can still be read for some time.
+const DELETE_DELAY_MILLIS = 60 * 60 * 1000;
+
+const DELETE_IDS_PER_BATCH = 100;
 
 export class DataStore {
 
@@ -471,7 +497,75 @@ export class DataStore {
         rootId: writeOperation.rootId
       };
 
-      const success = await this.backend.update(newStoreDocument, putDocuments, deleteDocumentIds);
+      const now = new Date().getTime();
+      const deleteDocumentIdsNow: string[] = [];
+      if (newStoreDocument.deleteBatches) {
+        // delete at most one batch at once, the first one should be the oldest one, so just check that one
+        const firstBatch = newStoreDocument.deleteBatches[0];
+        if (firstBatch[0] <= now) {
+          const batchDataDocumentId = firstBatch[1];
+          const batchDataDocument = (await this.backend.getDataDocuments([batchDataDocumentId]))[batchDataDocumentId];
+          if (!batchDataDocument) {
+            throw new Error("could not find batchDataDocument: " + batchDataDocumentId);
+          }
+          const ids: string[] = JSON.parse(batchDataDocument.data);
+          deleteDocumentIdsNow.push(...ids);
+          // delay the deletion of the batchDataDocument
+          deleteDocumentIds.push(batchDataDocumentId);
+
+          // the batch is handled, so remove it from the deleteBatches
+          newStoreDocument.deleteBatches.shift();
+        }
+      }
+
+      const newDeletes: [number, string][] = [];
+      if (newStoreDocument.deletes) {
+        for (const deleteEntry of newStoreDocument.deletes) {
+          if (deleteEntry[0] <= now) {
+            deleteDocumentIdsNow.push(deleteEntry[1]);
+          }
+          else {
+            newDeletes.push(deleteEntry);
+          }
+        }
+      }
+
+      if (deleteDocumentIds.length > 0) {
+        const convertIdsToDeleteIdsResult = this.backend.convertIdsToDeleteIds(deleteDocumentIds);
+        const convertedDeleteDocumentIds = convertIdsToDeleteIdsResult === undefined ? deleteDocumentIds : await convertIdsToDeleteIdsResult;
+        const deleteAt = now + DELETE_DELAY_MILLIS;
+        for (const deleteDocumentId of convertedDeleteDocumentIds) {
+          newDeletes.push([deleteAt, deleteDocumentId]);
+        }
+      }
+
+      if (newDeletes.length >= DELETE_IDS_PER_BATCH) {
+        // create a new batch document
+        const ids: string[] = [];
+        let maxDeleteAt: number | undefined = undefined;
+        for (const newDelete of newDeletes) {
+          ids.push(newDelete[1]);
+          if (maxDeleteAt === undefined || maxDeleteAt < newDelete[0]) {
+            maxDeleteAt = newDelete[0];
+          }
+        }
+
+        const batchDocumentId = randomId();
+        putDocuments.push({
+          id: batchDocumentId,
+          data: JSON.stringify(ids)
+        });
+        (newStoreDocument.deleteBatches ||= []).push([maxDeleteAt!, batchDocumentId]);
+
+        newDeletes.length = 0;
+      }
+
+      newStoreDocument.deletes = newDeletes.length > 0 ? newDeletes : undefined;
+      if (newStoreDocument.deleteBatches && newStoreDocument.deleteBatches.length === 0) {
+        newStoreDocument.deleteBatches = undefined;
+      }
+
+      const success = await this.backend.update(newStoreDocument, putDocuments, deleteDocumentIdsNow);
 
       if (!success) {
         // TODO: retry a few times...
