@@ -1,6 +1,9 @@
 import { DataDocument, DataStoreBackend, StoreDocument } from "./data-store";
 import { decodeBytes, encodeBytes } from "./encode-bytes";
 
+// used to "mark" an encrypted store document and try to avoid accidental use as an unencrypted store document
+const MARKER_ROOT_ID = "#ENCRYPTED#";
+
 const subtleCrypto = crypto.subtle;
 
 const textEncoder = new TextEncoder();
@@ -119,6 +122,9 @@ export class EncryptingDataStoreBackend implements DataStoreBackend {
     const encryptedStoreDocument = await this.nextDataStoreBackend.getStoreDocument();
     const encryptedProperties = extractEncryptedProperties(encryptedStoreDocument);
     if (encryptedProperties) {
+      if (encryptedStoreDocument.rootId !== MARKER_ROOT_ID) {
+        throw new Error("invalid encrypted store document, marker rootId is missing");
+      }
       const key = await this.getSecretKey(encryptedProperties.salt);
 
       const decryptedData = await subtleCrypto.decrypt(
@@ -207,6 +213,7 @@ export class EncryptingDataStoreBackend implements DataStoreBackend {
     const encryptedNewStoreDocument: StoreDocument = {
       id: newStoreDocument.id,
       version: newStoreDocument.version,
+      rootId: MARKER_ROOT_ID
     };
     (encryptedNewStoreDocument.extraProperties ||= {})[encryptedPropertiesName] = newEncryptedProperties;
 
