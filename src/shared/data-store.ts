@@ -9,8 +9,34 @@ export class ConflictError extends Error {
   }
 }
 
+interface DeleteBatch {
+  /** The ids to be deleted. */
+  ids: string[];
+
+  /** Timestamp at/after which he ids should be deleted. */
+  timestamp: number;
+
+  /** Id of the next delete batch. */
+  next: string;
+}
+
+export interface DeleteBatches {
+  /** Id of the oldest delete batch document. */
+  head: string;
+
+  /** DeleteBatch#next of the delete batch referenced by head (for efficient access). */
+  headNext: string;
+
+  /** DeleteBatch#timestamp of the delete batch referenced by head (for efficient access). */
+  headTimestamp: number;
+
+  /** Id of the next delete batch to be created, it is the next of the most recently created delete batch. */
+  tail: string;
+}
+
 export interface StoreDocument extends Document {
   rootId?: string;
+
   /**
    * Pending deletes: pairs of the timestamp at which the id should be deleted and the id.
    * This is useful to keep data around for some time for other clients to read.
@@ -19,10 +45,9 @@ export interface StoreDocument extends Document {
 
   /**
    * If deletes gets to large (e.g. if there are many changes in a short time), then whole batches of ids to delete can
-   * be stored as a DataDocument. This property contains pairs of the timestamp at which the batch should be deleted
-   * and the id of the DataDocument with the id array.
+   * be stored as a DataDocument. These delete batches are basically stored as a "linked list" of data documents.
    */
-  deleteBatches?: [number, string][];
+  deleteBatches?: DeleteBatches;
 
   /** extraProperties can be used by DataStoreBackend implementations to store extra information */
   extraProperties?: Record<string, any>;
@@ -499,22 +524,35 @@ export class DataStore {
 
       const now = new Date().getTime();
       const deleteDocumentIdsNow: string[] = [];
-      if (newStoreDocument.deleteBatches) {
-        // delete at most one batch at once, the first one should be the oldest one, so just check that one
-        const firstBatch = newStoreDocument.deleteBatches[0];
-        if (firstBatch[0] <= now) {
-          const batchDataDocumentId = firstBatch[1];
-          const batchDataDocument = (await this.backend.getDataDocuments([batchDataDocumentId]))[batchDataDocumentId];
-          if (!batchDataDocument) {
-            throw new Error("could not find batchDataDocument: " + batchDataDocumentId);
-          }
-          const ids: string[] = JSON.parse(batchDataDocument.data);
-          deleteDocumentIdsNow.push(...ids);
-          // delay the deletion of the batchDataDocument
-          deleteDocumentIds.push(batchDataDocumentId);
+      let deleteBatches = newStoreDocument.deleteBatches;
+      if (deleteBatches && deleteBatches.headTimestamp <= now) {
+        // delete at most one batch at once
 
-          // the batch is handled, so remove it from the deleteBatches
-          newStoreDocument.deleteBatches.shift();
+        // fetch head and headNext, so deleteBatches can be updated
+        const deleteBatchDocuments = await this.backend.getDataDocuments([deleteBatches.head, deleteBatches.headNext]);
+        // head needs to exist
+        const headDocument = deleteBatchDocuments[deleteBatches.head];
+        if (!headDocument) {
+          throw new Error("could not find delete batch document: " + deleteBatches.head);
+        }
+        // head next might not exist (if there is only one delete batch)
+        const headNextDocument = deleteBatchDocuments[deleteBatches.headNext];
+
+        const headDeleteBatch: DeleteBatch = JSON.parse(headDocument.data);
+        const headNextDeleteBatch: DeleteBatch | undefined = headNextDocument && JSON.parse(headNextDocument.data);
+
+        deleteDocumentIdsNow.push(...headDeleteBatch.ids);
+        // delay the deletion of the batch document
+        deleteDocumentIds.push(deleteBatches.head);
+
+        if (headNextDeleteBatch) {
+          deleteBatches.head = deleteBatches.headNext;
+          deleteBatches.headNext = headNextDeleteBatch.next;
+          deleteBatches.headTimestamp = headNextDeleteBatch.timestamp;
+        }
+        else {
+          // this was the last batch
+          deleteBatches = newStoreDocument.deleteBatches = undefined;
         }
       }
 
@@ -550,20 +588,36 @@ export class DataStore {
           }
         }
 
-        const batchDocumentId = randomId();
-        putDocuments.push({
-          id: batchDocumentId,
-          data: JSON.stringify(ids)
-        });
-        (newStoreDocument.deleteBatches ||= []).push([maxDeleteAt!, batchDocumentId]);
+        const newTail = randomId();
+        const deleteBatch: DeleteBatch = {
+          ids,
+          timestamp: maxDeleteAt!,
+          next: newTail
+        };
 
+        let newId: string;
+        if (deleteBatches) {
+          newId = deleteBatches.tail;
+          deleteBatches.tail = newTail;
+        }
+        else {
+          newId = randomId();
+          deleteBatches = newStoreDocument.deleteBatches = {
+            head: newId,
+            headNext: deleteBatch.next,
+            headTimestamp: deleteBatch.timestamp,
+            tail: newTail
+          };
+        }
+
+        putDocuments.push({
+          id: newId,
+          data: JSON.stringify(deleteBatch)
+        });
         newDeletes.length = 0;
       }
 
       newStoreDocument.deletes = newDeletes.length > 0 ? newDeletes : undefined;
-      if (newStoreDocument.deleteBatches && newStoreDocument.deleteBatches.length === 0) {
-        newStoreDocument.deleteBatches = undefined;
-      }
 
       const success = await this.backend.update(newStoreDocument, putDocuments, deleteDocumentIdsNow);
 
