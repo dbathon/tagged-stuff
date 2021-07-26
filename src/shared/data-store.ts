@@ -1,5 +1,6 @@
 import { Document } from "./document";
 import { encodeBytes } from "./encode-bytes";
+import { ReadWriteLock } from "./read-write-lock";
 import { BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree } from "./remote-b-tree";
 import { Result } from "./result";
 
@@ -145,29 +146,6 @@ class WriteOperation {
   }
 }
 
-class QueuedOperation {
-
-  private completionPromise?: Promise<void>;
-  private completionPromiseResolve?: () => void;
-
-  constructor(readonly type: "R" | "W", readonly previousCompleted?: Promise<void>) { }
-
-  get afterCompletion(): Promise<void> {
-    if (!this.completionPromise) {
-      this.completionPromise = new Promise(resolve => {
-        this.completionPromiseResolve = resolve;
-      });
-    }
-    return this.completionPromise;
-  }
-
-  complete() {
-    if (this.completionPromiseResolve) {
-      this.completionPromiseResolve();
-    }
-  }
-}
-
 const ID_SEPARATOR = "|";
 
 class DocumentInfo {
@@ -206,9 +184,8 @@ export class DataStore {
 
   private readonly nodeCache = new Map<string, BTreeNode>();
 
-  private lastQueuedOperation?: QueuedOperation;
+  private readonly readWriteLock = new ReadWriteLock();
 
-  private activeReads = 0;
   private activeWriteOperation?: WriteOperation;
 
   constructor(private readonly backend: DataStoreBackend) {
@@ -237,65 +214,16 @@ export class DataStore {
     this.tree = new RemoteBTree(50, fetchNode, randomId);
   }
 
-  private queueIfNecessary(operationType: "R" | "W"): QueuedOperation {
-    if (!this.lastQueuedOperation) {
-      this.lastQueuedOperation = new QueuedOperation(operationType);
-    }
-    else if (operationType === "R" && this.lastQueuedOperation.type === "R") {
-      // nothing to do, the reads can happen in parallel
-    }
-    else {
-      this.lastQueuedOperation = new QueuedOperation(operationType, this.lastQueuedOperation.afterCompletion);
-    }
-    return this.lastQueuedOperation;
-  }
-
-  private completeOperation(queuedOperation: QueuedOperation) {
-    queuedOperation.complete();
-    if (queuedOperation === this.lastQueuedOperation) {
-      this.lastQueuedOperation = undefined;
-    }
-  }
-
-  private async readOperation<T>(body: () => Promise<T>): Promise<T> {
-    const queuedOperation = this.queueIfNecessary("R");
-    if (queuedOperation.previousCompleted) {
-      await queuedOperation.previousCompleted;
-    }
-    if (this.activeWriteOperation || this.activeReads < 0) {
-      // sanity check
-      throw new Error("invalid state for read: " + this.activeWriteOperation + ", " + this.activeReads);
-    }
-    // multiple reads can be active at the same time
-    ++this.activeReads;
-    try {
-      return await body();
-    }
-    finally {
-      --this.activeReads;
-      if (this.activeReads === 0) {
-        this.completeOperation(queuedOperation);
-      }
-    }
-  }
-
   private async writeOperation<T>(body: (writeOperation: WriteOperation) => Promise<T>): Promise<T> {
-    const queuedOperation = this.queueIfNecessary("W");
-    if (queuedOperation.previousCompleted) {
-      await queuedOperation.previousCompleted;
-    }
-    if (this.activeWriteOperation || this.activeReads !== 0) {
-      // sanity check
-      throw new Error("invalid state for write: " + this.activeWriteOperation + ", " + this.activeReads);
-    }
-    this.activeWriteOperation = new WriteOperation();
-    try {
-      return await body(this.activeWriteOperation);
-    }
-    finally {
-      this.activeWriteOperation = undefined;
-      this.completeOperation(queuedOperation);
-    }
+    return this.readWriteLock.withWriteLock(async () => {
+      this.activeWriteOperation = new WriteOperation();
+      try {
+        return await body(this.activeWriteOperation);
+      }
+      finally {
+        this.activeWriteOperation = undefined;
+      }
+    });
   }
 
   private getStoreDocument(): Promise<StoreDocument> {
@@ -343,7 +271,7 @@ export class DataStore {
   }
 
   get<D extends Document>(id: string): Promise<D | undefined> {
-    return this.readOperation(async () => {
+    return this.readWriteLock.withReadLock(async () => {
       const rootId = (await this.getStoreDocument()).rootId;
       return this.getDocumentInfo(id, rootId).transform(documentInfo => {
         if (documentInfo === undefined) {
@@ -356,7 +284,7 @@ export class DataStore {
   }
 
   scan<D extends Document>(maxResults: number | undefined, minId?: string, maxIdExclusive?: string): Promise<D[]> {
-    return this.readOperation(async () => {
+    return this.readWriteLock.withReadLock(async () => {
       const rootId = (await this.getStoreDocument()).rootId;
       if (rootId === undefined) {
         return [];
