@@ -587,6 +587,6 @@ export class DataStore {
     return this.putAndDelete({ delete: documents });
   };
 
-  // TODO: "transactions"/batched pust/deletes, commit, reset, "refresh"/"cached" StoreDocument
+  // TODO: "transactions"/batched post/deletes, commit, reset, "refresh"/"cached" StoreDocument
 
 }
