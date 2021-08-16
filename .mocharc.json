@@ -1,7 +1,5 @@
 {
-  "extension": [
-    "ts"
-  ],
+  "extension": ["ts"],
   "spec": "src/**/*.spec.ts",
   "require": "esbuild-register"
 }

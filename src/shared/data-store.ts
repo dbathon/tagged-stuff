@@ -59,7 +59,6 @@ export interface DataDocument extends Document {
 }
 
 export interface DataStoreBackend {
-
   /**
    * @returns the current version of the StoreDocument (never undefined) as a Promise
    */
@@ -90,8 +89,11 @@ export interface DataStoreBackend {
    * @param obsoleteDataDocumentIds
    * @returns whether the update was performed as a Promise
    */
-  update(newStoreDocument: StoreDocument, newDataDocuments: DataDocument[], obsoleteDataDocumentIds: string[]): Promise<boolean>;
-
+  update(
+    newStoreDocument: StoreDocument,
+    newDataDocuments: DataDocument[],
+    obsoleteDataDocumentIds: string[]
+  ): Promise<boolean>;
 }
 
 const randomBuffer = new Uint8Array(16);
@@ -115,11 +117,10 @@ class WriteOperation {
   apply(modificationResult: BTreeModificationResult) {
     this.rootId = modificationResult.newRootId;
 
-    modificationResult.obsoleteNodes.forEach(node => {
+    modificationResult.obsoleteNodes.forEach((node) => {
       if (this.newNodes?.has(node.id)) {
         this.newNodes.delete(node.id);
-      }
-      else {
+      } else {
         if (!this.deletedNodes) {
           this.deletedNodes = new Map();
         }
@@ -127,7 +128,7 @@ class WriteOperation {
       }
     });
 
-    modificationResult.newNodes.forEach(node => {
+    modificationResult.newNodes.forEach((node) => {
       if (!this.newNodes) {
         this.newNodes = new Map();
       }
@@ -141,15 +142,15 @@ class WriteOperation {
   }
 
   updateNodeCache(nodeCache: Map<string, BTreeNode>) {
-    this.deletedNodes?.forEach(node => nodeCache.delete(node.id));
-    this.newNodes?.forEach(node => nodeCache.set(node.id, node));
+    this.deletedNodes?.forEach((node) => nodeCache.delete(node.id));
+    this.newNodes?.forEach((node) => nodeCache.set(node.id, node));
   }
 }
 
 const ID_SEPARATOR = "|";
 
 class DocumentInfo {
-  constructor(readonly id: string, readonly version: string, readonly backendId: string) { }
+  constructor(readonly id: string, readonly version: string, readonly backendId: string) {}
 
   static parseFromKey(key: string): DocumentInfo {
     const [id, version, backendId] = key.split(ID_SEPARATOR);
@@ -179,7 +180,6 @@ const DELETE_DELAY_MILLIS = 60 * 60 * 1000;
 const DELETE_IDS_PER_BATCH = 100;
 
 export class DataStore {
-
   private readonly tree: RemoteBTree;
 
   private readonly nodeCache = new Map<string, BTreeNode>();
@@ -196,7 +196,7 @@ export class DataStore {
       }
       const node: BTreeNode = {
         ...JSON.parse(document.data),
-        id: nodeId
+        id: nodeId,
       };
       this.nodeCache.set(nodeId, node);
       return node;
@@ -205,8 +205,7 @@ export class DataStore {
       const cachedNode = this.activeWriteOperation?.getNode(nodeId) || this.nodeCache.get(nodeId);
       if (cachedNode !== undefined) {
         return Result.withValue(cachedNode);
-      }
-      else {
+      } else {
         return Result.withPromise(getAndCacheNode(nodeId));
       }
     };
@@ -219,8 +218,7 @@ export class DataStore {
       this.activeWriteOperation = new WriteOperation();
       try {
         return await body(this.activeWriteOperation);
-      }
-      finally {
+      } finally {
         this.activeWriteOperation = undefined;
       }
     });
@@ -235,7 +233,7 @@ export class DataStore {
       return Result.withValue(undefined);
     }
     const keyPrefix = id + ID_SEPARATOR;
-    return this.tree.scan(new BTreeScanParameters(1, keyPrefix), rootId).transform(keys => {
+    return this.tree.scan(new BTreeScanParameters(1, keyPrefix), rootId).transform((keys) => {
       if (keys.length === 0 || !keys[0].startsWith(keyPrefix)) {
         return undefined;
       }
@@ -255,9 +253,9 @@ export class DataStore {
       return [];
     }
 
-    const getResult = await this.backend.getDataDocuments(documentInfos.map(documentInfo => documentInfo.backendId));
+    const getResult = await this.backend.getDataDocuments(documentInfos.map((documentInfo) => documentInfo.backendId));
 
-    return documentInfos.map(documentInfo => {
+    return documentInfos.map((documentInfo) => {
       const dataDocument = getResult[documentInfo.backendId];
       if (dataDocument === undefined) {
         throw new ConflictError(documentInfo.id, "backend document not found: " + documentInfo.backendId);
@@ -273,13 +271,16 @@ export class DataStore {
   get<D extends Document>(id: string): Promise<D | undefined> {
     return this.readWriteLock.withReadLock(async () => {
       const rootId = (await this.getStoreDocument()).rootId;
-      return this.getDocumentInfo(id, rootId).transform(documentInfo => {
-        if (documentInfo === undefined) {
-          return undefined;
-        }
-        return Result.withPromise(this.fetchDocuments<D>([documentInfo]))
-          .transform(dataDocuments => dataDocuments[0]);
-      }).toPromise();
+      return this.getDocumentInfo(id, rootId)
+        .transform((documentInfo) => {
+          if (documentInfo === undefined) {
+            return undefined;
+          }
+          return Result.withPromise(this.fetchDocuments<D>([documentInfo])).transform(
+            (dataDocuments) => dataDocuments[0]
+          );
+        })
+        .toPromise();
     });
   }
 
@@ -290,17 +291,25 @@ export class DataStore {
         return [];
       }
 
-      return this.tree.scan(new BTreeScanParameters(maxResults,
-        minId === undefined ? undefined : this.validateId(minId),
-        maxIdExclusive === undefined ? undefined : this.validateId(maxIdExclusive)), rootId)
-        .transform(keys => {
+      return this.tree
+        .scan(
+          new BTreeScanParameters(
+            maxResults,
+            minId === undefined ? undefined : this.validateId(minId),
+            maxIdExclusive === undefined ? undefined : this.validateId(maxIdExclusive)
+          ),
+          rootId
+        )
+        .transform((keys) => {
           if (keys.length === 0) {
             return [];
           }
-          const documentInfos = keys.map(key => {
+          const documentInfos = keys.map((key) => {
             const documentInfo = DocumentInfo.parseFromKey(key);
-            if ((minId !== undefined && documentInfo.id < minId)
-              || (maxIdExclusive !== undefined && maxIdExclusive <= documentInfo.id)) {
+            if (
+              (minId !== undefined && documentInfo.id < minId) ||
+              (maxIdExclusive !== undefined && maxIdExclusive <= documentInfo.id)
+            ) {
               // this should not happen
               throw new Error("got unexpected id: " + documentInfo.id + ", " + minId + ", " + maxIdExclusive);
             }
@@ -312,7 +321,6 @@ export class DataStore {
     });
   }
 
-
   private getId(document: Document): string {
     if (document.id === undefined) {
       throw new Error("document id must be set: " + document);
@@ -321,10 +329,9 @@ export class DataStore {
     return document.id;
   }
 
-  putAndDelete(parameters: { put?: Document[], delete?: Document[]; }): Promise<void> {
-    return this.writeOperation(async writeOperation => {
-      if ((!parameters.put || parameters.put.length === 0)
-        && (!parameters.delete || parameters.delete.length === 0)) {
+  putAndDelete(parameters: { put?: Document[]; delete?: Document[] }): Promise<void> {
+    return this.writeOperation(async (writeOperation) => {
+      if ((!parameters.put || parameters.put.length === 0) && (!parameters.delete || parameters.delete.length === 0)) {
         // nothing to do
         return;
       }
@@ -356,23 +363,24 @@ export class DataStore {
             let documentInfo: DocumentInfo | undefined;
             if (documentInfoResult.hasValue) {
               documentInfo = documentInfoResult.value;
-            }
-            else {
+            } else {
               documentInfo = await documentInfoResult.promise;
             }
 
             let newVersion: string | undefined;
             if (documentInfo) {
               if (documentInfo.version !== document.version) {
-                throw new ConflictError(id, "version does not match: expected " + documentInfo.version + ", but it is " + document.version);
+                throw new ConflictError(
+                  id,
+                  "version does not match: expected " + documentInfo.version + ", but it is " + document.version
+                );
               }
 
               // TODO: maybe only update if the document actually changed..., that would require loading the old one or some hash over the document...
               deleteDocumentIds.push(documentInfo.backendId);
               treeDeletions.push(documentInfo.buildKey());
               newVersion = documentInfo.getNextVersion();
-            }
-            else {
+            } else {
               if (document.version !== undefined) {
                 throw new ConflictError(id, "document does not exist, given version: " + document.version);
               }
@@ -391,13 +399,13 @@ export class DataStore {
               const newBackendId = randomId();
               const newDataDocument: DataDocument = {
                 id: newBackendId,
-                data: JSON.stringify(newDocument)
+                data: JSON.stringify(newDocument),
               };
 
               putDocuments.push(newDataDocument);
               treeInserts.push(new DocumentInfo(id, newVersion, newBackendId).buildKey());
 
-              successActions.push(() => document.version = newVersion);
+              successActions.push(() => (document.version = newVersion));
             }
           }
         }
@@ -413,13 +421,13 @@ export class DataStore {
       ]) {
         for (const key of keys) {
           const oldRootId = writeOperation.rootId!;
-          const modificationResultResult = isInsert ?
-            this.tree.insertKey(key, oldRootId) :
-            this.tree.deleteKey(key, oldRootId);
+          const modificationResultResult = isInsert
+            ? this.tree.insertKey(key, oldRootId)
+            : this.tree.deleteKey(key, oldRootId);
 
-          const modificationResult = modificationResultResult.hasValue ?
-            modificationResultResult.value :
-            await modificationResultResult.promise;
+          const modificationResult = modificationResultResult.hasValue
+            ? modificationResultResult.value
+            : await modificationResultResult.promise;
 
           writeOperation.apply(modificationResult);
           if (oldRootId === writeOperation.rootId) {
@@ -428,26 +436,25 @@ export class DataStore {
         }
       }
 
-      writeOperation.newNodes?.forEach(node => {
+      writeOperation.newNodes?.forEach((node) => {
         const nodeWithoutId: any = {
-          ...node
+          ...node,
         };
         nodeWithoutId.id = undefined;
         const newNodeDataDocument: DataDocument = {
           id: node.id,
-          data: JSON.stringify(nodeWithoutId)
+          data: JSON.stringify(nodeWithoutId),
         };
         putDocuments.push(newNodeDataDocument);
       });
 
-      writeOperation.deletedNodes?.forEach(node => {
+      writeOperation.deletedNodes?.forEach((node) => {
         deleteDocumentIds.push(node.id);
       });
 
-
       const newStoreDocument: StoreDocument = {
         ...storeDocument,
-        rootId: writeOperation.rootId
+        rootId: writeOperation.rootId,
       };
 
       const now = new Date().getTime();
@@ -477,8 +484,7 @@ export class DataStore {
           deleteBatches.head = deleteBatches.headNext;
           deleteBatches.headNext = headNextDeleteBatch.next;
           deleteBatches.headTimestamp = headNextDeleteBatch.timestamp;
-        }
-        else {
+        } else {
           // this was the last batch
           deleteBatches = newStoreDocument.deleteBatches = undefined;
         }
@@ -489,8 +495,7 @@ export class DataStore {
         for (const deleteEntry of newStoreDocument.deletes) {
           if (deleteEntry[0] <= now) {
             deleteDocumentIdsNow.push(deleteEntry[1]);
-          }
-          else {
+          } else {
             newDeletes.push(deleteEntry);
           }
         }
@@ -498,7 +503,8 @@ export class DataStore {
 
       if (deleteDocumentIds.length > 0) {
         const convertIdsToDeleteIdsResult = this.backend.convertIdsToDeleteIds(deleteDocumentIds);
-        const convertedDeleteDocumentIds = convertIdsToDeleteIdsResult === undefined ? deleteDocumentIds : await convertIdsToDeleteIdsResult;
+        const convertedDeleteDocumentIds =
+          convertIdsToDeleteIdsResult === undefined ? deleteDocumentIds : await convertIdsToDeleteIdsResult;
         const deleteAt = now + DELETE_DELAY_MILLIS;
         for (const deleteDocumentId of convertedDeleteDocumentIds) {
           newDeletes.push([deleteAt, deleteDocumentId]);
@@ -520,27 +526,26 @@ export class DataStore {
         const deleteBatch: DeleteBatch = {
           ids,
           timestamp: maxDeleteAt!,
-          next: newTail
+          next: newTail,
         };
 
         let newId: string;
         if (deleteBatches) {
           newId = deleteBatches.tail;
           deleteBatches.tail = newTail;
-        }
-        else {
+        } else {
           newId = randomId();
           deleteBatches = newStoreDocument.deleteBatches = {
             head: newId,
             headNext: deleteBatch.next,
             headTimestamp: deleteBatch.timestamp,
-            tail: newTail
+            tail: newTail,
           };
         }
 
         putDocuments.push({
           id: newId,
-          data: JSON.stringify(deleteBatch)
+          data: JSON.stringify(deleteBatch),
         });
         newDeletes.length = 0;
       }
@@ -552,23 +557,21 @@ export class DataStore {
       if (!success) {
         // TODO: retry a few times...
         throw new ConflictError("", "the storeDocument was updated concurrently, please try again");
-      }
-      else {
+      } else {
         // everything was successful
         writeOperation.updateNodeCache(this.nodeCache);
-        successActions.forEach(action => action());
+        successActions.forEach((action) => action());
       }
     });
-  };
+  }
 
   put(...documents: Document[]): Promise<void> {
     return this.putAndDelete({ put: documents });
-  };
+  }
 
   delete(...documents: Document[]): Promise<void> {
     return this.putAndDelete({ delete: documents });
-  };
+  }
 
   // TODO: "transactions"/batched post/deletes, commit, reset, "refresh"/"cached" StoreDocument
-
 }

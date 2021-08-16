@@ -47,7 +47,7 @@ function getAesGcmParams(iv: Uint8Array): AesGcmParams {
   return {
     name: "AES-GCM",
     iv,
-    tagLength: 128
+    tagLength: 128,
   };
 }
 
@@ -68,7 +68,11 @@ async function encryptDataDocumentId(dataDocumentId: string): Promise<string> {
 
   const idEncryptKey = await subtleCrypto.importKey("raw", idBytes, "AES-CBC", false, ["encrypt"]);
 
-  const encryptedIdBytes = await subtleCrypto.encrypt({ name: "AES-CBC", iv: idEncryptIv }, idEncryptKey, idEncryptData);
+  const encryptedIdBytes = await subtleCrypto.encrypt(
+    { name: "AES-CBC", iv: idEncryptIv },
+    idEncryptKey,
+    idEncryptData
+  );
   if (encryptedIdBytes.byteLength !== 16) {
     throw new Error("unexpected encryptedIdBytes length: " + encryptedIdBytes.byteLength);
   }
@@ -81,10 +85,9 @@ function getDataDocumentDataKey(dataDocumentId: string): Promise<CryptoKey> {
 }
 
 export class EncryptingDataStoreBackend implements DataStoreBackend {
-
   private cachedKey?: CachedKey;
 
-  constructor(private readonly nextDataStoreBackend: DataStoreBackend, private readonly secret: string) { }
+  constructor(private readonly nextDataStoreBackend: DataStoreBackend, private readonly secret: string) {}
 
   private async getSecretKey(encodedSalt: string): Promise<CryptoKey> {
     if (this.cachedKey && this.cachedKey.encodedSalt === encodedSalt) {
@@ -93,21 +96,23 @@ export class EncryptingDataStoreBackend implements DataStoreBackend {
     }
 
     const salt = decodeBytes(encodedSalt);
-    const rawKey = await subtleCrypto.importKey("raw", new TextEncoder().encode(this.secret), "PBKDF2", false, ["deriveKey"]);
+    const rawKey = await subtleCrypto.importKey("raw", new TextEncoder().encode(this.secret), "PBKDF2", false, [
+      "deriveKey",
+    ]);
 
     const pbkdf2Params: Pbkdf2Params = {
       name: "PBKDF2",
       salt: salt,
       // just use 100000 for now, we could potentially make that configurable later
       iterations: 100000,
-      hash: "SHA-256"
+      hash: "SHA-256",
     };
     const key = await subtleCrypto.deriveKey(
       pbkdf2Params,
       rawKey,
       {
         name: "AES-GCM",
-        length: 128
+        length: 128,
       },
       false,
       ["encrypt", "decrypt"]
@@ -128,7 +133,10 @@ export class EncryptingDataStoreBackend implements DataStoreBackend {
       const key = await this.getSecretKey(encryptedProperties.salt);
 
       const decryptedData = await subtleCrypto.decrypt(
-        getAesGcmParams(decodeBytes(encryptedProperties.iv)), key, decodeBytes(encryptedProperties.data));
+        getAesGcmParams(decodeBytes(encryptedProperties.iv)),
+        key,
+        decodeBytes(encryptedProperties.data)
+      );
       const document: StoreDocument = JSON.parse(textDecoder.decode(decryptedData));
 
       // add the unencrypted parts to the document again
@@ -137,12 +145,10 @@ export class EncryptingDataStoreBackend implements DataStoreBackend {
       (document.extraProperties ||= {})[encryptedPropertiesName] = encryptedProperties;
 
       return document;
-    }
-    else if (encryptedStoreDocument.rootId !== undefined) {
+    } else if (encryptedStoreDocument.rootId !== undefined) {
       // it seems to be an unencrypted store document
       throw new Error("unencrypted store document");
-    }
-    else {
+    } else {
       // seems to be a new store document, so just return it
       return encryptedStoreDocument;
     }
@@ -160,12 +166,16 @@ export class EncryptingDataStoreBackend implements DataStoreBackend {
         const id = dataDocumentIds[i];
 
         const dataKey = await getDataDocumentDataKey(id);
-        const dataBytes = await subtleCrypto.decrypt(dataEncryptAesGcmParams, dataKey, decodeBytes(encryptedDocument.data));
+        const dataBytes = await subtleCrypto.decrypt(
+          dataEncryptAesGcmParams,
+          dataKey,
+          decodeBytes(encryptedDocument.data)
+        );
 
         result[id] = {
           id,
           version: encryptedDocument.version,
-          data: textDecoder.decode(dataBytes)
+          data: textDecoder.decode(dataBytes),
         };
       }
     }
@@ -183,7 +193,11 @@ export class EncryptingDataStoreBackend implements DataStoreBackend {
     return nextBackendIds === undefined ? encryptedIds : nextBackendIds;
   }
 
-  async update(newStoreDocument: StoreDocument, newDataDocuments: DataDocument[], obsoleteDataDocumentIds: string[]): Promise<boolean> {
+  async update(
+    newStoreDocument: StoreDocument,
+    newDataDocuments: DataDocument[],
+    obsoleteDataDocumentIds: string[]
+  ): Promise<boolean> {
     const storeDocumentToEncrypt: StoreDocument = { ...newStoreDocument };
 
     // remove unencrypted entries
@@ -202,18 +216,21 @@ export class EncryptingDataStoreBackend implements DataStoreBackend {
     const encodedSalt = extractEncryptedProperties(newStoreDocument)?.salt || encodeBytes(randomBytes(16));
 
     const encryptedStoreDocumentData = await subtleCrypto.encrypt(
-      getAesGcmParams(newStoreDocumentIv), await this.getSecretKey(encodedSalt), textEncoder.encode(JSON.stringify(storeDocumentToEncrypt)));
+      getAesGcmParams(newStoreDocumentIv),
+      await this.getSecretKey(encodedSalt),
+      textEncoder.encode(JSON.stringify(storeDocumentToEncrypt))
+    );
 
     const newEncryptedProperties: EncryptedProperties = {
       data: encodeBytes(new Uint8Array(encryptedStoreDocumentData)),
       salt: encodedSalt,
-      iv: encodeBytes(newStoreDocumentIv)
+      iv: encodeBytes(newStoreDocumentIv),
     };
 
     const encryptedNewStoreDocument: StoreDocument = {
       id: newStoreDocument.id,
       version: newStoreDocument.version,
-      rootId: MARKER_ROOT_ID
+      rootId: MARKER_ROOT_ID,
     };
     (encryptedNewStoreDocument.extraProperties ||= {})[encryptedPropertiesName] = newEncryptedProperties;
 
@@ -223,16 +240,24 @@ export class EncryptingDataStoreBackend implements DataStoreBackend {
       const encryptedId = await encryptDataDocumentId(id);
       const dataKey = await getDataDocumentDataKey(id);
 
-      const encryptedDataBytes = await subtleCrypto.encrypt(dataEncryptAesGcmParams, dataKey, textEncoder.encode(newDataDocument.data));
+      const encryptedDataBytes = await subtleCrypto.encrypt(
+        dataEncryptAesGcmParams,
+        dataKey,
+        textEncoder.encode(newDataDocument.data)
+      );
 
       encryptedNewDataDocuments.push({
         id: encryptedId,
         version: newDataDocument.version,
-        data: encodeBytes(new Uint8Array(encryptedDataBytes))
+        data: encodeBytes(new Uint8Array(encryptedDataBytes)),
       });
     }
 
-    const result = await this.nextDataStoreBackend.update(encryptedNewStoreDocument, encryptedNewDataDocuments, obsoleteDataDocumentIds);
+    const result = await this.nextDataStoreBackend.update(
+      encryptedNewStoreDocument,
+      encryptedNewDataDocuments,
+      obsoleteDataDocumentIds
+    );
 
     if (result) {
       // update the version and the encrypted properties in the original document
@@ -247,5 +272,4 @@ export class EncryptingDataStoreBackend implements DataStoreBackend {
 
     return result;
   }
-
 }

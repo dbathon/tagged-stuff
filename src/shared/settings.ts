@@ -1,4 +1,3 @@
-
 export class Settings {
   jdsUrl?: string;
   storeId?: string;

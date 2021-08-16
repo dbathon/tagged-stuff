@@ -1,14 +1,12 @@
-
 class QueuedOperation {
-
   private completionPromise?: Promise<void>;
   private completionPromiseResolve?: () => void;
 
-  constructor(readonly type: "R" | "W", readonly previousCompleted?: Promise<void>) { }
+  constructor(readonly type: "R" | "W", readonly previousCompleted?: Promise<void>) {}
 
   get afterCompletion(): Promise<void> {
     if (!this.completionPromise) {
-      this.completionPromise = new Promise(resolve => {
+      this.completionPromise = new Promise((resolve) => {
         this.completionPromiseResolve = resolve;
       });
     }
@@ -20,11 +18,9 @@ class QueuedOperation {
       this.completionPromiseResolve();
     }
   }
-
 }
 
 export class ReadWriteLock {
-
   private lastQueuedOperation?: QueuedOperation;
 
   private reads = 0;
@@ -33,11 +29,9 @@ export class ReadWriteLock {
   private queueIfNecessary(operationType: "R" | "W"): QueuedOperation {
     if (!this.lastQueuedOperation) {
       this.lastQueuedOperation = new QueuedOperation(operationType);
-    }
-    else if (operationType === "R" && this.lastQueuedOperation.type === "R") {
+    } else if (operationType === "R" && this.lastQueuedOperation.type === "R") {
       // nothing to do, the reads can happen in parallel
-    }
-    else {
+    } else {
       this.lastQueuedOperation = new QueuedOperation(operationType, this.lastQueuedOperation.afterCompletion);
     }
     return this.lastQueuedOperation;
@@ -63,8 +57,7 @@ export class ReadWriteLock {
     ++this.reads;
     try {
       return await action();
-    }
-    finally {
+    } finally {
       --this.reads;
       if (this.reads === 0) {
         this.completeOperation(queuedOperation);
@@ -84,11 +77,9 @@ export class ReadWriteLock {
     this.write = true;
     try {
       return await action();
-    }
-    finally {
+    } finally {
       this.write = false;
       this.completeOperation(queuedOperation);
     }
   }
-
 }

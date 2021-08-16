@@ -2,7 +2,6 @@ import { DataDocument, DataStoreBackend, StoreDocument } from "./data-store";
 import { JdsClient } from "./jds-client";
 
 export class JdsDataStoreBackend implements DataStoreBackend {
-
   readonly jdsClient: JdsClient;
 
   constructor(jdsBaseUrl: string, readonly storeId: string) {
@@ -14,10 +13,9 @@ export class JdsDataStoreBackend implements DataStoreBackend {
     if (queryResult.length === 0) {
       // does not exist yet, return a new one
       return {
-        id: this.storeId
+        id: this.storeId,
       };
-    }
-    else {
+    } else {
       return queryResult[0];
     }
   }
@@ -59,21 +57,24 @@ export class JdsDataStoreBackend implements DataStoreBackend {
     return undefined;
   }
 
-  async update(newStoreDocument: StoreDocument, newDataDocuments: DataDocument[], obsoleteDataDocumentIds: string[]): Promise<boolean> {
+  async update(
+    newStoreDocument: StoreDocument,
+    newDataDocuments: DataDocument[],
+    obsoleteDataDocumentIds: string[]
+  ): Promise<boolean> {
     if (newStoreDocument.id !== this.storeId) {
       throw new Error("unexpected store document id: " + this.storeId + ", " + JSON.stringify(newStoreDocument));
     }
 
     const jdsResult = await this.jdsClient.multiPutAndDelete({
       put: [...newDataDocuments, newStoreDocument],
-      delete: obsoleteDataDocumentIds.map(id => ({ id }))
+      delete: obsoleteDataDocumentIds.map((id) => ({ id })),
     });
 
     if (jdsResult.errorDocumentId !== undefined) {
       if (jdsResult.errorDocumentId === this.storeId) {
         return false;
-      }
-      else {
+      } else {
         throw new Error("update failed with unexpected errorDocumentId: " + jdsResult.errorDocumentId);
       }
     }
@@ -89,5 +90,4 @@ export class JdsDataStoreBackend implements DataStoreBackend {
 
     return true;
   }
-
 }

@@ -15,30 +15,29 @@ export interface MultiPutAndDelete {
 }
 
 export class MultiPutAndDeleteResult {
-  constructor(readonly newVersions: Record<string, string> | undefined, readonly errorDocumentId: string | undefined) { }
+  constructor(readonly newVersions: Record<string, string> | undefined, readonly errorDocumentId: string | undefined) {}
 }
 
 const ID_REGEXP = /^[a-zA-Z0-9][a-zA-Z0-9_\-]{0,199}$/;
 
 export class JdsClient {
-
-  constructor(readonly baseUrl: string) { }
+  constructor(readonly baseUrl: string) {}
 
   private getUrl(path: string) {
-    const baseUrlWithSlash = this.baseUrl.endsWith('/') ? this.baseUrl : this.baseUrl + '/';
+    const baseUrlWithSlash = this.baseUrl.endsWith("/") ? this.baseUrl : this.baseUrl + "/";
     // TODO maybe handle multiple slashes...
-    const pathWithoutSlash = path.startsWith('/') ? path.substr(1) : path;
+    const pathWithoutSlash = path.startsWith("/") ? path.substr(1) : path;
     return baseUrlWithSlash + pathWithoutSlash;
   }
 
   private requestRaw<T>(method: "GET" | "POST" | "PUT" | "DELETE", url: string, body?: any): Promise<Response> {
     const init: RequestInit = {
-      method
+      method,
     };
     if (body !== undefined) {
       init.body = JSON.stringify(body);
       init.headers = {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       };
     }
     return fetch(url, init);
@@ -57,12 +56,12 @@ export class JdsClient {
   }
 
   getDatabaseInformation(): Promise<DatabaseInformation> {
-    return this.request<DatabaseInformation>("GET", this.getUrl(''));
+    return this.request<DatabaseInformation>("GET", this.getUrl(""));
   }
 
   private validateId(id?: string): string {
     if (id === undefined || !ID_REGEXP.test(id)) {
-      throw new Error('invalid id: ' + id);
+      throw new Error("invalid id: " + id);
     }
     return id;
   }
@@ -80,10 +79,9 @@ export class JdsClient {
   extractIdAndVersion(idOrDocument: string | undefined | Document): Document {
     if (typeof idOrDocument === "string" || idOrDocument === undefined) {
       return {
-        id: this.validateId(idOrDocument)
+        id: this.validateId(idOrDocument),
       };
-    }
-    else {
+    } else {
       this.validateId(idOrDocument.id);
       // just return the given document
       return idOrDocument;
@@ -109,16 +107,16 @@ export class JdsClient {
         throw new Error("newDocumentVersions not present in response: " + JSON.stringify(json));
       }
       return new MultiPutAndDeleteResult(newVersions, undefined);
-    }
-    else if (response.status === 404 || response.status === 409) {
+    } else if (response.status === 404 || response.status === 409) {
       const json = await response.json();
       const documentId = json.documentId as string;
       if (documentId === undefined) {
-        throw new Error("documentId not present in error response: " + JSON.stringify(json) + ", status: " + response.status);
+        throw new Error(
+          "documentId not present in error response: " + JSON.stringify(json) + ", status: " + response.status
+        );
       }
       return new MultiPutAndDeleteResult(undefined, documentId);
-    }
-    else {
+    } else {
       throw this.createError(url, response);
     }
   }
@@ -130,5 +128,4 @@ export class JdsClient {
     }
     return (await this.request<QueryResult<D>>("GET", url)).result;
   }
-
 }

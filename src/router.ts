@@ -19,34 +19,34 @@ export const router = createRouter({
           next({ name: "Settings" });
         }
         next();
-      }
+      },
     },
     {
       path: "/tagged-stuff/b-tree-test",
       name: "BTreeTest",
-      component: BTreeTest
+      component: BTreeTest,
     },
     {
       path: "/tagged-stuff/crypto-test",
       name: "CryptoTest",
-      component: CryptoTest
+      component: CryptoTest,
     },
     {
       path: "/tagged-stuff/settings",
       name: "Settings",
-      component: Settings
+      component: Settings,
     },
     {
       path: "/tagged-stuff",
-      redirect: "/tagged-stuff/entries"
+      redirect: "/tagged-stuff/entries",
     },
     {
       path: "/",
-      redirect: "/tagged-stuff"
+      redirect: "/tagged-stuff",
     },
     {
       path: "/:pathMatch(.*)*",
-      component: NotFound
+      component: NotFound,
     },
   ],
 });

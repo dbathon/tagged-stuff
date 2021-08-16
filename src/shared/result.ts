@@ -1,14 +1,13 @@
-
 export class Result<T> {
-  private constructor(private readonly _value?: T, private readonly _promise?: Promise<T>) { }
+  private constructor(private readonly _value?: T, private readonly _promise?: Promise<T>) {}
 
   static withValue<T>(value: T): Result<T> {
     return new Result<T>(value);
-  };
+  }
 
   static withPromise<T>(promise: Promise<T>): Result<T> {
     return new Result<T>(undefined, promise);
-  };
+  }
 
   get hasValue(): boolean {
     return this._promise === undefined;
@@ -31,8 +30,7 @@ export class Result<T> {
   toPromise(): Promise<T> {
     if (this.hasValue) {
       return Promise.resolve(this.value);
-    }
-    else {
+    } else {
       return this.promise;
     }
   }
@@ -41,22 +39,21 @@ export class Result<T> {
     if (this.hasValue) {
       const valueOrResult = transformFunction(this.value);
       return valueOrResult instanceof Result ? valueOrResult : Result.withValue(valueOrResult);
-    }
-    else {
-      return Result.withPromise(this.promise.then(result => {
-        const valueOrResult = transformFunction(result);
-        if (valueOrResult instanceof Result) {
-          if (valueOrResult.hasValue) {
-            return valueOrResult.value;
+    } else {
+      return Result.withPromise(
+        this.promise.then((result) => {
+          const valueOrResult = transformFunction(result);
+          if (valueOrResult instanceof Result) {
+            if (valueOrResult.hasValue) {
+              return valueOrResult.value;
+            } else {
+              return valueOrResult.promise;
+            }
+          } else {
+            return valueOrResult;
           }
-          else {
-            return valueOrResult.promise;
-          }
-        }
-        else {
-          return valueOrResult;
-        }
-      }));
+        })
+      );
     }
   }
 }

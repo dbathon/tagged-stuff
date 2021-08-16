@@ -7,16 +7,15 @@ interface CacheEntry {
 }
 
 interface Schema extends DBSchema {
-  "data-document": { key: string, value: CacheEntry; };
+  "data-document": { key: string; value: CacheEntry };
 }
 
 export class CachingDataStoreBackend implements DataStoreBackend {
-
   private opened = false;
   private openPromise: Promise<IDBPDatabase<Schema>> | undefined;
   private database: IDBPDatabase<Schema> | undefined;
 
-  constructor(private readonly nextDataStoreBackend: DataStoreBackend, private readonly cacheKey: string) { }
+  constructor(private readonly nextDataStoreBackend: DataStoreBackend, private readonly cacheKey: string) {}
 
   private async getDatabase(): Promise<IDBPDatabase<Schema> | undefined> {
     if (!this.opened) {
@@ -28,11 +27,9 @@ export class CachingDataStoreBackend implements DataStoreBackend {
         });
 
         this.database = await this.openPromise;
-      }
-      catch (e) {
+      } catch (e) {
         console.log("failed to open IndexedDB: ", e);
-      }
-      finally {
+      } finally {
         this.opened = true;
         this.openPromise = undefined;
       }
@@ -61,8 +58,7 @@ export class CachingDataStoreBackend implements DataStoreBackend {
         const cacheEntry = await store.get(dataDocumentId);
         if (cacheEntry) {
           cachedDocuments[dataDocumentId] = cacheEntry.document;
-        }
-        else {
+        } else {
           uncachedIds.push(dataDocumentId);
         }
       }
@@ -95,7 +91,11 @@ export class CachingDataStoreBackend implements DataStoreBackend {
     return this.nextDataStoreBackend.convertIdsToDeleteIds(dataDocumentIds);
   }
 
-  async update(newStoreDocument: StoreDocument, newDataDocuments: DataDocument[], obsoleteDataDocumentIds: string[]): Promise<boolean> {
+  async update(
+    newStoreDocument: StoreDocument,
+    newDataDocuments: DataDocument[],
+    obsoleteDataDocumentIds: string[]
+  ): Promise<boolean> {
     const success = await this.nextDataStoreBackend.update(newStoreDocument, newDataDocuments, obsoleteDataDocumentIds);
 
     if (success) {
@@ -115,5 +115,4 @@ export class CachingDataStoreBackend implements DataStoreBackend {
 
     return success;
   }
-
 }

@@ -2,8 +2,7 @@ import { DataStore } from "./data-store";
 import { Document } from "./document";
 
 export abstract class AbstractDocumentService<D extends Document> {
-
-  constructor(protected readonly dataStore: DataStore) { }
+  constructor(protected readonly dataStore: DataStore) {}
 
   protected abstract readonly typeName: string;
 
@@ -24,7 +23,7 @@ export abstract class AbstractDocumentService<D extends Document> {
 
   private validateId(id?: string): string {
     if (id === undefined || !id.startsWith(this.idPrefix)) {
-      throw new Error('invalid id for type ' + this.typeName + ': ' + id);
+      throw new Error("invalid id for type " + this.typeName + ": " + id);
     }
     return id;
   }
@@ -53,5 +52,4 @@ export abstract class AbstractDocumentService<D extends Document> {
     const maxIdExclusive = this.typeName + ".";
     return this.dataStore.scan(undefined, this.idPrefix, maxIdExclusive);
   }
-
 }

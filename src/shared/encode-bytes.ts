@@ -1,4 +1,3 @@
-
 const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".split("");
 
 const CHAR_TO_INDEX: Record<string, number> = {};

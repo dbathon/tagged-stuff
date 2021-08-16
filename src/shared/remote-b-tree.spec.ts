@@ -72,7 +72,7 @@ describe("RemoteBTree", () => {
     it("should work with fixed simple entries", () => {
       testTree({
         orders: [3, 5, 20],
-        elements: "1,v,asd,hallo,abc,reg,32,fj443,23,35,36,4,,75624,57567,a,b,t,e,g,ju,o".split(",")
+        elements: "1,v,asd,hallo,abc,reg,32,fj443,23,35,36,4,,75624,57567,a,b,t,e,g,ju,o".split(","),
       });
     });
 
@@ -88,7 +88,7 @@ describe("RemoteBTree", () => {
       }
       testTree({
         orders: [3, 5, 20, 50, 100, 1000],
-        elements
+        elements,
       });
     });
   });

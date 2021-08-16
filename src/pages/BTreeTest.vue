@@ -11,8 +11,8 @@ async function testBTree() {
       keys: ["h"],
       children: {
         ids: ["c1", "c2"],
-        sizes: [3, 3]
-      }
+        sizes: [3, 3],
+      },
     },
     {
       id: "c1",
@@ -21,12 +21,11 @@ async function testBTree() {
     {
       id: "c2",
       keys: ["m", "n", "o"],
-    }
-
+    },
   ];
   const tree = new BTreeSet(50);
   tree.data.clear();
-  nodes.forEach(node => tree.data.set(node.id, node));
+  nodes.forEach((node) => tree.data.set(node.id, node));
   tree.rootId = "root";
 
   const chars = "abcdefghijklmnopqrstuvwxyz".split("");
@@ -79,14 +78,14 @@ async function bTreeBenchmark() {
         const str = "" + i;
         await tree.insert(str).toPromise();
       }
-      if (await tree.getSize().toPromise() !== entryCount) {
+      if ((await tree.getSize().toPromise()) !== entryCount) {
         throw new Error();
       }
       for (let i = entryCount - 1; i >= 0; --i) {
         const str = "" + i;
         await tree.delete(str).toPromise();
       }
-      if (await tree.getSize().toPromise() !== 0) {
+      if ((await tree.getSize().toPromise()) !== 0) {
         throw new Error();
       }
 
@@ -115,7 +114,7 @@ async function bTreeBenchmark2() {
       }
       console.log("- insert done", new Date().getTime() - start);
 
-      if (await tree.getSize().toPromise() !== entryCount) {
+      if ((await tree.getSize().toPromise()) !== entryCount) {
         throw new Error();
       }
 
@@ -127,13 +126,11 @@ async function bTreeBenchmark2() {
           const containsResult = tree.contains(str);
           if (containsResult.hasValue) {
             result = containsResult.value;
-          }
-          else {
+          } else {
             result = await containsResult.promise;
           }
         }
-      }
-      catch (e) {
+      } catch (e) {
         console.log(e);
       }
       console.log("- get done", new Date().getTime() - start, result);
@@ -148,7 +145,7 @@ async function bTreeBenchmark2() {
       }
       console.log("- delete done", new Date().getTime() - start);
 
-      if (await tree.getSize().toPromise() !== 0) {
+      if ((await tree.getSize().toPromise()) !== 0) {
         throw new Error();
       }
     }
@@ -163,11 +160,19 @@ let treeDump = ref("");
 
 async function updateTreeDump() {
   const entries = await tree.scan(new BTreeScanParameters()).toPromise();
-  treeDump.value = "size: " + entries.length + ", " + (await tree.getSize().toPromise())
-    + "\norder: " + tree.tree.order
-    + "\nentries: " + entries.join(", ")
-    + "\nnodesMap size: " + tree.data.size
-    + "\n\n" + (await tree.dumpTree()).join("\n");
+  treeDump.value =
+    "size: " +
+    entries.length +
+    ", " +
+    (await tree.getSize().toPromise()) +
+    "\norder: " +
+    tree.tree.order +
+    "\nentries: " +
+    entries.join(", ") +
+    "\nnodesMap size: " +
+    tree.data.size +
+    "\n\n" +
+    (await tree.dumpTree()).join("\n");
 }
 
 async function treeInit() {
@@ -234,5 +239,4 @@ async function treeDelete10() {
   <pre>{{ treeDump }}</pre>
 </template>
 
-<style scoped>
-</style>
+<style scoped></style>

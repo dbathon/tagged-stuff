@@ -9,7 +9,7 @@ function save(navigate: boolean) {
   saveSettings(settings);
 
   if (navigate) {
-    router.push('/');
+    router.push("/");
   }
 }
 </script>
@@ -42,5 +42,4 @@ function save(navigate: boolean) {
   </form>
 </template>
 
-<style scoped>
-</style>
+<style scoped></style>

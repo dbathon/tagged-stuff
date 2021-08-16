@@ -2,7 +2,6 @@ import { BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree } 
 import { Result } from "./result";
 
 export class BTreeSet {
-
   readonly data: Map<string, BTreeNode> = new Map();
   readonly tree: RemoteBTree;
   readonly fetchNode: (id: string) => Result<BTreeNode>;
@@ -21,8 +20,7 @@ export class BTreeSet {
     const fetchNode = (id: string): Result<BTreeNode> => {
       if (this.fetchNodeWithPromise) {
         return Result.withPromise(fetchNodePromise(id));
-      }
-      else {
+      } else {
         return Result.withValue(fetchNodeRaw(id));
       }
     };
@@ -41,8 +39,8 @@ export class BTreeSet {
 
   apply(modificationResult: BTreeModificationResult): boolean {
     this.rootId = modificationResult.newRootId;
-    modificationResult.obsoleteNodes.forEach(node => this.data.delete(node.id));
-    modificationResult.newNodes.forEach(node => this.data.set(node.id, node));
+    modificationResult.obsoleteNodes.forEach((node) => this.data.delete(node.id));
+    modificationResult.newNodes.forEach((node) => this.data.set(node.id, node));
     return modificationResult.obsoleteNodes.length > 0 || modificationResult.newNodes.length > 0;
   }
 
@@ -51,11 +49,11 @@ export class BTreeSet {
   }
 
   insert(key: string): Result<boolean> {
-    return this.tree.insertKey(key, this.rootId).transform(result => this.apply(result));
+    return this.tree.insertKey(key, this.rootId).transform((result) => this.apply(result));
   }
 
   delete(key: string): Result<boolean> {
-    return this.tree.deleteKey(key, this.rootId).transform(result => this.apply(result));
+    return this.tree.deleteKey(key, this.rootId).transform((result) => this.apply(result));
   }
 
   scan(parameters?: BTreeScanParameters): Result<string[]> {
@@ -79,19 +77,23 @@ export class BTreeSet {
       result.push(indent + nodeId + sizeFromParentString + ":");
       const nextIndent = indent + "    ";
       for (let i = 0; i < node.keys.length; ++i) {
-        result.push(...await this.dumpTreeInternal(node.children.ids[i], nextIndent, node.children.sizes[i]));
+        result.push(...(await this.dumpTreeInternal(node.children.ids[i], nextIndent, node.children.sizes[i])));
         result.push(indent + "* " + node.keys[i]);
       }
-      result.push(...await this.dumpTreeInternal(node.children.ids[node.keys.length], nextIndent, node.children.sizes[node.keys.length]));
+      result.push(
+        ...(await this.dumpTreeInternal(
+          node.children.ids[node.keys.length],
+          nextIndent,
+          node.children.sizes[node.keys.length]
+        ))
+      );
       return result;
-    }
-    else {
+    } else {
       return [indent + nodeId + sizeFromParentString + ": " + node.keys.join(", ")];
     }
-  };
+  }
 
   dumpTree(): Promise<string[]> {
     return this.dumpTreeInternal(this.rootId);
   }
-
 }

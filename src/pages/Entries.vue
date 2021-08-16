@@ -17,7 +17,10 @@ if (settings === undefined || settings.jdsUrl === undefined) {
 }
 const storeId = settings.storeId || "store";
 const jdsDataStoreBackend = new JdsDataStoreBackend(settings.jdsUrl, storeId);
-const cachingDataStoreBackend = new CachingDataStoreBackend(jdsDataStoreBackend, JSON.stringify([settings.jdsUrl, storeId]))
+const cachingDataStoreBackend = new CachingDataStoreBackend(
+  jdsDataStoreBackend,
+  JSON.stringify([settings.jdsUrl, storeId])
+);
 let dataStoreBackend: DataStoreBackend = cachingDataStoreBackend;
 if (settings.secret !== undefined && settings.secret.length > 0) {
   dataStoreBackend = new EncryptingDataStoreBackend(dataStoreBackend, settings.secret);
@@ -31,23 +34,22 @@ const entries = reactive<Entry[]>([]);
 const activeEntry = ref<Entry>();
 
 function refreshData() {
-  jdsDataStoreBackend.jdsClient.getDatabaseInformation().then(info => databaseInformation.value = info);
+  jdsDataStoreBackend.jdsClient.getDatabaseInformation().then((info) => (databaseInformation.value = info));
 
-  entryService.query().then(result => {
+  entryService.query().then((result) => {
     entries.length = 0;
     entries.push(...result);
   });
 }
 refreshData();
 
-
 function newEntry() {
   editEntry({});
 }
 
 const formValues = reactive({
-  title: ""
-})
+  title: "",
+});
 
 const formValid = computed(() => formValues.title !== undefined && formValues.title.length > 0);
 
@@ -111,5 +113,4 @@ function deleteEntry(entry: Entry) {
   </div>
 </template>
 
-<style scoped>
-</style>
+<style scoped></style>
