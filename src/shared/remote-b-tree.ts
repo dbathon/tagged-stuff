@@ -1,4 +1,4 @@
-import { Result } from "./result";
+import { Result, FALSE_RESULT, TRUE_RESULT, UNDEFINED_RESULT } from "./result";
 
 export interface BTreeNodeChildren {
   /**
@@ -247,16 +247,16 @@ export class RemoteBTree {
     return this.fetchNodeWithCheck(rootId).transform((node) => {
       if (node.keys.length <= 0) {
         // empty root node
-        return false;
+        return FALSE_RESULT;
       }
       const { index, isKey } = this.searchKeyOrChildIndex(node, key);
       if (isKey) {
-        return true;
+        return TRUE_RESULT;
       } else if (node.children) {
         return this.containsKey(key, node.children.ids[index]);
       }
 
-      return false;
+      return FALSE_RESULT;
     });
   }
 
@@ -264,7 +264,7 @@ export class RemoteBTree {
     return this.fetchNodeWithCheck(nodeId).transform((node) => {
       if (node.keys.length <= 0) {
         // empty root node
-        return;
+        return UNDEFINED_RESULT;
       }
       let startIndex = 0;
       if (parameters.minKey !== undefined && node.keys[0] < parameters.minKey) {
@@ -277,7 +277,7 @@ export class RemoteBTree {
         if (node.children && index < node.children.ids.length && !parameters.maxResultsReached(result.length)) {
           childScanResult = this.scanInternal(parameters, node.children.ids[index], result);
         } else {
-          childScanResult = Result.withValue(undefined);
+          childScanResult = UNDEFINED_RESULT;
         }
 
         const doneResult: Result<boolean> = childScanResult.transform((_) => {
@@ -286,19 +286,19 @@ export class RemoteBTree {
             if (!parameters.includesKey(key)) {
               // we are done
               this.assert(parameters.maxKey !== undefined && key > parameters.maxKey);
-              return true;
+              return TRUE_RESULT;
             } else {
               result.push(key);
-              return false;
+              return FALSE_RESULT;
             }
           } else {
-            return true;
+            return TRUE_RESULT;
           }
         });
 
         return doneResult.transform((done) => {
           if (done) {
-            return;
+            return UNDEFINED_RESULT;
           } else {
             return step(index + 1);
           }

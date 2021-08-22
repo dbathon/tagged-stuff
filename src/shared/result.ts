@@ -57,3 +57,7 @@ export class Result<T> {
     }
   }
 }
+
+export const UNDEFINED_RESULT = Result.withValue(undefined);
+export const TRUE_RESULT = Result.withValue(true);
+export const FALSE_RESULT = Result.withValue(false);
