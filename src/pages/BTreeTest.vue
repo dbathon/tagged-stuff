@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { BTreeNode } from "../shared/remote-b-tree";
-import { BTreeScanParameters } from "../shared/remote-b-tree";
 import { BTreeSet } from "../shared/b-tree-set";
 import { ref } from "@vue/reactivity";
 
@@ -54,14 +53,14 @@ async function testBTree() {
   }
   console.log((await tree.dumpTree()).join("\n"));
 
-  console.log(await tree.scan(new BTreeScanParameters(20, "2")));
-  if ((await tree.scan().toPromise()).length != testSize || (await tree.getSize().toPromise()) != testSize) {
+  console.log(await tree.simpleScan(20, "2").toPromise());
+  if ((await tree.simpleScan().toPromise()).length != testSize || (await tree.getSize().toPromise()) != testSize) {
     throw new Error("scan failed");
   }
 
   for (let i = 0; i < testSize; ++i) {
     const key = "" + i;
-    const result = await tree.scan(new BTreeScanParameters(1, key)).toPromise();
+    const result = await tree.simpleScan(1, key).toPromise();
     if (!(result.length === 1 && result[0] === key)) {
       throw new Error("scan failed");
     }
@@ -159,7 +158,7 @@ let tree: BTreeSet = new BTreeSet(3);
 let treeDump = ref("");
 
 async function updateTreeDump() {
-  const entries = await tree.scan(new BTreeScanParameters()).toPromise();
+  const entries = await tree.simpleScan().toPromise();
   treeDump.value =
     "size: " +
     entries.length +
@@ -196,7 +195,7 @@ async function treeInsertRandom() {
 
 async function treeDelete() {
   await tree.delete(treeElement.value).toPromise();
-  const scanResult = await tree.scan(new BTreeScanParameters(1)).toPromise();
+  const scanResult = await tree.simpleScan(1).toPromise();
   if (scanResult.length > 0) {
     treeElement.value = scanResult[0];
   }
@@ -204,7 +203,7 @@ async function treeDelete() {
 }
 
 async function treeDelete10() {
-  const entries = await tree.scan(new BTreeScanParameters(10)).toPromise();
+  const entries = await tree.simpleScan(10).toPromise();
   // "randomize" the order
   entries.sort(() => Math.random() - 0.5);
   for (const entry of entries) {

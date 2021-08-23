@@ -1,5 +1,5 @@
-import { BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree } from "./remote-b-tree";
-import { Result } from "./result";
+import { BTreeModificationResult, BTreeNode, BTreeScanConsumer, RemoteBTree } from "./remote-b-tree";
+import { Result, UNDEFINED_RESULT } from "./result";
 
 export class BTreeSet {
   readonly data: Map<string, BTreeNode> = new Map();
@@ -56,8 +56,22 @@ export class BTreeSet {
     return this.tree.deleteKey(key, this.rootId).transform((result) => this.apply(result));
   }
 
-  scan(parameters?: BTreeScanParameters): Result<string[]> {
-    return this.tree.scan(parameters || new BTreeScanParameters(), this.rootId);
+  scan(minKey: string | undefined, scanConsumer: BTreeScanConsumer): Result<void> {
+    return this.tree.scan(minKey, scanConsumer, this.rootId);
+  }
+
+  simpleScan(maxResults?: number, minKey?: string): Result<string[]> {
+    const result: string[] = [];
+    if (maxResults !== undefined && maxResults <= 0) {
+      return Result.withValue(result);
+    }
+    return this.scan(minKey, (key) => {
+      result.push(key);
+      if (maxResults !== undefined && result.length >= maxResults) {
+        return UNDEFINED_RESULT;
+      }
+      return Result.withValue(key);
+    }).transform((_) => result);
   }
 
   getSize(): Result<number> {

@@ -1,8 +1,8 @@
 import { Document } from "./document";
 import { encodeBytes } from "./encode-bytes";
 import { ReadWriteLock } from "./read-write-lock";
-import { BTreeModificationResult, BTreeNode, BTreeScanParameters, RemoteBTree } from "./remote-b-tree";
-import { Result } from "./result";
+import { BTreeModificationResult, BTreeNode, RemoteBTree } from "./remote-b-tree";
+import { Result, UNDEFINED_RESULT } from "./result";
 
 export class ConflictError extends Error {
   constructor(readonly documentId: string, message?: string) {
@@ -233,12 +233,19 @@ export class DataStore {
       return Result.withValue(undefined);
     }
     const keyPrefix = id + ID_SEPARATOR;
-    return this.tree.scan(new BTreeScanParameters(1, keyPrefix), rootId).transform((keys) => {
-      if (keys.length === 0 || !keys[0].startsWith(keyPrefix)) {
-        return undefined;
-      }
-      return DocumentInfo.parseFromKey(keys[0]);
-    });
+    let documentInfo: DocumentInfo | undefined = undefined;
+    return this.tree
+      .scan(
+        keyPrefix,
+        (key) => {
+          if (key.startsWith(keyPrefix)) {
+            documentInfo = DocumentInfo.parseFromKey(key);
+          }
+          return UNDEFINED_RESULT;
+        },
+        rootId
+      )
+      .transform((_) => documentInfo);
   }
 
   private validateId(id: string): string {
@@ -287,20 +294,31 @@ export class DataStore {
   scan<D extends Document>(maxResults: number | undefined, minId?: string, maxIdExclusive?: string): Promise<D[]> {
     return this.readWriteLock.withReadLock(async () => {
       const rootId = (await this.getStoreDocument()).rootId;
-      if (rootId === undefined) {
+      if (rootId === undefined || (maxResults !== undefined && maxResults <= 0)) {
         return [];
       }
 
+      const keys: string[] = [];
       return this.tree
         .scan(
-          new BTreeScanParameters(
-            maxResults,
-            minId === undefined ? undefined : this.validateId(minId),
-            maxIdExclusive === undefined ? undefined : this.validateId(maxIdExclusive)
-          ),
+          minId === undefined ? undefined : this.validateId(minId),
+          (key) => {
+            if (maxIdExclusive !== undefined && key >= maxIdExclusive) {
+              return UNDEFINED_RESULT;
+            }
+            keys.push(key);
+            if (maxResults !== undefined && keys.length >= maxResults) {
+              if (keys.length > maxResults) {
+                // sanity check, this should never happen
+                throw new Error("got too many keys");
+              }
+              return UNDEFINED_RESULT;
+            }
+            return Result.withValue(key);
+          },
           rootId
         )
-        .transform((keys) => {
+        .transform((_) => {
           if (keys.length === 0) {
             return [];
           }
