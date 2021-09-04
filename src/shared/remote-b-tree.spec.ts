@@ -1,4 +1,4 @@
-import { strictEqual } from "assert";
+import { deepStrictEqual, strictEqual } from "assert";
 import { describe } from "mocha";
 import { BTreeSet } from "./b-tree-set";
 
@@ -13,6 +13,8 @@ function testInsertAndDelete(treeSet: BTreeSet, insertElements: string[], delete
   }
 
   strictEqual(treeSet.getKeyCount().value, insertElements.length);
+
+  deepStrictEqual(treeSet.simpleScan().value, [...insertElements].sort());
 
   for (const element of insertElements) {
     strictEqual(treeSet.insert(element).value, false);

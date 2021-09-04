@@ -2,7 +2,7 @@ import { Document } from "./document";
 import { encodeBytes } from "./encode-bytes";
 import { ReadWriteLock } from "./read-write-lock";
 import { BTreeModificationResult, BTreeNode, RemoteBTree } from "./remote-b-tree";
-import { Result, UNDEFINED_RESULT } from "./result";
+import { FALSE_RESULT, Result, TRUE_RESULT } from "./result";
 
 export class ConflictError extends Error {
   constructor(readonly documentId: string, message?: string) {
@@ -241,7 +241,7 @@ export class DataStore {
           if (key.startsWith(keyPrefix)) {
             documentInfo = DocumentInfo.parseFromKey(key);
           }
-          return UNDEFINED_RESULT;
+          return FALSE_RESULT;
         },
         rootId
       )
@@ -304,7 +304,7 @@ export class DataStore {
           minId === undefined ? undefined : this.validateId(minId),
           (key) => {
             if (maxIdExclusive !== undefined && key >= maxIdExclusive) {
-              return UNDEFINED_RESULT;
+              return FALSE_RESULT;
             }
             keys.push(key);
             if (maxResults !== undefined && keys.length >= maxResults) {
@@ -312,9 +312,9 @@ export class DataStore {
                 // sanity check, this should never happen
                 throw new Error("got too many keys");
               }
-              return UNDEFINED_RESULT;
+              return FALSE_RESULT;
             }
-            return Result.withValue(key);
+            return TRUE_RESULT;
           },
           rootId
         )

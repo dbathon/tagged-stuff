@@ -1,5 +1,5 @@
 import { BTreeModificationResult, BTreeNode, BTreeScanConsumer, RemoteBTree } from "./remote-b-tree";
-import { Result, UNDEFINED_RESULT } from "./result";
+import { FALSE_RESULT, Result, TRUE_RESULT } from "./result";
 
 export class BTreeSet {
   readonly data: Map<string, BTreeNode> = new Map();
@@ -68,9 +68,9 @@ export class BTreeSet {
     return this.scan(minKey, (key) => {
       result.push(key);
       if (maxResults !== undefined && result.length >= maxResults) {
-        return UNDEFINED_RESULT;
+        return FALSE_RESULT;
       }
-      return Result.withValue(key);
+      return TRUE_RESULT;
     }).transform((_) => result);
   }
 

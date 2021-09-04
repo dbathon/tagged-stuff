@@ -55,11 +55,11 @@ interface InsertResult {
 }
 
 /**
- * The scan consumer is called for each scanned key in order. If it returns undefined, then the scan is aborted,
- * otherwise the returned string is a lower/upper bound (depending on the scan direction) for the next scanned key, to
- * scan all keys the consumer can just return the key it got as a parameter.
+ * The scan consumer is called for each scanned key in order. If it returns false, then the scan is aborted, if it
+ * returns true then the scan is continued, otherwise the returned string is a lower/upper bound (depending on the scan
+ * direction) for the next scanned key, to scan all keys the consumer can just return true.
  */
-export type BTreeScanConsumer = (key: string) => Result<string | undefined>;
+export type BTreeScanConsumer = (key: string) => Result<string | boolean>;
 
 interface NodeData {
   keys: string[];
@@ -262,79 +262,71 @@ export class RemoteBTree {
   }
 
   private scanInternal(
-    minKey: string | undefined,
+    minKeyOrAny: string | true,
     scanConsumer: BTreeScanConsumer,
     nodeId: string
-  ): Result<string | undefined> {
+  ): Result<string | boolean> {
     return this.fetchNodeWithCheck(nodeId).transform((node) => {
       if (node.keys.length <= 0) {
         // empty root node
-        return UNDEFINED_RESULT;
+        return FALSE_RESULT;
       }
       let startIndex = 0;
-      if (minKey !== undefined && node.keys[0] < minKey) {
+      if (typeof minKeyOrAny === "string" && node.keys[0] < minKeyOrAny) {
         // use search to find the start index
-        startIndex = this.searchKeyOrChildIndex(node, minKey).index;
+        startIndex = this.searchKeyOrChildIndex(node, minKeyOrAny).index;
       }
 
-      const step = (index: number, nextMinKey: string | undefined): Result<string | undefined> => {
-        let undefinedMeansConsume = index === 0 && nextMinKey === undefined && minKey === undefined;
-        this.assert(
-          index <= node.keys.length &&
-            // nextMinKey is only allowed to be undefined here, if we start at index 0 and minKey was undefined
-            (undefinedMeansConsume || nextMinKey !== undefined)
-        );
+      const step = (index: number, nextMinKeyOrAny: string | true): Result<string | boolean> => {
+        const childScanResult: Result<string | boolean> = node.children
+          ? this.scanInternal(nextMinKeyOrAny, scanConsumer, node.children.ids[index])
+          : Result.withValue(nextMinKeyOrAny);
 
-        let childScanResult: Result<string | undefined>;
-        if (node.children) {
-          childScanResult = this.scanInternal(nextMinKey, scanConsumer, node.children.ids[index]);
-          //we have scanned at least one child now, so undefined no longer means that we want to consume the first element
-          undefinedMeansConsume = false;
-        } else {
-          childScanResult = Result.withValue(nextMinKey);
-        }
-
-        const keyResult: Result<string | undefined> = childScanResult.transform((childNextMinKey) => {
+        const keyResult: Result<string | boolean> = childScanResult.transform((childNextMinKeyOrAny) => {
           if (index < node.keys.length) {
             const key = node.keys[index];
             if (
-              (childNextMinKey !== undefined && key >= childNextMinKey) ||
-              (childNextMinKey === undefined && undefinedMeansConsume)
+              childNextMinKeyOrAny === true ||
+              (typeof childNextMinKeyOrAny === "string" && key >= childNextMinKeyOrAny)
             ) {
               return scanConsumer(key);
             } else {
               // skip this key
-              return childNextMinKey;
+              return childNextMinKeyOrAny;
             }
           } else {
-            return childNextMinKey;
+            return childNextMinKeyOrAny;
           }
         });
 
-        return keyResult.transform((keyNextMinKey) => {
-          if (keyNextMinKey === undefined) {
-            return UNDEFINED_RESULT;
+        return keyResult.transform((keyNextMinKeyOrAny) => {
+          if (keyNextMinKeyOrAny === false) {
+            return FALSE_RESULT;
           } else {
             let nextIndex = index + 1;
             // potentially skip whole keys and the preceding children
-            // TODO: maybe use searchKeyOrChildIndex() here?!
-            while (nextIndex < node.keys.length && node.keys[nextIndex] < keyNextMinKey) {
-              ++nextIndex;
+            if (typeof keyNextMinKeyOrAny === "string") {
+              // TODO: maybe use searchKeyOrChildIndex() here?!
+              while (nextIndex < node.keys.length && node.keys[nextIndex] < keyNextMinKeyOrAny) {
+                ++nextIndex;
+              }
             }
             if (nextIndex > node.keys.length) {
-              return keyNextMinKey;
+              return keyNextMinKeyOrAny;
             }
-            return step(nextIndex, keyNextMinKey);
+            return step(nextIndex, keyNextMinKeyOrAny);
           }
         });
       };
 
-      return step(startIndex, minKey);
+      return step(startIndex, minKeyOrAny);
     });
   }
 
   scan(minKey: string | undefined, scanConsumer: BTreeScanConsumer, rootId: string): Result<void> {
-    return this.scanInternal(minKey, scanConsumer, rootId).transform((_) => UNDEFINED_RESULT);
+    return this.scanInternal(minKey === undefined ? true : minKey, scanConsumer, rootId).transform(
+      (_) => UNDEFINED_RESULT
+    );
   }
 
   private copyAndInsert<T>(values: T[], insertIndex: number, valueToInsert: T): T[] {
