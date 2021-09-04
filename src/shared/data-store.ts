@@ -209,8 +209,8 @@ export class DataStore {
         return Result.withPromise(getAndCacheNode(nodeId));
       }
     };
-    // just use order 50 for now, TODO optimize this...
-    this.tree = new RemoteBTree(50, fetchNode, randomId);
+    // just use order 1000 for now, TODO optimize this...
+    this.tree = new RemoteBTree(1000, fetchNode, randomId, 22);
   }
 
   private async writeOperation<T>(body: (writeOperation: WriteOperation) => Promise<T>): Promise<T> {

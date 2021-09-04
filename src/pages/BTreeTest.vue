@@ -10,7 +10,7 @@ async function testBTree() {
       keys: ["h"],
       children: {
         ids: ["c1", "c2"],
-        sizes: [3, 3],
+        keyCounts: [3, 3],
       },
     },
     {
@@ -22,7 +22,7 @@ async function testBTree() {
       keys: ["m", "n", "o"],
     },
   ];
-  const tree = new BTreeSet(50);
+  const tree = new BTreeSet(500);
   tree.data.clear();
   nodes.forEach((node) => tree.data.set(node.id, node));
   tree.rootId = "root";
@@ -54,7 +54,7 @@ async function testBTree() {
   console.log((await tree.dumpTree()).join("\n"));
 
   console.log(await tree.simpleScan(20, "2").toPromise());
-  if ((await tree.simpleScan().toPromise()).length != testSize || (await tree.getSize().toPromise()) != testSize) {
+  if ((await tree.simpleScan().toPromise()).length != testSize || (await tree.getKeyCount().toPromise()) != testSize) {
     throw new Error("scan failed");
   }
 
@@ -70,38 +70,38 @@ async function testBTree() {
 async function bTreeBenchmark() {
   for (const entryCount of [100, 500, 1000, 5000, 30000]) {
     console.log("start", entryCount);
-    for (const order of [3, 5, 10, 30, 100, 500]) {
+    for (const maxNodeSize of [30, 50, 100, 300, 1000, 5000]) {
       const start = new Date().getTime();
-      const tree: BTreeSet = new BTreeSet(order);
+      const tree: BTreeSet = new BTreeSet(maxNodeSize);
       for (let i = 0; i < entryCount; ++i) {
         const str = "" + i;
         await tree.insert(str).toPromise();
       }
-      if ((await tree.getSize().toPromise()) !== entryCount) {
+      if ((await tree.getKeyCount().toPromise()) !== entryCount) {
         throw new Error();
       }
       for (let i = entryCount - 1; i >= 0; --i) {
         const str = "" + i;
         await tree.delete(str).toPromise();
       }
-      if ((await tree.getSize().toPromise()) !== 0) {
+      if ((await tree.getKeyCount().toPromise()) !== 0) {
         throw new Error();
       }
 
       const end = new Date().getTime();
-      console.log(end - start, order, tree.rootId);
+      console.log(end - start, maxNodeSize, tree.rootId);
     }
   }
 }
 
 async function bTreeBenchmark2() {
   const testSize = 5000;
-  const testOrder = 100;
+  const testMaxNodeSize = 1000;
   for (const withPromise of [false, true]) {
     for (let j = 0; j < 4; ++j) {
       console.log("bTreeBenchmark2", withPromise, j);
       let start = new Date().getTime();
-      const tree: BTreeSet = new BTreeSet(testOrder);
+      const tree: BTreeSet = new BTreeSet(testMaxNodeSize);
       tree.fetchNodeWithPromise = withPromise;
       const entryCount = testSize;
       for (let i = 0; i < entryCount; ++i) {
@@ -113,7 +113,7 @@ async function bTreeBenchmark2() {
       }
       console.log("- insert done", new Date().getTime() - start);
 
-      if ((await tree.getSize().toPromise()) !== entryCount) {
+      if ((await tree.getKeyCount().toPromise()) !== entryCount) {
         throw new Error();
       }
 
@@ -144,7 +144,7 @@ async function bTreeBenchmark2() {
       }
       console.log("- delete done", new Date().getTime() - start);
 
-      if ((await tree.getSize().toPromise()) !== 0) {
+      if ((await tree.getKeyCount().toPromise()) !== 0) {
         throw new Error();
       }
     }
@@ -152,9 +152,9 @@ async function bTreeBenchmark2() {
 }
 
 let treeElement = ref("");
-let treeOrder = ref("3");
+let treeMaxNodeSize = ref("30");
 
-let tree: BTreeSet = new BTreeSet(3);
+let tree: BTreeSet = new BTreeSet(30);
 let treeDump = ref("");
 
 async function updateTreeDump() {
@@ -163,9 +163,9 @@ async function updateTreeDump() {
     "size: " +
     entries.length +
     ", " +
-    (await tree.getSize().toPromise()) +
-    "\norder: " +
-    tree.tree.order +
+    (await tree.getKeyCount().toPromise()) +
+    "\nmaxNodeSize: " +
+    tree.tree.maxNodeSize +
     "\nentries: " +
     entries.join(", ") +
     "\nnodesMap size: " +
@@ -175,7 +175,7 @@ async function updateTreeDump() {
 }
 
 async function treeInit() {
-  tree = new BTreeSet(Math.max(parseInt(treeOrder.value), 3));
+  tree = new BTreeSet(parseInt(treeMaxNodeSize.value));
   await updateTreeDump();
 }
 
@@ -224,7 +224,7 @@ async function treeDelete10() {
 
   <div>
     <input type="text" v-model="treeElement" />
-    <input type="number" v-model="treeOrder" />
+    <input type="number" v-model="treeMaxNodeSize" />
   </div>
 
   <div>

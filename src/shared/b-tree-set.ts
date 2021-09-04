@@ -8,7 +8,7 @@ export class BTreeSet {
   rootId: string;
   fetchNodeWithPromise = false;
 
-  constructor(treeOrder: number) {
+  constructor(maxNodeSize: number) {
     const fetchNodeRaw = (id: string): BTreeNode => {
       const node = this.data.get(id);
       if (node === undefined) {
@@ -30,7 +30,7 @@ export class BTreeSet {
       ++id;
       return "" + id;
     };
-    this.tree = new RemoteBTree(Math.max(treeOrder, 3), fetchNode, generateId);
+    this.tree = new RemoteBTree(maxNodeSize, fetchNode, generateId, 3);
 
     // dummy assignment for the type checker
     this.rootId = "";
@@ -74,8 +74,8 @@ export class BTreeSet {
     }).transform((_) => result);
   }
 
-  getSize(): Result<number> {
-    return this.tree.getSize(this.rootId);
+  getKeyCount(): Result<number> {
+    return this.tree.getKeyCount(this.rootId);
   }
 
   clear() {
@@ -83,27 +83,29 @@ export class BTreeSet {
     this.apply(this.tree.initializeNewTree());
   }
 
-  private async dumpTreeInternal(nodeId: string, indent: string = "", sizeFromParent?: number): Promise<string[]> {
+  private async dumpTreeInternal(nodeId: string, indent: string = "", keyCountFromParent?: number): Promise<string[]> {
     const node = await this.fetchNode(nodeId).toPromise();
-    const sizeFromParentString = sizeFromParent !== undefined ? " (" + sizeFromParent + ")" : "";
+    const jsonLength = JSON.stringify(node).length;
+    const keyCountFromParentString = keyCountFromParent !== undefined ? " (" + keyCountFromParent + ")" : "";
+    const nodeIdAndSizes = `${indent}${nodeId} (${jsonLength})${keyCountFromParentString}:`;
     if (node.children) {
       let result: string[] = [];
-      result.push(indent + nodeId + sizeFromParentString + ":");
+      result.push(nodeIdAndSizes);
       const nextIndent = indent + "    ";
       for (let i = 0; i < node.keys.length; ++i) {
-        result.push(...(await this.dumpTreeInternal(node.children.ids[i], nextIndent, node.children.sizes[i])));
+        result.push(...(await this.dumpTreeInternal(node.children.ids[i], nextIndent, node.children.keyCounts[i])));
         result.push(indent + "* " + node.keys[i]);
       }
       result.push(
         ...(await this.dumpTreeInternal(
           node.children.ids[node.keys.length],
           nextIndent,
-          node.children.sizes[node.keys.length]
+          node.children.keyCounts[node.keys.length]
         ))
       );
       return result;
     } else {
-      return [indent + nodeId + sizeFromParentString + ": " + node.keys.join(", ")];
+      return [nodeIdAndSizes + " " + node.keys.join(", ")];
     }
   }
 

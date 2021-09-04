@@ -3,7 +3,7 @@ import { describe } from "mocha";
 import { BTreeSet } from "./b-tree-set";
 
 function testInsertAndDelete(treeSet: BTreeSet, insertElements: string[], deleteElements: string[]) {
-  strictEqual(treeSet.getSize().value, 0);
+  strictEqual(treeSet.getKeyCount().value, 0);
   strictEqual(treeSet.data.size, 1); // root node
 
   for (const element of insertElements) {
@@ -12,7 +12,7 @@ function testInsertAndDelete(treeSet: BTreeSet, insertElements: string[], delete
     strictEqual(treeSet.contains(element).value, true);
   }
 
-  strictEqual(treeSet.getSize().value, insertElements.length);
+  strictEqual(treeSet.getKeyCount().value, insertElements.length);
 
   for (const element of insertElements) {
     strictEqual(treeSet.insert(element).value, false);
@@ -25,7 +25,7 @@ function testInsertAndDelete(treeSet: BTreeSet, insertElements: string[], delete
     strictEqual(treeSet.contains(element).value, false);
   }
 
-  strictEqual(treeSet.getSize().value, 0);
+  strictEqual(treeSet.getKeyCount().value, 0);
   strictEqual(treeSet.data.size, 1);
 
   for (const element of deleteElements) {
@@ -35,14 +35,14 @@ function testInsertAndDelete(treeSet: BTreeSet, insertElements: string[], delete
 }
 
 interface TestParameters {
-  orders: number[];
+  maxNodeSizes: number[];
   elements: string[];
 }
 
 function testTree(parameters: TestParameters) {
-  for (const order of parameters.orders) {
+  for (const maxNodeSize of parameters.maxNodeSizes) {
     // use BTreeSet as a wrapper, it already provides some useful helper functionality
-    const treeSet = new BTreeSet(order);
+    const treeSet = new BTreeSet(maxNodeSize);
 
     const elements = parameters.elements;
     const reverseElements = [...elements].reverse();
@@ -71,7 +71,7 @@ describe("RemoteBTree", () => {
   describe("insert and delete", () => {
     it("should work with fixed simple entries", () => {
       testTree({
-        orders: [3, 5, 20],
+        maxNodeSizes: [30, 50, 200],
         elements: "1,v,asd,hallo,abc,reg,32,fj443,23,35,36,4,,75624,57567,a,b,t,e,g,ju,o".split(","),
       });
     });
@@ -87,7 +87,7 @@ describe("RemoteBTree", () => {
         }
       }
       testTree({
-        orders: [3, 5, 20, 50, 100, 1000],
+        maxNodeSizes: [30, 50, 200, 500, 1000, 10000],
         elements,
       });
     });
