@@ -288,7 +288,7 @@ export class RemoteBTree {
             return UNDEFINED_RESULT;
           } else {
             let nextIndex = index + 1;
-            // potentially skip whole keys and the preceeding children
+            // potentially skip whole keys and the preceding children
             // TODO: maybe use searchKeyOrChildIndex() here?!
             while (nextIndex < node.keys.length && node.keys[nextIndex] < keyNextMinKey) {
               ++nextIndex;
