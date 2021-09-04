@@ -39,21 +39,23 @@ interface TestParameters {
   elements: string[];
 }
 
-function testTree(parameters: TestParameters) {
+function testTree(title: string, parameters: TestParameters) {
   for (const maxNodeSize of parameters.maxNodeSizes) {
-    // use BTreeSet as a wrapper, it already provides some useful helper functionality
-    const treeSet = new BTreeSet(maxNodeSize);
+    it(`${title} and maxNodeSize ${maxNodeSize}`, () => {
+      // use BTreeSet as a wrapper, it already provides some useful helper functionality
+      const treeSet = new BTreeSet(maxNodeSize);
 
-    const elements = parameters.elements;
-    const reverseElements = [...elements].reverse();
-    const sortedElements = [...elements].sort();
-    const elementLists = [elements, reverseElements, sortedElements];
-    // test with all combinations
-    for (const insertElements of elementLists) {
-      for (const deleteElements of elementLists) {
-        testInsertAndDelete(treeSet, insertElements, deleteElements);
+      const elements = parameters.elements;
+      const reverseElements = [...elements].reverse();
+      const sortedElements = [...elements].sort();
+      const elementLists = [elements, reverseElements, sortedElements];
+      // test with all combinations
+      for (const insertElements of elementLists) {
+        for (const deleteElements of elementLists) {
+          testInsertAndDelete(treeSet, insertElements, deleteElements);
+        }
       }
-    }
+    });
   }
 }
 
@@ -69,27 +71,23 @@ function generateRandomString(): string {
 
 describe("RemoteBTree", () => {
   describe("insert and delete", () => {
-    it("should work with fixed simple entries", () => {
-      testTree({
-        maxNodeSizes: [30, 50, 200],
-        elements: "1,v,asd,hallo,abc,reg,32,fj443,23,35,36,4,,75624,57567,a,b,t,e,g,ju,o".split(","),
-      });
+    testTree("should work with fixed simple entries", {
+      maxNodeSizes: [30, 50, 200],
+      elements: "1,v,asd,hallo,abc,reg,32,fj443,23,35,36,4,,75624,57567,a,b,t,e,g,ju,o".split(","),
     });
 
-    it("should work with 500 random entries", () => {
-      const seen: Record<string, boolean> = {};
-      const elements: string[] = [];
-      while (elements.length < 500) {
-        const element = generateRandomString();
-        if (!seen.hasOwnProperty(element)) {
-          elements.push(element);
-          seen[element] = true;
-        }
+    const seen: Record<string, boolean> = {};
+    const elements: string[] = [];
+    while (elements.length < 500) {
+      const element = generateRandomString();
+      if (!seen.hasOwnProperty(element)) {
+        elements.push(element);
+        seen[element] = true;
       }
-      testTree({
-        maxNodeSizes: [30, 50, 200, 500, 1000, 10000],
-        elements,
-      });
+    }
+    testTree("should work with 500 random entries", {
+      maxNodeSizes: [30, 50, 200, 500, 1000, 10000],
+      elements,
     });
   });
 });
