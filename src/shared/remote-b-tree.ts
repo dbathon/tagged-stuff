@@ -502,10 +502,10 @@ export class RemoteBTree {
         const nodeChildren: BTreeNodeChildren = node.children;
 
         /**
-         * If !isKey then we can just delete the key from the child, otherwise just delete the largest key from the right
+         * If !isKey then we can just delete the key from the child, otherwise just delete the largest key from the left
          * sub-tree, that key will then be used to replace the key in this node, that is supposed to be deleted.
          *
-         * TODO: maybe optimize this and potentially also delete from the left sub-tree in the isKey case.
+         * TODO: maybe optimize this and potentially also delete from the right sub-tree in the isKey case.
          */
         const deleteKeyInternalResult = this.deleteKeyInternal(
           !isKey ? key : undefined,
