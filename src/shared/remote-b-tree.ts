@@ -472,7 +472,7 @@ export class RemoteBTree {
     return this.fetchNodeWithCheck(nodeId).transform((node) => {
       if (node.keys.length <= 0) {
         // node is empty, nothing to do
-        return undefined;
+        return UNDEFINED_RESULT;
       }
 
       // if key is undefined, then we want to delete the largest key in this tree
@@ -495,7 +495,7 @@ export class RemoteBTree {
           };
         } else {
           // key is not in the tree
-          return undefined;
+          return UNDEFINED_RESULT;
         }
       } else {
         // capture node.children in a variable that is not undefined to help the type checker
@@ -517,7 +517,7 @@ export class RemoteBTree {
             this.assert(!isKey);
 
             // nothing to do
-            return undefined;
+            return UNDEFINED_RESULT;
           } else {
             const newChildData = deleteResult.newChildData;
 
