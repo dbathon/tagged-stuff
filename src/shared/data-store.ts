@@ -179,6 +179,12 @@ const DELETE_DELAY_MILLIS = 60 * 60 * 1000;
 
 const DELETE_IDS_PER_BATCH = 100;
 
+/**
+ * TODO:
+ * * implement "queued operations", to avoid having to update the tree every time
+ * * implement inline storage for small documents (about the size of a random id or less, maybe a bit more)
+ * * some kind of generic index (maybe like the postgres json gin indexes) and/or some kind of full text search...
+ */
 export class DataStore {
   private readonly tree: RemoteBTree;
 
