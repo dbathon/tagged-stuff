@@ -4,7 +4,7 @@ export interface BackendPageAndVersion {
 }
 
 export interface BackendPageToStore {
-  pageIndex: number;
+  pageNumber: number;
   data: ArrayBuffer;
   /** If it is a new page, then this needs to be set to undefined. */
   previousVersion: number | undefined;
@@ -13,7 +13,7 @@ export interface BackendPageToStore {
 /**
  * A page store backend stores pages of bytes, all pages have the same size.
  *
- * The pageIndex of each page is an integer (can also be negative or zero).
+ * The pageNumber of each page is an integer (can also be negative or zero).
  *
  * The backend is also responsible for implementing "optimistic locking" using versions and atomic updates of multiple
  * pages at once.
@@ -28,7 +28,7 @@ export interface PageStoreBackend {
    */
   readonly pageSize: number;
 
-  loadPages(pageIndexes: number[]): Promise<(BackendPageAndVersion | undefined)[]>;
+  loadPages(pageNumbers: number[]): Promise<(BackendPageAndVersion | undefined)[]>;
 
   /**
    * Returns the new versions of the stored pages. If undefined is returned, then there was an "optimistic lock

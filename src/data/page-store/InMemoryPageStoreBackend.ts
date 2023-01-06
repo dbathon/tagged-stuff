@@ -8,9 +8,9 @@ export class InMemoryPageStoreBackend implements PageStoreBackend {
 
   constructor(readonly pageSize: number) {}
 
-  async loadPages(pageIndexes: number[]): Promise<(BackendPageAndVersion | undefined)[]> {
-    return pageIndexes.map((index) => {
-      const pageAndVersion = this.pages.get(index);
+  async loadPages(pageNumbers: number[]): Promise<(BackendPageAndVersion | undefined)[]> {
+    return pageNumbers.map((pageNumber) => {
+      const pageAndVersion = this.pages.get(pageNumber);
       if (!pageAndVersion) {
         return undefined;
       } else {
@@ -28,21 +28,21 @@ export class InMemoryPageStoreBackend implements PageStoreBackend {
     const updates: (() => void)[] = [];
     const result: number[] = [];
 
-    const seenIndexes = new Set<number>();
-    for (const { pageIndex, data, previousVersion } of pages) {
+    const seenNumbers = new Set<number>();
+    for (const { pageNumber, data, previousVersion } of pages) {
       if (data.byteLength !== this.pageSize) {
         throw new Error("invalid byteLength: " + data.byteLength);
       }
-      if (seenIndexes.has(pageIndex)) {
-        throw new Error("duplicate pageIndex: " + pageIndex);
+      if (seenNumbers.has(pageNumber)) {
+        throw new Error("duplicate pageNumber: " + pageNumber);
       }
-      seenIndexes.add(pageIndex);
-      const existingPage = this.pages.get(pageIndex);
+      seenNumbers.add(pageNumber);
+      const existingPage = this.pages.get(pageNumber);
       if (!existingPage) {
         if (previousVersion !== undefined) {
           return undefined;
         }
-        updates.push(() => this.pages.set(pageIndex, { data: data.slice(0), version: 0 }));
+        updates.push(() => this.pages.set(pageNumber, { data: data.slice(0), version: 0 }));
         result.push(0);
       } else {
         if (previousVersion !== existingPage.version) {
