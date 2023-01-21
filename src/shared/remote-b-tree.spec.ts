@@ -1,38 +1,37 @@
-import { deepStrictEqual, strictEqual } from "assert";
-import { describe } from "mocha";
+import { describe, expect, test } from "vitest";
 import { BTreeSet } from "./b-tree-set";
 
 function testInsertAndDelete(treeSet: BTreeSet, insertElements: string[], deleteElements: string[]) {
-  strictEqual(treeSet.getKeyCount().value, 0);
-  strictEqual(treeSet.data.size, 1); // root node
+  expect(treeSet.getKeyCount().value).toBe(0);
+  expect(treeSet.data.size).toBe(1); // root node
 
   for (const element of insertElements) {
-    strictEqual(treeSet.contains(element).value, false);
-    strictEqual(treeSet.insert(element).value, true);
-    strictEqual(treeSet.contains(element).value, true);
+    expect(treeSet.contains(element).value).toBe(false);
+    expect(treeSet.insert(element).value).toBe(true);
+    expect(treeSet.contains(element).value).toBe(true);
   }
 
-  strictEqual(treeSet.getKeyCount().value, insertElements.length);
+  expect(treeSet.getKeyCount().value).toBe(insertElements.length);
 
-  deepStrictEqual(treeSet.simpleScan().value, [...insertElements].sort());
+  expect(treeSet.simpleScan().value).toStrictEqual([...insertElements].sort());
 
   for (const element of insertElements) {
-    strictEqual(treeSet.insert(element).value, false);
-    strictEqual(treeSet.contains(element).value, true);
+    expect(treeSet.insert(element).value).toBe(false);
+    expect(treeSet.contains(element).value).toBe(true);
   }
 
   for (const element of deleteElements) {
-    strictEqual(treeSet.contains(element).value, true);
-    strictEqual(treeSet.delete(element).value, true);
-    strictEqual(treeSet.contains(element).value, false);
+    expect(treeSet.contains(element).value).toBe(true);
+    expect(treeSet.delete(element).value).toBe(true);
+    expect(treeSet.contains(element).value).toBe(false);
   }
 
-  strictEqual(treeSet.getKeyCount().value, 0);
-  strictEqual(treeSet.data.size, 1);
+  expect(treeSet.getKeyCount().value).toBe(0);
+  expect(treeSet.data.size).toBe(1);
 
   for (const element of deleteElements) {
-    strictEqual(treeSet.delete(element).value, false);
-    strictEqual(treeSet.contains(element).value, false);
+    expect(treeSet.delete(element).value).toBe(false);
+    expect(treeSet.contains(element).value).toBe(false);
   }
 }
 
@@ -43,7 +42,7 @@ interface TestParameters {
 
 function testTree(title: string, parameters: TestParameters) {
   for (const maxNodeSize of parameters.maxNodeSizes) {
-    it(`${title} and maxNodeSize ${maxNodeSize}`, () => {
+    test(`${title} and maxNodeSize ${maxNodeSize}`, () => {
       // use BTreeSet as a wrapper, it already provides some useful helper functionality
       const treeSet = new BTreeSet(maxNodeSize);
 
