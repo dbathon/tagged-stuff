@@ -27,6 +27,22 @@ export class Patch {
     return new Patch(patchOffset, new Uint8Array(source.buffer, source.byteOffset + offset + 3, patchLength));
   }
 
+  static createPatches(oldBytes: { [n: number]: number }, newBytes: number[] | Uint8Array, length: number): Patch[] {
+    const result: Patch[] = [];
+    for (let i = 0; i < length; i++) {
+      if (newBytes[i] !== oldBytes[i]) {
+        const start = i;
+        // TODO: potentially optimize this to include a 1 or 2 identical bytes "gap" to avoid a new patch header
+        while (newBytes[i + 1] !== oldBytes[i + 1] && i + 2 - start <= MAX_LENGTH) {
+          i++;
+        }
+        const end = i + 1;
+        result.push(new Patch(start, Uint8Array.from(newBytes.slice(start, end))));
+      }
+    }
+    return result;
+  }
+
   /**
    * @returns an "optimized" list of patches without overlaps or duplications
    */
@@ -41,19 +57,7 @@ export class Patch {
       patch.applyTo(bytes);
     }
 
-    const result: Patch[] = [];
-    for (let i = 0; i < bytes.length; i++) {
-      if (bytes[i] !== undefined) {
-        const start = i;
-        while (bytes[i + 1] !== undefined && i + 2 - start <= MAX_LENGTH) {
-          i++;
-        }
-        const end = i + 1;
-        result.push(new Patch(start, Uint8Array.from(bytes.slice(start, end))));
-      }
-    }
-
-    return result;
+    return Patch.createPatches([], bytes, bytes.length);
   }
 
   get serializedLength(): number {
