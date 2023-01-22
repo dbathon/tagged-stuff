@@ -6,6 +6,14 @@ import { readUint48FromDataView, writeUint48toDataView } from "./util";
  * last transaction id, binary patches for pages, a list of "new" pages etc..
  */
 export class IndexPage extends MetaPageWithPatches {
+  /** This exists to detect unexpected page size changes. */
+  pageSize: number;
+
+  /**
+   * Transaction id of the (internal) page store used to store the transaction ids of all page group pages.
+   */
+  transactionIdsPageStoreTransactionId: number;
+
   maxPageNumber: number;
 
   /**
@@ -20,8 +28,9 @@ export class IndexPage extends MetaPageWithPatches {
     if (bufferOrIndexPageOrUndefined === undefined) {
       // default values for an empty page store
 
-      // start with transactionId 0, the first one that is actually committed will be 1
-      this.transactionId = 0;
+      this.pageSize = 0;
+
+      this.transactionIdsPageStoreTransactionId = 0;
 
       // no pages yet
       this.maxPageNumber = -1;
@@ -29,6 +38,8 @@ export class IndexPage extends MetaPageWithPatches {
       const sourceIndexPage = bufferOrIndexPageOrUndefined;
       // just copy all the data from sourceIndexPage
       this.transactionId = sourceIndexPage.transactionId;
+      this.pageSize = sourceIndexPage.pageSize;
+      this.transactionIdsPageStoreTransactionId = sourceIndexPage.transactionIdsPageStoreTransactionId;
       this.maxPageNumber = sourceIndexPage.maxPageNumber;
       sourceIndexPage.newPageNumbers.forEach((pageNumber) => this.newPageNumbers.add(pageNumber));
       sourceIndexPage.pageNumberToPatches.forEach((patches, pageNumber) =>
@@ -43,6 +54,12 @@ export class IndexPage extends MetaPageWithPatches {
       this.readHeader(view);
 
       let offset = MetaPageWithPatches.headerSerializedLength;
+
+      this.pageSize = view.getUint32(8);
+      offset += 4;
+
+      this.transactionIdsPageStoreTransactionId = readUint48FromDataView(view, offset);
+      offset += 6;
 
       this.maxPageNumber = view.getUint32(8);
       offset += 4;
@@ -72,6 +89,8 @@ export class IndexPage extends MetaPageWithPatches {
     return (
       MetaPageWithPatches.headerSerializedLength +
       4 +
+      6 +
+      4 +
       2 +
       4 * this.newPageNumbers.size +
       this.patchesSerializedLength +
@@ -90,6 +109,12 @@ export class IndexPage extends MetaPageWithPatches {
     this.writeHeader(view);
 
     let offset = MetaPageWithPatches.headerSerializedLength;
+
+    view.setUint32(8, this.pageSize);
+    offset += 4;
+
+    writeUint48toDataView(view, offset, this.transactionIdsPageStoreTransactionId);
+    offset += 6;
 
     view.setUint32(8, this.maxPageNumber);
     offset += 4;
