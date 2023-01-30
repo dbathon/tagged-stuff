@@ -18,6 +18,8 @@ export class IndexPage extends MetaPageWithPatches {
 
   /**
    * Pages that only consist of patches in the IndexPage.
+   *
+   * TODO: maybe remove this, is it worth it if we load the page group page anyway...?
    */
   readonly newPageNumbers: Set<number> = new Set();
 
@@ -55,7 +57,7 @@ export class IndexPage extends MetaPageWithPatches {
 
       let offset = MetaPageWithPatches.headerSerializedLength;
 
-      this.pageSize = view.getUint32(8);
+      this.pageSize = view.getUint32(offset);
       offset += 4;
 
       this.transactionIdsPageStoreTransactionId = readUint48FromDataView(view, offset);
@@ -95,7 +97,7 @@ export class IndexPage extends MetaPageWithPatches {
       4 * this.newPageNumbers.size +
       this.patchesSerializedLength +
       2 +
-      10 * this.pageNumberToPatches.size
+      10 * this.pageNumberToTransactionId.size
     );
   }
 
@@ -110,13 +112,13 @@ export class IndexPage extends MetaPageWithPatches {
 
     let offset = MetaPageWithPatches.headerSerializedLength;
 
-    view.setUint32(8, this.pageSize);
+    view.setUint32(offset, this.pageSize);
     offset += 4;
 
     writeUint48toDataView(view, offset, this.transactionIdsPageStoreTransactionId);
     offset += 6;
 
-    view.setUint32(8, this.maxPageNumber);
+    view.setUint32(offset, this.maxPageNumber);
     offset += 4;
 
     view.setUint16(offset, this.newPageNumbers.size);
