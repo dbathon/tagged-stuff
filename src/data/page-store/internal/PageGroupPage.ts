@@ -1,6 +1,7 @@
 import { MetaPageWithPatches } from "./MetaPageWithPatches";
 import { readUint48FromDataView, writeUint48toDataView } from "./util";
 
+export const PAGES_PER_PAGE_GROUP = 32;
 /**
  * Meta page that contains the latest transaction id and patches for 32 pages.
  */
@@ -39,7 +40,7 @@ export class PageGroupPage extends MetaPageWithPatches {
       let offset = MetaPageWithPatches.headerSerializedLength;
 
       // read the 32 transaction ids
-      for (let i = 0; i < 32; i++) {
+      for (let i = 0; i < PAGES_PER_PAGE_GROUP; i++) {
         const transactionIdForPage = readUint48FromDataView(view, offset);
         offset += 6;
         if (transactionIdForPage > 0) {
@@ -52,7 +53,7 @@ export class PageGroupPage extends MetaPageWithPatches {
   }
 
   get serializedLength(): number {
-    return MetaPageWithPatches.headerSerializedLength + 32 * 6 + this.patchesSerializedLength;
+    return MetaPageWithPatches.headerSerializedLength + PAGES_PER_PAGE_GROUP * 6 + this.patchesSerializedLength;
   }
 
   serialize(buffer: ArrayBuffer): void {
@@ -67,7 +68,7 @@ export class PageGroupPage extends MetaPageWithPatches {
     let offset = MetaPageWithPatches.headerSerializedLength;
 
     // write the 32 transaction ids
-    for (let i = 0; i < 32; i++) {
+    for (let i = 0; i < PAGES_PER_PAGE_GROUP; i++) {
       const transactionIdForPage = this.pageNumberToTransactionId.get(this.pageNumberOffset + i) ?? 0;
       writeUint48toDataView(view, offset, transactionIdForPage);
     }

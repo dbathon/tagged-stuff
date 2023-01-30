@@ -22,8 +22,8 @@ describe("PageStore", () => {
       expect(page0.value!.array[0]).toBe(0);
       expect(page0.value!.array[1]).toBe(0);
       expect(page0.value!.array[5]).toBe(0);
-      expect(page0.value!.array[PAGE_SIZE - 1]).toBe(0);
-      expect(page0.value!.array[PAGE_SIZE]).toBe(undefined);
+      expect(page0.value!.array[store.pageSize - 1]).toBe(0);
+      expect(page0.value!.array[store.pageSize]).toBe(undefined);
 
       expect(page2.value!.array[5]).toBe(0);
     });
@@ -99,13 +99,14 @@ describe("PageStore", () => {
       }
       expect(page0.value?.array[0]).toBe(42);
 
+      // commit without retry in store2 should fail
       expect(store2Page0.value?.array[0]).toBe(0);
       {
         const result = await store2.runTransaction(() => {
           store2.getPageDataForUpdate(0).array[0] = 43;
 
           expect(store2Page0.value?.array[0]).toBe(43);
-        });
+        }, 0);
         expect(result.committed).toBe(false);
       }
       expect(store2Page0.value?.array[0]).toBe(42);
@@ -116,7 +117,7 @@ describe("PageStore", () => {
           store2.getPageDataForUpdate(0).array[0] = 43;
 
           expect(store2Page0.value?.array[0]).toBe(43);
-        });
+        }, 0);
         expect(result.committed).toBe(true);
       }
       expect(store2Page0.value?.array[0]).toBe(43);
@@ -131,7 +132,7 @@ describe("PageStore", () => {
           pageData.array[0] = 44;
 
           expect(page0.value?.array[0]).toBe(44);
-        }, 1);
+        });
         expect(result.committed).toBe(true);
       }
       expect(page0.value?.array[0]).toBe(44);
