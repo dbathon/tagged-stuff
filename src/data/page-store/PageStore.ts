@@ -2,7 +2,7 @@ import { shallowReadonly, shallowRef, ShallowRef } from "vue";
 import { IndexPage } from "./internal/IndexPage";
 import { PageGroupPage, PAGES_PER_PAGE_GROUP } from "./internal/PageGroupPage";
 import { Patch } from "./internal/Patch";
-import { readUint48FromDataView } from "./internal/util";
+import { dataViewsEqual, readUint48FromDataView } from "./internal/util";
 import { BackendPageAndVersion, BackendPageToStore, PageStoreBackend } from "./PageStoreBackend";
 
 // require at least 4KB
@@ -106,26 +106,7 @@ function pageDataEqual(a: PageData, b: PageData): boolean {
   if (a.buffer.byteLength !== b.buffer.byteLength) {
     return false;
   }
-  const aView = a.dataView;
-  const bView = b.dataView;
-  const length = aView.byteLength;
-  for (let i = 0; i < length; i += 4) {
-    if (i + 4 <= length) {
-      // common/fast case
-      if (aView.getUint32(i) !== bView.getUint32(i)) {
-        return false;
-      }
-    } else {
-      // check the last bytes
-      while (i < length) {
-        if (aView.getUint8(i) !== bView.getUint8(i)) {
-          return false;
-        }
-        i++;
-      }
-    }
-  }
-  return true;
+  return dataViewsEqual(a.dataView, b.dataView);
 }
 
 export type TransactionResult<T> =
