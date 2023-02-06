@@ -4,7 +4,7 @@ import { BackendPageAndVersion, BackendPageToStore, PageStoreBackend } from "./P
  * A simple in memory implementation of PageStoreBackend for testing.
  */
 export class InMemoryPageStoreBackend implements PageStoreBackend {
-  private readonly pages = new Map<number, BackendPageAndVersion>();
+  readonly pages = new Map<number, BackendPageAndVersion>();
 
   constructor(readonly pageSize: number) {}
 
