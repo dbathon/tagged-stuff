@@ -1,6 +1,33 @@
 import { MetaPageWithPatches } from "./MetaPageWithPatches";
 import { readUint48FromDataView, writeUint48toDataView } from "./util";
 
+function readUint32ToUint48Map(view: DataView, startOffset: number, target: Map<number, number>): number {
+  let offset = startOffset;
+  const count = view.getUint16(offset);
+  offset += 2;
+  for (let i = 0; i < count; i++) {
+    const key = view.getUint32(offset);
+    offset += 4;
+    const value = readUint48FromDataView(view, offset);
+    offset += 6;
+    target.set(key, value);
+  }
+  return offset;
+}
+
+function writeUint32ToUint48Map(view: DataView, startOffset: number, source: Map<number, number>): number {
+  let offset = startOffset;
+  view.setUint16(offset, source.size);
+  offset += 2;
+  source.forEach((value, key) => {
+    view.setUint32(offset, key);
+    offset += 4;
+    writeUint48toDataView(view, offset, value);
+    offset += 6;
+  });
+  return offset;
+}
+
 /**
  * Represents the index page of a PageStore. This page is updated in every commit and contains various things, e.g. the
  * last transaction id, binary patches for pages, a list of "new" pages etc..
@@ -24,6 +51,8 @@ export class IndexPage extends MetaPageWithPatches {
   readonly newPageNumbers: Set<number> = new Set();
 
   readonly pageNumberToTransactionId: Map<number, number> = new Map();
+
+  readonly pageGroupNumberToTransactionId: Map<number, number> = new Map();
 
   constructor(bufferOrIndexPageOrUndefined: ArrayBuffer | IndexPage | undefined) {
     super();
@@ -50,6 +79,9 @@ export class IndexPage extends MetaPageWithPatches {
       sourceIndexPage.pageNumberToTransactionId.forEach((transactionIdForPage, pageNumber) =>
         this.pageNumberToTransactionId.set(pageNumber, transactionIdForPage)
       );
+      sourceIndexPage.pageGroupNumberToTransactionId.forEach((transactionIdForPage, pageGroupNumber) =>
+        this.pageGroupNumberToTransactionId.set(pageGroupNumber, transactionIdForPage)
+      );
     } else {
       const view = new DataView(bufferOrIndexPageOrUndefined);
 
@@ -75,15 +107,9 @@ export class IndexPage extends MetaPageWithPatches {
 
       offset = this.readPatches(view, offset);
 
-      const countPageNumberToTransactionId = view.getUint16(offset);
-      offset += 2;
-      for (let i = 0; i < countPageNumberToTransactionId; i++) {
-        const pageNumber = view.getUint32(offset);
-        offset += 4;
-        const transactionIdForPage = readUint48FromDataView(view, offset);
-        offset += 6;
-        this.pageNumberToTransactionId.set(pageNumber, transactionIdForPage);
-      }
+      offset = readUint32ToUint48Map(view, offset, this.pageNumberToTransactionId);
+
+      offset = readUint32ToUint48Map(view, offset, this.pageGroupNumberToTransactionId);
     }
   }
 
@@ -97,7 +123,9 @@ export class IndexPage extends MetaPageWithPatches {
       4 * this.newPageNumbers.size +
       this.patchesSerializedLength +
       2 +
-      10 * this.pageNumberToTransactionId.size
+      10 * this.pageNumberToTransactionId.size +
+      2 +
+      10 * this.pageGroupNumberToTransactionId.size
     );
   }
 
@@ -130,14 +158,9 @@ export class IndexPage extends MetaPageWithPatches {
 
     offset = this.writePatches(view, offset);
 
-    view.setUint16(offset, this.pageNumberToTransactionId.size);
-    offset += 2;
-    this.pageNumberToTransactionId.forEach((transactionIdForPage, pageNumber) => {
-      view.setUint32(offset, pageNumber);
-      offset += 4;
-      writeUint48toDataView(view, offset, transactionIdForPage);
-      offset += 6;
-    });
+    offset = writeUint32ToUint48Map(view, offset, this.pageNumberToTransactionId);
+
+    offset = writeUint32ToUint48Map(view, offset, this.pageGroupNumberToTransactionId);
 
     if (offset !== expectedLength) {
       throw new Error("expectedLength was wrong");
