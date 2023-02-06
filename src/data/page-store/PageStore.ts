@@ -335,7 +335,16 @@ export class PageStore {
     if (!pageEntry) {
       pageEntry = new PageEntry(pageNumber);
       this.pageEntries.set(pageNumber, pageEntry);
-      this.triggerLoad(pageNumber);
+      if (!this.loading) {
+        const pageData = this.buildPageData(pageNumber);
+        if (pageData) {
+          // if we are not loading and the page data is available (via patches etc.), then just set it
+          pageEntry.setData(pageData);
+        }
+      }
+      if (!pageEntry.dataRef.value) {
+        this.triggerLoad(pageNumber);
+      }
     }
     return pageEntry.readonlyDataRef;
   }

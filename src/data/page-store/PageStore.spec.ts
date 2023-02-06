@@ -185,7 +185,13 @@ describe("PageStore", () => {
       const store2 = new PageStore(backend);
       for (let i = 0; i < 10; i++) {
         const page = store2.getPage(i);
-        await store2.loadingFinished();
+        if (i === 0) {
+          expect(store2.loading).toBe(true);
+          await store2.loadingFinished();
+        } else {
+          // no more loading needed
+          expect(store2.loading).toBe(false);
+        }
         expectEqualsFillRandom(page.value?.dataView!, 40, i + 1);
       }
 
