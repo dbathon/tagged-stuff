@@ -32,12 +32,17 @@ export class Patch {
     for (let i = 0; i < length; i++) {
       if (newBytes[i] !== oldBytes[i]) {
         const start = i;
-        // TODO: potentially optimize this to include a 1 or 2 identical bytes "gap" to avoid a new patch header
-        while (newBytes[i + 1] !== oldBytes[i + 1] && i + 2 - start <= MAX_LENGTH) {
+        // check a few bytes past the last difference: having one patch with a few identical bytes can still be shorter than multiple patches
+        let lastDifferent = i;
+        let patchLength = 1;
+        while (i - lastDifferent <= 3 && patchLength < MAX_LENGTH && i + 1 < length) {
           i++;
+          patchLength++;
+          if (newBytes[i] !== oldBytes[i]) {
+            lastDifferent = i;
+          }
         }
-        const end = i + 1;
-        result.push(new Patch(start, Uint8Array.from(newBytes.slice(start, end))));
+        result.push(new Patch(start, Uint8Array.from(newBytes.slice(start, lastDifferent + 1))));
       }
     }
     return result;
