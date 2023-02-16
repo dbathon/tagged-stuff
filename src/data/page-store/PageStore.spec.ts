@@ -171,19 +171,22 @@ describe("PageStore", () => {
       const backend = new InMemoryPageStoreBackend(PAGE_SIZE);
       const store = new PageStore(backend);
 
+      const pageCount = 10;
+      const writeCount = 20;
+
       const result = await store.runTransaction(() => {
-        for (let i = 0; i < 10; i++) {
-          fillRandom(store.getPageDataForUpdate(i).dataView, 40, i + 1);
+        for (let i = 0; i < pageCount; i++) {
+          fillRandom(store.getPageDataForUpdate(i).dataView, writeCount, i + 1);
         }
       });
       expect(result.committed).toBe(true);
 
-      for (let i = 0; i < 10; i++) {
-        expectEqualsFillRandom(store.getPage(i).value?.dataView!, 40, i + 1);
+      for (let i = 0; i < pageCount; i++) {
+        expectEqualsFillRandom(store.getPage(i).value?.dataView!, writeCount, i + 1);
       }
 
       const store2 = new PageStore(backend);
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < pageCount; i++) {
         const page = store2.getPage(i);
         if (i === 0) {
           expect(store2.loading).toBe(true);
@@ -192,12 +195,48 @@ describe("PageStore", () => {
           // no more loading needed
           expect(store2.loading).toBe(false);
         }
-        expectEqualsFillRandom(page.value?.dataView!, 40, i + 1);
+        expectEqualsFillRandom(page.value?.dataView!, writeCount, i + 1);
       }
+
+      // load pages after the first page group, those should also not require more loading
+      store2.getPage(40);
+      store2.getPage(100);
+      expect(store2.loading).toBe(false);
 
       // everything is stored in the index page
       expect(backend.pages.size).toBe(1);
       expect([...backend.pages.keys()]).toEqual([-1]);
+    });
+
+    test("should work with even more data, by moving the diffs to to the page group pages", async () => {
+      const backend = new InMemoryPageStoreBackend(PAGE_SIZE);
+      const store = new PageStore(backend);
+
+      const pageCount = 100;
+      const writeCount = 20;
+
+      const result = await store.runTransaction(() => {
+        for (let i = 0; i < pageCount; i++) {
+          fillRandom(store.getPageDataForUpdate(i).dataView, writeCount, i + 1);
+        }
+      });
+      expect(result.committed).toBe(true);
+
+      for (let i = 0; i < pageCount; i++) {
+        expectEqualsFillRandom(store.getPage(i).value?.dataView!, writeCount, i + 1);
+      }
+
+      const store2 = new PageStore(backend);
+      for (let i = 0; i < pageCount; i++) {
+        const page = store2.getPage(i);
+        await store2.loadingFinished();
+        expectEqualsFillRandom(page.value?.dataView!, writeCount, i + 1);
+      }
+
+      expect(backend.pages.size).toBeGreaterThan(1);
+      for (const pageNumber of backend.pages.keys()) {
+        expect(pageNumber).toBeLessThan(0);
+      }
     });
   });
 });

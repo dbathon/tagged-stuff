@@ -1,6 +1,6 @@
 import { shallowReadonly, shallowRef, ShallowRef } from "vue";
 import { IndexPage } from "./internal/IndexPage";
-import { PageGroupPage, PAGES_PER_PAGE_GROUP } from "./internal/PageGroupPage";
+import { PageGroupPage, pageNumberToPageGroupNumber, PAGES_PER_PAGE_GROUP } from "./internal/PageGroupPage";
 import { Patch } from "./internal/Patch";
 import { dataViewsEqual, readUint48FromDataView } from "./internal/util";
 import { PageData } from "./PageData";
@@ -61,11 +61,11 @@ class BackendPage {
       if (this.pageNumber > -2 || -this.pageNumber % 2 !== 0) {
         throw new Error("not a page group page number: " + this.pageNumber);
       }
-      const pageNumberOffset = ((-this.pageNumber % 2) - 1) * 32;
+      const pageGroupNumber = -this.pageNumber / 2 - 1;
       if (this.page) {
-        result = new PageGroupPage(pageNumberOffset, this.page.data);
+        result = new PageGroupPage(pageGroupNumber, this.page.data);
       } else {
-        result = new PageGroupPage(pageNumberOffset, undefined);
+        result = new PageGroupPage(pageGroupNumber, undefined);
       }
       this.pageGroupPage = result;
     }
@@ -96,6 +96,10 @@ function assertValidPageNumber(pageNumber: number) {
   if (pageNumber < 0 || pageNumber > MAX_PAGE_NUMBER) {
     throw new Error("invalid pageNumber: " + pageNumber);
   }
+}
+
+function pageGroupNumberToBackendPageNumber(pageGroupNumber: number): number {
+  return -2 - 2 * pageGroupNumber;
 }
 
 class PageEntry {
@@ -166,15 +170,35 @@ export class PageStore {
     return this.backendPages.get(INDEX_PAGE_NUMBER)?.getAsIndexPage(this.backendPageSize);
   }
 
-  private getPageGroupPageBackendPageNumber(pageNumber: number): number {
-    assertValidPageNumber(pageNumber);
-    const pageGroupPageNumber = Math.floor(pageNumber / PAGES_PER_PAGE_GROUP);
-    return -2 - 2 * pageGroupPageNumber;
+  private getTransactionIdOfPageGroupPage(pageGroupNumber: number): number | undefined {
+    const indexPage = this.getIndexPage();
+    if (!indexPage) {
+      return undefined;
+    }
+    const transactionId = indexPage.pageGroupNumberToTransactionId.get(pageGroupNumber) ?? 0;
+    if (transactionId === 0 && indexPage.transactionIdsPageStoreTransactionId !== 0) {
+      throw new Error("transactionIdsPageStoreTransactionId not yet implemented");
+    }
+    return transactionId;
   }
 
-  private getPageGroupPage(pageNumber: number): PageGroupPage | undefined {
-    // TODO: check consistency and potentially trigger refresh
-    return this.backendPages.get(this.getPageGroupPageBackendPageNumber(pageNumber))?.getAsPageGroupPage();
+  private getPageGroupPage(pageGroupNumber: number): PageGroupPage | undefined {
+    const expectedTransactionId = this.getTransactionIdOfPageGroupPage(pageGroupNumber);
+    if (expectedTransactionId === undefined) {
+      return undefined;
+    }
+    const backendPageNumber = pageGroupNumberToBackendPageNumber(pageGroupNumber);
+    let backendPage = this.backendPages.get(backendPageNumber);
+    if (expectedTransactionId === 0 && !backendPage) {
+      // there is no persisted page group page, just set the backendPage to what it should be
+      backendPage = new BackendPage(undefined, backendPageNumber);
+      this.backendPages.set(backendPageNumber, backendPage);
+    }
+    const pageGroupPage = backendPage?.getAsPageGroupPage();
+    if (pageGroupPage && expectedTransactionId !== pageGroupPage.transactionId) {
+      return undefined;
+    }
+    return pageGroupPage;
   }
 
   private buildPageData(pageNumber: number): PageData | undefined {
@@ -183,31 +207,30 @@ export class PageStore {
     if (!indexPage) {
       return undefined;
     }
+
+    const pageGroupPage = this.getPageGroupPage(pageNumberToPageGroupNumber(pageNumber));
+    if (!pageGroupPage) {
+      return undefined;
+    }
+
+    const pageTransactionId = pageGroupPage.pageNumberToTransactionId.get(pageNumber);
     let pageData: PageData;
-    if (pageNumber > indexPage.maxPageNumber || indexPage.newPageNumbers.has(pageNumber)) {
-      pageData = new PageData(new ArrayBuffer(this.pageSize));
-    } else {
-      const pageGroupPage = this.getPageGroupPage(pageNumber);
-      if (!pageGroupPage) {
+    if (pageTransactionId !== undefined) {
+      const backendPageData = this.backendPages.get(pageNumber)?.page?.data;
+      if (!backendPageData) {
         return undefined;
       }
-      const pageTransactionId = pageGroupPage.pageNumberToTransactionId.get(pageNumber);
-      if (pageTransactionId !== undefined) {
-        const backendPageData = this.backendPages.get(pageNumber)?.page?.data;
-        if (!backendPageData) {
-          return undefined;
-        }
-        const transactionId = readUint48FromDataView(new DataView(backendPageData), 0);
-        if (transactionId !== pageTransactionId) {
-          return undefined;
-        }
-        pageData = new PageData(backendPageData.slice(PAGE_OVERHEAD));
-      } else {
-        pageData = new PageData(new ArrayBuffer(this.pageSize));
+      const transactionId = readUint48FromDataView(new DataView(backendPageData), 0);
+      if (transactionId !== pageTransactionId) {
+        return undefined;
       }
-      // apply page group page patches
-      pageGroupPage.pageNumberToPatches.get(pageNumber)?.forEach((patch) => patch.applyTo(pageData.array));
+      pageData = new PageData(backendPageData.slice(PAGE_OVERHEAD));
+    } else {
+      pageData = new PageData(new ArrayBuffer(this.pageSize));
     }
+    // apply page group page patches
+    pageGroupPage.pageNumberToPatches.get(pageNumber)?.forEach((patch) => patch.applyTo(pageData.array));
+
     // apply index page patches
     indexPage.pageNumberToPatches.get(pageNumber)?.forEach((patch) => patch.applyTo(pageData.array));
 
@@ -300,7 +323,7 @@ export class PageStore {
     // if it is a 0 or positive page, then also refresh the index page and page group page
     if (backendPageNumber >= 0) {
       this.triggerLoad(INDEX_PAGE_NUMBER);
-      this.triggerLoad(this.getPageGroupPageBackendPageNumber(backendPageNumber));
+      this.triggerLoad(pageGroupNumberToBackendPageNumber(pageNumberToPageGroupNumber(backendPageNumber)));
     }
   }
 
@@ -377,36 +400,48 @@ export class PageStore {
             Patch.mergePatches([...(newIndexPage.pageNumberToPatches.get(pageNumber) ?? []), ...patches])
           );
 
-          if (!newIndexPage.newPageNumbers.has(pageNumber)) {
-            let isNew = pageNumber > oldIndexPage.maxPageNumber;
-            if (!isNew) {
-              const pageGroupPage = this.getPageGroupPage(pageNumber);
-              if (!pageGroupPage) {
-                throw new Error("pageGroupPage not available");
-              }
-              if (
-                pageGroupPage.pageNumberToTransactionId.get(pageNumber) === undefined &&
-                pageGroupPage.pageNumberToPatches.get(pageNumber) === undefined
-              ) {
-                isNew = true;
-              }
-            }
-            if (isNew) {
-              newIndexPage.newPageNumbers.add(pageNumber);
-            }
-          }
-
           newIndexPage.maxPageNumber = Math.max(newIndexPage.maxPageNumber, pageNumber);
         }
       }
     });
 
     if (changes) {
-      newIndexPage.transactionId++;
+      const transactionId = (newIndexPage.transactionId += 1);
       const pagesToStore: BackendPageToStore[] = [];
 
-      if (newIndexPage.serializedLength > this.backendPageSize) {
-        throw new Error("TODO...");
+      // push changes down to the page group pages and individual pages as necessary
+      while (newIndexPage.serializedLength > this.backendPageSize) {
+        const largestPageGroupNumber = newIndexPage.determineLargestPageGroup();
+
+        if (largestPageGroupNumber === undefined) {
+          throw new Error("index page too large, but no largest page group");
+        }
+        const pageGroupPageBackendPageNumber = pageGroupNumberToBackendPageNumber(largestPageGroupNumber);
+        const oldPageGroupPage = this.getPageGroupPage(largestPageGroupNumber);
+        if (!oldPageGroupPage) {
+          // this can actually happen, if none of the pages of that group were loaded...
+          this.triggerLoad(pageGroupPageBackendPageNumber);
+          return false;
+        }
+
+        const newPageGroupPage = new PageGroupPage(largestPageGroupNumber, oldPageGroupPage);
+        newPageGroupPage.transactionId = transactionId;
+        newIndexPage.pageGroupNumberToTransactionId.set(largestPageGroupNumber, transactionId);
+        newIndexPage.movePageGroupDataToPageGroup(newPageGroupPage);
+        newIndexPage;
+
+        while (newPageGroupPage.serializedLength > this.backendPageSize) {
+          // write data to pages that have the largest patches
+          throw new Error("TODO...");
+        }
+
+        const newPageGroupPageBuffer = new ArrayBuffer(this.backendPageSize);
+        newPageGroupPage.serialize(newPageGroupPageBuffer);
+        pagesToStore.push({
+          pageNumber: pageGroupPageBackendPageNumber,
+          data: newPageGroupPageBuffer,
+          previousVersion: this.backendPages.get(pageGroupPageBackendPageNumber)?.page?.version,
+        });
       }
 
       const newIndexPageBuffer = new ArrayBuffer(this.backendPageSize);

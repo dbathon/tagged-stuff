@@ -2,6 +2,12 @@ import { MetaPageWithPatches } from "./MetaPageWithPatches";
 import { readUint48FromDataView, writeUint48toDataView } from "./util";
 
 export const PAGES_PER_PAGE_GROUP = 32;
+
+export function pageNumberToPageGroupNumber(pageNumber: number) {
+  // we can't use shifting for this, since the page number is uint32
+  return Math.floor(pageNumber / PAGES_PER_PAGE_GROUP);
+}
+
 /**
  * Meta page that contains the latest transaction id and patches for 32 pages.
  */
@@ -13,7 +19,7 @@ export class PageGroupPage extends MetaPageWithPatches {
   readonly pageNumberToTransactionId: Map<number, number> = new Map();
 
   constructor(
-    readonly pageNumberOffset: number,
+    readonly pageGroupNumber: number,
     bufferOrPageGroupPageOrUndefined: ArrayBuffer | PageGroupPage | undefined
   ) {
     super();
@@ -21,7 +27,7 @@ export class PageGroupPage extends MetaPageWithPatches {
       // nothing to do
     } else if (bufferOrPageGroupPageOrUndefined instanceof PageGroupPage) {
       const sourcePageGroupPage = bufferOrPageGroupPageOrUndefined;
-      if (pageNumberOffset !== sourcePageGroupPage.pageNumberOffset) {
+      if (pageGroupNumber !== sourcePageGroupPage.pageGroupNumber) {
         throw new Error("pageNumberOffset does not match");
       }
       // just copy all the data from sourcePageGroupPage
@@ -40,6 +46,7 @@ export class PageGroupPage extends MetaPageWithPatches {
       let offset = MetaPageWithPatches.headerSerializedLength;
 
       // read the 32 transaction ids
+      const pageNumberOffset = pageGroupNumber * PAGES_PER_PAGE_GROUP;
       for (let i = 0; i < PAGES_PER_PAGE_GROUP; i++) {
         const transactionIdForPage = readUint48FromDataView(view, offset);
         offset += 6;
@@ -68,9 +75,11 @@ export class PageGroupPage extends MetaPageWithPatches {
     let offset = MetaPageWithPatches.headerSerializedLength;
 
     // write the 32 transaction ids
+    const pageNumberOffset = this.pageGroupNumber * PAGES_PER_PAGE_GROUP;
     for (let i = 0; i < PAGES_PER_PAGE_GROUP; i++) {
-      const transactionIdForPage = this.pageNumberToTransactionId.get(this.pageNumberOffset + i) ?? 0;
+      const transactionIdForPage = this.pageNumberToTransactionId.get(pageNumberOffset + i) ?? 0;
       writeUint48toDataView(view, offset, transactionIdForPage);
+      offset += 6;
     }
 
     offset = this.writePatches(view, offset);

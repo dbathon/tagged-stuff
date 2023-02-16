@@ -1,4 +1,6 @@
 import { MetaPageWithPatches } from "./MetaPageWithPatches";
+import { PageGroupPage, pageNumberToPageGroupNumber } from "./PageGroupPage";
+import { Patch } from "./Patch";
 import { readUint48FromDataView, writeUint48toDataView } from "./util";
 
 function readUint32ToUint48Map(view: DataView, startOffset: number, target: Map<number, number>): number {
@@ -43,15 +45,6 @@ export class IndexPage extends MetaPageWithPatches {
 
   maxPageNumber: number;
 
-  /**
-   * Pages that only consist of patches in the IndexPage.
-   *
-   * TODO: maybe remove this, is it worth it if we load the page group page anyway...?
-   */
-  readonly newPageNumbers: Set<number> = new Set();
-
-  readonly pageNumberToTransactionId: Map<number, number> = new Map();
-
   readonly pageGroupNumberToTransactionId: Map<number, number> = new Map();
 
   constructor(bufferOrIndexPageOrUndefined: ArrayBuffer | IndexPage | undefined) {
@@ -72,12 +65,8 @@ export class IndexPage extends MetaPageWithPatches {
       this.pageSize = sourceIndexPage.pageSize;
       this.transactionIdsPageStoreTransactionId = sourceIndexPage.transactionIdsPageStoreTransactionId;
       this.maxPageNumber = sourceIndexPage.maxPageNumber;
-      sourceIndexPage.newPageNumbers.forEach((pageNumber) => this.newPageNumbers.add(pageNumber));
       sourceIndexPage.pageNumberToPatches.forEach((patches, pageNumber) =>
         this.pageNumberToPatches.set(pageNumber, [...patches])
-      );
-      sourceIndexPage.pageNumberToTransactionId.forEach((transactionIdForPage, pageNumber) =>
-        this.pageNumberToTransactionId.set(pageNumber, transactionIdForPage)
       );
       sourceIndexPage.pageGroupNumberToTransactionId.forEach((transactionIdForPage, pageGroupNumber) =>
         this.pageGroupNumberToTransactionId.set(pageGroupNumber, transactionIdForPage)
@@ -98,16 +87,7 @@ export class IndexPage extends MetaPageWithPatches {
       this.maxPageNumber = view.getUint32(8);
       offset += 4;
 
-      const countNewPageNumbers = view.getUint16(offset);
-      offset += 2;
-      for (let i = 0; i < countNewPageNumbers; i++) {
-        this.newPageNumbers.add(view.getUint32(offset));
-        offset += 4;
-      }
-
       offset = this.readPatches(view, offset);
-
-      offset = readUint32ToUint48Map(view, offset, this.pageNumberToTransactionId);
 
       offset = readUint32ToUint48Map(view, offset, this.pageGroupNumberToTransactionId);
     }
@@ -119,11 +99,7 @@ export class IndexPage extends MetaPageWithPatches {
       4 +
       6 +
       4 +
-      2 +
-      4 * this.newPageNumbers.size +
       this.patchesSerializedLength +
-      2 +
-      10 * this.pageNumberToTransactionId.size +
       2 +
       10 * this.pageGroupNumberToTransactionId.size
     );
@@ -149,21 +125,56 @@ export class IndexPage extends MetaPageWithPatches {
     view.setUint32(offset, this.maxPageNumber);
     offset += 4;
 
-    view.setUint16(offset, this.newPageNumbers.size);
-    offset += 2;
-    this.newPageNumbers.forEach((pageNumber) => {
-      view.setUint32(offset, pageNumber);
-      offset += 4;
-    });
-
     offset = this.writePatches(view, offset);
-
-    offset = writeUint32ToUint48Map(view, offset, this.pageNumberToTransactionId);
 
     offset = writeUint32ToUint48Map(view, offset, this.pageGroupNumberToTransactionId);
 
     if (offset !== expectedLength) {
       throw new Error("expectedLength was wrong");
     }
+  }
+
+  /** Determine the page group number that contributes the most to the size of this index page. */
+  determineLargestPageGroup(): number | undefined {
+    const sizePerGroup = new Map<number, number>();
+
+    this.pageNumberToPatches.forEach((patches, pageNumber) => {
+      if (patches.length) {
+        const groupNumber = pageNumberToPageGroupNumber(pageNumber);
+        let size = sizePerGroup.get(groupNumber) ?? 0;
+        size += 6;
+        for (const patch of patches) {
+          size += patch.serializedLength;
+        }
+        sizePerGroup.set(groupNumber, size);
+      }
+    });
+
+    let largestGroupNumber: number | undefined = undefined;
+    let largestSize: number | undefined = undefined;
+    sizePerGroup.forEach((size, pageGroupNumber) => {
+      if (largestSize === undefined || size > largestSize) {
+        largestSize = size;
+        largestGroupNumber = pageGroupNumber;
+      }
+    });
+    return largestGroupNumber;
+  }
+
+  movePageGroupDataToPageGroup(pageGroupPage: PageGroupPage) {
+    const pageGroupNumber = pageGroupPage.pageGroupNumber;
+
+    this.pageNumberToPatches.forEach((patches, pageNumber) => {
+      if (pageGroupNumber === pageNumberToPageGroupNumber(pageNumber)) {
+        if (patches.length) {
+          const mergedPatches = Patch.mergePatches([
+            ...(pageGroupPage.pageNumberToPatches.get(pageNumber) ?? []),
+            ...patches,
+          ]);
+          pageGroupPage.pageNumberToPatches.set(pageNumber, mergedPatches);
+        }
+        this.pageNumberToPatches.delete(pageNumber);
+      }
+    });
   }
 }
