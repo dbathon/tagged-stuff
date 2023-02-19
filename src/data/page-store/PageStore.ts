@@ -2,7 +2,7 @@ import { shallowReadonly, shallowRef, ShallowRef } from "vue";
 import { IndexPage } from "./internal/IndexPage";
 import { PageGroupPage, pageNumberToPageGroupNumber, PAGES_PER_PAGE_GROUP } from "./internal/PageGroupPage";
 import { Patch } from "./internal/Patch";
-import { dataViewsEqual, readUint48FromDataView } from "./internal/util";
+import { dataViewsEqual, readUint48FromDataView, writeUint48toDataView } from "./internal/util";
 import { PageData } from "./PageData";
 import { BackendPageAndVersion, BackendPageToStore, PageStoreBackend } from "./PageStoreBackend";
 
@@ -201,6 +201,31 @@ export class PageStore {
     return pageGroupPage;
   }
 
+  private getBackendPageForPage(pageGroupPage: PageGroupPage, pageNumber: number): BackendPage | undefined {
+    assertValidPageNumber(pageNumber);
+    if (pageGroupPage.pageGroupNumber !== pageNumberToPageGroupNumber(pageNumber)) {
+      throw new Error("invalid pageNumber for pageGroupPage: " + pageNumber);
+    }
+
+    const pageTransactionId = pageGroupPage.pageNumberToTransactionId.get(pageNumber);
+    let backendPage = this.backendPages.get(pageNumber);
+    if (pageTransactionId !== undefined) {
+      const backendPageData = backendPage?.page?.data;
+      if (!backendPageData) {
+        return undefined;
+      }
+      const transactionId = readUint48FromDataView(new DataView(backendPageData), 0);
+      if (transactionId !== pageTransactionId) {
+        return undefined;
+      }
+    } else if (!backendPage) {
+      // there is no persisted page, just set the backendPage to what it should be
+      backendPage = new BackendPage(undefined, pageNumber);
+      this.backendPages.set(pageNumber, backendPage);
+    }
+    return backendPage;
+  }
+
   private buildPageData(pageNumber: number): PageData | undefined {
     assertValidPageNumber(pageNumber);
     const indexPage = this.getIndexPage();
@@ -213,21 +238,16 @@ export class PageStore {
       return undefined;
     }
 
-    const pageTransactionId = pageGroupPage.pageNumberToTransactionId.get(pageNumber);
-    let pageData: PageData;
-    if (pageTransactionId !== undefined) {
-      const backendPageData = this.backendPages.get(pageNumber)?.page?.data;
-      if (!backendPageData) {
-        return undefined;
-      }
-      const transactionId = readUint48FromDataView(new DataView(backendPageData), 0);
-      if (transactionId !== pageTransactionId) {
-        return undefined;
-      }
-      pageData = new PageData(backendPageData.slice(PAGE_OVERHEAD));
-    } else {
-      pageData = new PageData(new ArrayBuffer(this.pageSize));
+    const backendPage = this.getBackendPageForPage(pageGroupPage, pageNumber);
+    if (!backendPage) {
+      return undefined;
     }
+
+    const backendPageData = backendPage.page?.data;
+    const pageData = new PageData(
+      backendPageData ? backendPageData.slice(PAGE_OVERHEAD) : new ArrayBuffer(this.pageSize)
+    );
+
     // apply page group page patches
     pageGroupPage.pageNumberToPatches.get(pageNumber)?.forEach((patch) => patch.applyTo(pageData.array));
 
@@ -432,7 +452,36 @@ export class PageStore {
 
         while (newPageGroupPage.serializedLength > this.backendPageSize) {
           // write data to pages that have the largest patches
-          throw new Error("TODO...");
+          const largestPageNumber = newPageGroupPage.determineLargestPage();
+
+          if (largestPageNumber === undefined) {
+            throw new Error("page group page too large, but no largest page");
+          }
+          const backendPage = this.getBackendPageForPage(oldPageGroupPage, largestPageNumber);
+          if (!backendPage) {
+            // this can actually happen, if the page was not loaded/modified...
+            this.triggerLoad(largestPageNumber);
+            return false;
+          }
+
+          const newBackendPageData = new ArrayBuffer(this.backendPageSize);
+          writeUint48toDataView(new DataView(newBackendPageData), 0, transactionId);
+          newPageGroupPage.pageNumberToTransactionId.set(largestPageNumber, transactionId);
+
+          const newPageArray = new Uint8Array(newBackendPageData, PAGE_OVERHEAD);
+          const oldBackendPageData = backendPage.page?.data;
+          if (oldBackendPageData) {
+            newPageArray.set(new Uint8Array(oldBackendPageData, PAGE_OVERHEAD));
+          }
+          // apply patches (all relevant patches are in newPageGroupPage)
+          newPageGroupPage.pageNumberToPatches.get(largestPageNumber)!.forEach((patch) => patch.applyTo(newPageArray));
+          newPageGroupPage.pageNumberToPatches.delete(largestPageNumber);
+
+          pagesToStore.push({
+            pageNumber: largestPageNumber,
+            data: newBackendPageData,
+            previousVersion: backendPage.page?.version,
+          });
         }
 
         const newPageGroupPageBuffer = new ArrayBuffer(this.backendPageSize);

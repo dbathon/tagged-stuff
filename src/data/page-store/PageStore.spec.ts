@@ -238,5 +238,54 @@ describe("PageStore", () => {
         expect(pageNumber).toBeLessThan(0);
       }
     });
+
+    test("should work with more data in individual pages, by moving the data to actual pages", async () => {
+      const backend = new InMemoryPageStoreBackend(PAGE_SIZE);
+      const store = new PageStore(backend);
+
+      const pageCount = 4;
+      const writeCount = 2000;
+
+      const result = await store.runTransaction(() => {
+        for (let i = 0; i < pageCount; i++) {
+          fillRandom(store.getPageDataForUpdate(i).dataView, writeCount, i + 1);
+        }
+      });
+      expect(result.committed).toBe(true);
+
+      for (let i = 0; i < pageCount; i++) {
+        expectEqualsFillRandom(store.getPage(i).value?.dataView!, writeCount, i + 1);
+      }
+
+      const store2 = new PageStore(backend);
+      for (let i = 0; i < pageCount; i++) {
+        const page = store2.getPage(i);
+        await store2.loadingFinished();
+        expectEqualsFillRandom(page.value?.dataView!, writeCount, i + 1);
+      }
+
+      expect(backend.pages.size).toBeGreaterThan(1);
+      expect([...backend.pages.keys()].filter((key) => key >= 0).length).toBeGreaterThan(0);
+
+      // overwrite pages with new data and check again
+      const result2 = await store.runTransaction(() => {
+        for (let i = 0; i < pageCount; i++) {
+          // clear the previous data
+          const array = store.getPageDataForUpdate(i).array;
+          for (let i = 0; i < array.length; i++) {
+            array[i] = 0;
+          }
+          fillRandom(store.getPageDataForUpdate(i).dataView, writeCount, i + 1000);
+        }
+      });
+      expect(result2.committed).toBe(true);
+
+      store2.refresh();
+      for (let i = 0; i < pageCount; i++) {
+        const page = store2.getPage(i);
+        await store2.loadingFinished();
+        expectEqualsFillRandom(page.value?.dataView!, writeCount, i + 1000);
+      }
+    });
   });
 });

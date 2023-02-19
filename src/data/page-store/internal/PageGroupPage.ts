@@ -88,4 +88,24 @@ export class PageGroupPage extends MetaPageWithPatches {
       throw new Error("expectedLength was wrong");
     }
   }
+
+  /** Determine the page number that contributes the most to the size of this page group page. */
+  determineLargestPage(): number | undefined {
+    let largestPageNumber: number | undefined = undefined;
+    let largestSize: number | undefined = undefined;
+    this.pageNumberToPatches.forEach((patches, pageNumber) => {
+      if (patches.length) {
+        let size = 0;
+        for (const patch of patches) {
+          size += patch.serializedLength;
+        }
+        if (largestSize === undefined || size > largestSize) {
+          largestSize = size;
+          largestPageNumber = pageNumber;
+        }
+      }
+    });
+
+    return largestPageNumber;
+  }
 }
