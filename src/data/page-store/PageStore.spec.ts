@@ -81,8 +81,8 @@ describe("PageStore", () => {
       expect(store2Page0.value?.array[0]).toBe(0);
       expect(store2Page0.value?.array[1]).toBe(0);
 
-      const result = await store.runTransaction(() => {
-        store.getPageDataForUpdate(0).array[0] = 42;
+      const result = await store.runTransaction((pageAccess) => {
+        pageAccess.getForUpdate(0).array[0] = 42;
 
         expect(page0.value?.array[0]).toBe(42);
         expect(page0.value?.array[1]).toBe(0);
@@ -118,8 +118,8 @@ describe("PageStore", () => {
       expect(dataViewsEqual(page1.value!.dataView, new DataView(new ArrayBuffer(store.pageSize)))).toBe(true);
 
       {
-        const result = await store.runTransaction(() => {
-          store.getPageDataForUpdate(0).array[0] = 42;
+        const result = await store.runTransaction((pageAccess) => {
+          pageAccess.getForUpdate(0).array[0] = 42;
 
           expect(page0.value?.array[0]).toBe(42);
         });
@@ -130,8 +130,8 @@ describe("PageStore", () => {
       // commit without retry in store2 should fail
       expect(store2Page0.value?.array[0]).toBe(0);
       {
-        const result = await store2.runTransaction(() => {
-          store2.getPageDataForUpdate(0).array[0] = 43;
+        const result = await store2.runTransaction((pageAccess) => {
+          pageAccess.getForUpdate(0).array[0] = 43;
 
           expect(store2Page0.value?.array[0]).toBe(43);
         }, 0);
@@ -141,8 +141,8 @@ describe("PageStore", () => {
 
       // 2nd try should work
       {
-        const result = await store2.runTransaction(() => {
-          store2.getPageDataForUpdate(0).array[0] = 43;
+        const result = await store2.runTransaction((pageAccess) => {
+          pageAccess.getForUpdate(0).array[0] = 43;
 
           expect(store2Page0.value?.array[0]).toBe(43);
         }, 0);
@@ -154,8 +154,8 @@ describe("PageStore", () => {
       expect(page0.value?.array[0]).toBe(42);
       const seenPrevValues: number[] = [];
       {
-        const result = await store.runTransaction(() => {
-          const pageData = store.getPageDataForUpdate(0);
+        const result = await store.runTransaction((pageAccess) => {
+          const pageData = pageAccess.getForUpdate(0);
           seenPrevValues.push(pageData.array[0]);
           pageData.array[0] = 44;
 
@@ -174,9 +174,9 @@ describe("PageStore", () => {
       const pageCount = 10;
       const writeCount = 20;
 
-      const result = await store.runTransaction(() => {
+      const result = await store.runTransaction((pageAccess) => {
         for (let i = 0; i < pageCount; i++) {
-          fillRandom(store.getPageDataForUpdate(i).dataView, writeCount, i + 1);
+          fillRandom(pageAccess.getForUpdate(i).dataView, writeCount, i + 1);
         }
       });
       expect(result.committed).toBe(true);
@@ -215,9 +215,9 @@ describe("PageStore", () => {
       const pageCount = 100;
       const writeCount = 20;
 
-      const result = await store.runTransaction(() => {
+      const result = await store.runTransaction((pageAccess) => {
         for (let i = 0; i < pageCount; i++) {
-          fillRandom(store.getPageDataForUpdate(i).dataView, writeCount, i + 1);
+          fillRandom(pageAccess.getForUpdate(i).dataView, writeCount, i + 1);
         }
       });
       expect(result.committed).toBe(true);
@@ -246,9 +246,9 @@ describe("PageStore", () => {
       const pageCount = 4;
       const writeCount = 2000;
 
-      const result = await store.runTransaction(() => {
+      const result = await store.runTransaction((pageAccess) => {
         for (let i = 0; i < pageCount; i++) {
-          fillRandom(store.getPageDataForUpdate(i).dataView, writeCount, i + 1);
+          fillRandom(pageAccess.getForUpdate(i).dataView, writeCount, i + 1);
         }
       });
       expect(result.committed).toBe(true);
@@ -268,14 +268,14 @@ describe("PageStore", () => {
       expect([...backend.pages.keys()].filter((key) => key >= 0).length).toBeGreaterThan(0);
 
       // overwrite pages with new data and check again
-      const result2 = await store.runTransaction(() => {
+      const result2 = await store.runTransaction((pageAccess) => {
         for (let i = 0; i < pageCount; i++) {
           // clear the previous data
-          const array = store.getPageDataForUpdate(i).array;
+          const array = pageAccess.getForUpdate(i).array;
           for (let i = 0; i < array.length; i++) {
             array[i] = 0;
           }
-          fillRandom(store.getPageDataForUpdate(i).dataView, writeCount, i + 1000);
+          fillRandom(pageAccess.getForUpdate(i).dataView, writeCount, i + 1000);
         }
       });
       expect(result2.committed).toBe(true);
