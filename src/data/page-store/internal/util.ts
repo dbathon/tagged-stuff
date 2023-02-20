@@ -1,3 +1,5 @@
+import { PageData } from "../PageData";
+
 export function readUint48FromDataView(view: DataView, offset: number): number {
   const highPart = view.getUint16(offset);
   if (highPart !== 0) {
@@ -41,4 +43,10 @@ export function dataViewsEqual(a: DataView, b: DataView): boolean {
     }
   }
   return true;
+}
+
+export function copyPageData(pageData: PageData): PageData {
+  const result = new PageData(new ArrayBuffer(pageData.buffer.byteLength));
+  result.array.set(pageData.array);
+  return result;
 }

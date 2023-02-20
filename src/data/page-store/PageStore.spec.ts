@@ -137,9 +137,12 @@ describe("PageStore", () => {
         }, 0);
         expect(result.committed).toBe(false);
       }
-      expect(store2Page0.value?.array[0]).toBe(42);
+      expect(store2Page0.value?.array[0]).toBe(0);
 
-      // 2nd try should work
+      store2.refresh();
+      await store2.loadingFinished();
+
+      // 2nd try after refresh should work
       {
         const result = await store2.runTransaction((pageAccess) => {
           pageAccess.getForUpdate(0).array[0] = 43;

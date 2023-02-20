@@ -2,7 +2,7 @@ import { shallowReadonly, shallowRef, ShallowRef } from "vue";
 import { IndexPage } from "./internal/IndexPage";
 import { PageGroupPage, pageNumberToPageGroupNumber } from "./internal/PageGroupPage";
 import { Patch } from "./internal/Patch";
-import { dataViewsEqual, readUint48FromDataView, writeUint48toDataView } from "./internal/util";
+import { copyPageData, dataViewsEqual, readUint48FromDataView, writeUint48toDataView } from "./internal/util";
 import { PageAccessDuringTransaction } from "./PageAccessDuringTransaction";
 import { PageData } from "./PageData";
 import { BackendPageAndVersion, BackendPageToStore, PageStoreBackend } from "./PageStoreBackend";
@@ -113,11 +113,15 @@ class PageEntry {
     this.readonlyDataRef = shallowReadonly(this.dataRef);
   }
 
+  forceSetData(newPageData: PageData) {
+    this.dataRef.value = newPageData;
+  }
+
   setData(newPageData: PageData) {
     const oldPageData = this.dataRef.value;
     // re-set the dataRef if the data is different or if the page was marked as dirty
     if (oldPageData === undefined || !pageDataEqual(oldPageData, newPageData)) {
-      this.dataRef.value = newPageData;
+      this.forceSetData(newPageData);
     }
   }
 }
@@ -372,7 +376,7 @@ export class PageStore {
     this.triggerLoad(INDEX_PAGE_NUMBER);
   }
 
-  private async commit(dirtyPageNumbers: Set<number>): Promise<boolean> {
+  private async commit(dirtyPageNumberToOldData: Map<number, PageData>): Promise<boolean> {
     if (!this.transactionActive) {
       throw new Error("there is no transaction active");
     }
@@ -383,15 +387,14 @@ export class PageStore {
     }
     const newIndexPage = new IndexPage(oldIndexPage);
     let changes = false;
-    dirtyPageNumbers.forEach((pageNumber) => {
+    dirtyPageNumberToOldData.forEach((oldPageData, pageNumber) => {
       const entry = this.pageEntries.get(pageNumber);
       if (!entry) {
         throw new Error("entry of dirty page does not exist");
       }
       const data = entry.dataRef.value;
-      const oldPageData = this.buildPageData(pageNumber);
-      if (!data || !oldPageData) {
-        throw new Error("data or oldPageData not available");
+      if (!data) {
+        throw new Error("data not available");
       }
       const patches = Patch.createPatches(oldPageData.array, data.array, data.array.length);
       if (patches.length) {
@@ -499,9 +502,6 @@ export class PageStore {
     }
 
     // the transaction is completed
-    this.transactionActive = false;
-    this.resetPageEntriesFromBackendPages();
-
     return true;
   }
 
@@ -532,49 +532,54 @@ export class PageStore {
         }
 
         let resultValue: T;
-        const dirtyPageNumbers = new Set<number>();
+        const dirtyPageNumberToOldData = new Map<number, PageData>();
         try {
-          const get = (pageNumber: number): PageData => {
-            const result = this.getPage(pageNumber).value;
-            if (!result) {
-              throw new RetryRequiredError("page is not loaded");
+          try {
+            const get = (pageNumber: number): PageData => {
+              const result = this.getPage(pageNumber).value;
+              if (!result) {
+                throw new RetryRequiredError("page is not loaded");
+              }
+              return result;
+            };
+            resultValue = transactionFn({
+              get,
+              getForUpdate(pageNumber) {
+                const result = get(pageNumber);
+                if (!dirtyPageNumberToOldData.has(pageNumber)) {
+                  dirtyPageNumberToOldData.set(pageNumber, copyPageData(result));
+                }
+                return result;
+              },
+            });
+          } catch (e) {
+            if (e instanceof RetryRequiredError) {
+              // just retry
+              continue;
+            } else {
+              // rethrow
+              throw e;
             }
-            return result;
-          };
-          const pageAccess: PageAccessDuringTransaction = {
-            get,
-            getForUpdate(pageNumber) {
-              dirtyPageNumbers.add(pageNumber);
-              return get(pageNumber);
-            },
-          };
-          resultValue = transactionFn(pageAccess);
-        } catch (e) {
-          if (e instanceof RetryRequiredError) {
-            // just retry
-            continue;
-          } else {
-            // rethrow
-            throw e;
           }
-        }
 
-        if (await this.commit(dirtyPageNumbers)) {
-          result = {
-            committed: true,
-            resultValue,
-          };
-          break;
+          if (await this.commit(dirtyPageNumberToOldData)) {
+            result = {
+              committed: true,
+              resultValue,
+            };
+            break;
+          }
+        } finally {
+          if (!result.committed) {
+            // reset the modified pages
+            dirtyPageNumberToOldData.forEach((pageData, pageNumber) => {
+              this.pageEntries.get(pageNumber)?.forceSetData(pageData);
+            });
+          }
         }
       }
     } finally {
       this.transactionActive = false;
-
-      if (!result.committed) {
-        // refresh and wait until loading is finished
-        this.refresh();
-        await this.loadingFinished();
-      }
     }
 
     return result;
