@@ -65,6 +65,22 @@ export class Patch {
     return Patch.createPatches([], bytes, bytes.length);
   }
 
+  static patchesEqual(patches1: Patch[] | undefined, patches2: Patch[] | undefined): boolean {
+    if (patches1 === patches2) {
+      return true;
+    }
+    if (patches1 && patches2 && patches1.length === patches2.length) {
+      // both are arrays of equal length
+      for (let i = 0; i < patches1.length; i++) {
+        if (!patches1[i].equals(patches2[i])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
   get serializedLength(): number {
     return this.bytes.length + 3;
   }
@@ -87,5 +103,20 @@ export class Patch {
     for (let i = 0; i < length; i++) {
       target[this.offset + i] = this.bytes[i];
     }
+  }
+
+  equals(other: Patch): boolean {
+    const bytes1 = this.bytes;
+    const bytes2 = other.bytes;
+    const length = bytes1.length;
+    if (this.offset !== other.offset || length !== bytes2.length) {
+      return false;
+    }
+    for (let i = 0; i < length; i++) {
+      if (bytes1[i] !== bytes2[i]) {
+        return false;
+      }
+    }
+    return true;
   }
 }

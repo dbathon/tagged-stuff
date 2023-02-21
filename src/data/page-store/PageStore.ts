@@ -103,9 +103,31 @@ function pageGroupNumberToBackendPageNumber(pageGroupNumber: number): number {
   return -2 - 2 * pageGroupNumber;
 }
 
+/**
+ * Contains information that is necessary to check whether the page data might have changed. If two PageEntryKeys are
+ * equal for a page, then the page cannot have changed, if they are not, then it might have changed.
+ */
+class PageEntryKey {
+  constructor(
+    readonly indexPageTransactionId: number,
+    readonly pageGroupTransactionId: number,
+    readonly indexPagePatches: Patch[] | undefined
+  ) {}
+
+  equals(other: PageEntryKey): boolean {
+    return (
+      this.indexPageTransactionId === other.indexPageTransactionId &&
+      this.pageGroupTransactionId === other.pageGroupTransactionId &&
+      Patch.patchesEqual(this.indexPagePatches, other.indexPagePatches)
+    );
+  }
+}
+
 class PageEntry {
   readonly dataRef: ShallowRef<PageData | undefined>;
   readonly readonlyDataRef: Readonly<ShallowRef<PageData | undefined>>;
+  /** Optional, if it is set, then it can be used to avoid rebuilding the data on refresh. */
+  pageEntryKey?: PageEntryKey;
 
   constructor(readonly pageNumber: number) {
     assertValidPageNumber(pageNumber);
@@ -117,12 +139,13 @@ class PageEntry {
     this.dataRef.value = newPageData;
   }
 
-  setData(newPageData: PageData) {
+  setData(newPageData: PageData, pageEntryKey?: PageEntryKey) {
     const oldPageData = this.dataRef.value;
     // re-set the dataRef if the data is different or if the page was marked as dirty
     if (oldPageData === undefined || !pageDataEqual(oldPageData, newPageData)) {
       this.forceSetData(newPageData);
     }
+    this.pageEntryKey = pageEntryKey;
   }
 }
 
@@ -277,22 +300,40 @@ export class PageStore {
       throw new Error("loading");
     }
 
-    // TODO: for now just reset all pages, but this should optimized to only reset pages that actually need it
-    // first get all the data
-    const entryToData = new Map<PageEntry, PageData>();
-    this.pageEntries.forEach((entry, pageNumber) => {
-      const pageData = this.buildPageData(pageNumber);
-      if (pageData) {
-        entryToData.set(entry, pageData);
-      } else {
-        // something is probably inconsistent, trigger a refresh for the page
-        this.triggerLoad(pageNumber);
+    const indexPage = this.getIndexPage();
+
+    // first get all the data for pages that potentially changed
+    const entryToData = new Map<PageEntry, [PageData, PageEntryKey]>();
+    for (const [pageNumber, entry] of this.pageEntries.entries()) {
+      if (indexPage !== undefined) {
+        const pageGroupTransactionId = this.getTransactionIdOfPageGroupPage(pageNumberToPageGroupNumber(pageNumber));
+        if (pageGroupTransactionId !== undefined) {
+          const pageEntryKey = new PageEntryKey(
+            indexPage.transactionId,
+            pageGroupTransactionId,
+            indexPage.pageNumberToPatches.get(pageNumber)
+          );
+
+          if (entry.pageEntryKey && entry.pageEntryKey.equals(pageEntryKey)) {
+            // nothing to do
+            continue;
+          } else {
+            // the page might have changed
+            const pageData = this.buildPageData(pageNumber);
+            if (pageData) {
+              entryToData.set(entry, [pageData, pageEntryKey]);
+              continue;
+            }
+          }
+        }
       }
-    });
+      // something is probably inconsistent, trigger a refresh for the page
+      this.triggerLoad(pageNumber);
+    }
 
     // and then only update the pages if everything is available
     if (!this.loading) {
-      entryToData.forEach((data, entry) => entry.setData(data));
+      entryToData.forEach(([data, pageEntryKey], entry) => entry.setData(data, pageEntryKey));
     }
   }
 
