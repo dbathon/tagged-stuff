@@ -4,36 +4,44 @@
  *
  * Page layout:
  * If the first byte is 0, then the page is just considered empty. Otherwise it is the "layout version" (currently always 1).
- * Free space pointer (2 bytes), basically a pointer to a special "entry" (no length restriction in this case), but the bytes of the entry are all considered free space
+ * End of free space pointer (2 bytes): a pointer to the end (exclusive) of the free space between the entries array and the data
+ * Free chunks pointer (2 bytes): a pointer to the first chunk of free space (may be 0)
  * Entry count (2 bytes).
  * Entry pointers sorted by entry (2 bytes each)
+ * Gap pointers (2 bytes each): pointers to the start of a gap between entries, the first two bytes of the gap denote its length (including those two bytes)
  *
- * Entry pointers point to a trailer of the first (of potentially multiple) chunks of bytes. The trailer can be one or two bytes:
- * first byte:
- *   first/highest bit: 0: only one byte, the length is the lowest 4 bits of this byte, 1: two bytes and the length is 12 bits
- *   second bit: 0: last chunk of entry, 1: there are more chunks (pointed to by the two bytes preceding the chunk)
- *   third and forth bit: 0: use data of this chunk, 1: reserved, 2: use prefix of entry before, 3: use prefix of entry after,
+ * Entry pointers point to a header of the first (of potentially multiple) chunks of bytes. The header is two bytes (16 bit):
+ *   bit f: 0: last chunk of entry, 1: there are more chunks (pointed to by the two bytes after the header)
+ *   bit e: 0: use data of this chunk, 1: use prefix of entry before or after (see next bit)
+ *   bit d: 0: use prefix of entry before, 1: use prefix of entry after,
+ *   bit c and b: reserved
+ *   bit a to 0: length
  *
  * TODO: the implementation is not optimized for now...
+ * TODO: implement prefixes during writing
  */
 
 /**
  * The maximum length of an entry. This is an arbitrary restrictions to avoid entries that take too much space of a
- * page..., but also helps with not requiring too many bits for the length in the chunk trailers.
+ * page..., but also helps with not requiring too many bits for the length in the chunk headers.
  */
 const MAX_ENTRY_LENGTH = 2000;
 
 // "pointers"
-const FREE_SPACE_POINTER = 1;
-const ENTRY_COUNT = 3;
-const ENTRIES = 5;
+const FREE_SPACE_END_POINTER = 1;
+const FREE_CHUNKS_POINTER = 3;
+const ENTRY_COUNT = 5;
+const ENTRIES = 7;
 
-// trailer masks
-const TRAILER_TWO_BYTES = 0b1000_0000;
-const TRAILER_MORE_CHUNKS = 0b0100_0000;
-const TRAILER_USE_PREFIX = 0b0010_0000;
-const TRAILER_USE_PREFIX_AFTER = 0b0001_0000;
-const TRAILER_LENGTH = 0b1111;
+// entry header masks
+const HEADER_MORE_CHUNKS = 0b1000_0000_0000_0000;
+const HEADER_USE_PREFIX = 0b0100_0000_0000_0000;
+const HEADER_USE_PREFIX_AFTER = 0b0010_0000_0000_0000;
+const HEADER_LENGTH = 0b0000_0111_1111_1111;
+
+function getEntryPointerIndex(entryNumber: number): number {
+  return ENTRIES + entryNumber * 2;
+}
 
 function readUint16(array: Uint8Array, index: number): number {
   return (array[index] << 8) | array[index + 1];
@@ -44,6 +52,7 @@ function writeUint16(array: Uint8Array, index: number, value: number): void {
   array[index + 1] = value & 0xff;
 }
 
+/** Also does some validation. */
 function readEntryCount(pageArray: Uint8Array): number {
   if (pageArray.length < 4000) {
     throw new Error("page is too small");
@@ -69,76 +78,80 @@ function concat(array1: Uint8Array, array2: Uint8Array): Uint8Array {
   return result;
 }
 
-function readLengthChunkEndAndNextTrailerPointer(
+function readLengthBytesStartAndNextHeaderPointer(
   pageArray: Uint8Array,
-  trailerPointer: number
+  headerPointer: number
 ): [number, number, number | undefined] {
-  const trailerByte1 = pageArray[trailerPointer];
-  const twoBytes = (trailerByte1 & TRAILER_TWO_BYTES) !== 0;
-  const moreChunks = (trailerByte1 & TRAILER_MORE_CHUNKS) !== 0;
-  const length = (trailerByte1 & TRAILER_LENGTH) | (twoBytes ? pageArray[trailerPointer - 1] << 4 : 0);
-  const trailerStart = trailerPointer - (twoBytes ? 1 : 0);
-  const chunkEnd = trailerStart - (moreChunks ? 2 : 0);
-  const nextTrailerPointer = moreChunks ? (pageArray[chunkEnd] << 8) | pageArray[chunkEnd + 1] : undefined;
-  return [length, chunkEnd, nextTrailerPointer];
+  const header = readUint16(pageArray, headerPointer);
+  const moreChunks = (header & HEADER_MORE_CHUNKS) !== 0;
+  const length = header & HEADER_LENGTH;
+  const bytesStart = headerPointer + (moreChunks ? 4 : 2);
+  const nextHeaderPointer = moreChunks ? readUint16(pageArray, headerPointer + 2) : undefined;
+  return [length, bytesStart, nextHeaderPointer];
 }
 
-function readUsePrefix(pageArray: Uint8Array, trailerPointer: number): boolean {
-  return (pageArray[trailerPointer] & TRAILER_USE_PREFIX) !== 0;
+function readUsePrefix(pageArray: Uint8Array, headerPointer: number): boolean {
+  return (pageArray[headerPointer] & HEADER_USE_PREFIX) !== 0;
 }
 
-function readChunks(pageArray: Uint8Array, trailerPointer: number): Uint8Array {
-  let currentTrailerPointer = trailerPointer;
+function readChunks(pageArray: Uint8Array, headerPointer: number): Uint8Array {
+  let currentHeaderPointer = headerPointer;
   let result: Uint8Array | undefined = undefined;
   while (true) {
-    if (readUsePrefix(pageArray, currentTrailerPointer)) {
+    if (readUsePrefix(pageArray, currentHeaderPointer)) {
       throw new Error("readChunks does not support prefixes");
     }
-    const [length, chunkEnd, nextTrailerPointer] = readLengthChunkEndAndNextTrailerPointer(
+    const [length, bytesStart, nextHeaderPointer] = readLengthBytesStartAndNextHeaderPointer(
       pageArray,
-      currentTrailerPointer
+      currentHeaderPointer
     );
-    const chunk = pageArray.slice(chunkEnd - length, chunkEnd);
+    const chunk = pageArray.slice(bytesStart, bytesStart + length);
     result = result ? concat(result, chunk) : chunk;
-    if (nextTrailerPointer === undefined) {
+    if (nextHeaderPointer === undefined) {
       return result;
     }
-    currentTrailerPointer = nextTrailerPointer;
+    currentHeaderPointer = nextHeaderPointer;
   }
 }
 
-function readEntry(pageArray: Uint8Array, entryCount: number, index: number, entryCache: Uint8Array[]): Uint8Array {
-  if (index < 0 || index >= entryCount) {
-    throw new Error("invalid index: " + index);
+function readEntry(
+  pageArray: Uint8Array,
+  entryCount: number,
+  entryNumber: number,
+  entryCache: Uint8Array[]
+): Uint8Array {
+  if (entryNumber < 0 || entryNumber >= entryCount) {
+    throw new Error("invalid entryNumber: " + entryNumber);
   }
-  const cachedResult = entryCache[index];
+  const cachedResult = entryCache[entryNumber];
   if (cachedResult) {
     return cachedResult;
   }
-  const trailerPointer = readUint16(pageArray, ENTRIES + index * 2);
+  const headerPointer = readUint16(pageArray, getEntryPointerIndex(entryNumber));
   let result: Uint8Array;
-  if (trailerPointer === 0) {
+  if (headerPointer === 0) {
     // special case for empty array
     result = new Uint8Array(0);
   } else {
-    if (readUsePrefix(pageArray, trailerPointer)) {
-      const prefixAfter = (pageArray[trailerPointer] & TRAILER_USE_PREFIX_AFTER) !== 0;
-      const [length, _, nextTrailerPointer] = readLengthChunkEndAndNextTrailerPointer(pageArray, trailerPointer);
-      const otherEntry = readEntry(pageArray, entryCount, index + (prefixAfter ? 1 : -1), entryCache);
+    if (readUsePrefix(pageArray, headerPointer)) {
+      const prefixAfter = (pageArray[headerPointer] & HEADER_USE_PREFIX_AFTER) !== 0;
+      const [length, _, nextHeaderPointer] = readLengthBytesStartAndNextHeaderPointer(pageArray, headerPointer);
+      // TODO: improve this by not reading full entries where possible
+      const otherEntry = readEntry(pageArray, entryCount, entryNumber + (prefixAfter ? 1 : -1), entryCache);
       if (otherEntry.length < length) {
         throw new Error("otherEntry is too short for prefix length: " + otherEntry.length + ", " + length);
       }
       const prefixChunk = otherEntry.slice(0, length);
-      if (nextTrailerPointer !== undefined) {
-        result = concat(prefixChunk, readChunks(pageArray, nextTrailerPointer));
+      if (nextHeaderPointer !== undefined) {
+        result = concat(prefixChunk, readChunks(pageArray, nextHeaderPointer));
       } else {
         result = prefixChunk;
       }
     } else {
-      result = readChunks(pageArray, trailerPointer);
+      result = readChunks(pageArray, headerPointer);
     }
   }
-  entryCache[index] = result;
+  entryCache[entryNumber] = result;
   return result;
 }
 
@@ -176,9 +189,9 @@ function compare(array1: Uint8Array, array2: Uint8Array): -1 | 0 | 1 {
 }
 
 /**
- * @returns an array containing the index where the entry either exists or would be inserted and whether it exists
+ * @returns an array containing the entryNumber where the entry either exists or would be inserted and whether it exists
  */
-function findEntryIndex(
+function findEntryNumber(
   pageArray: Uint8Array,
   entryCount: number,
   entry: Uint8Array,
@@ -192,29 +205,29 @@ function findEntryIndex(
   let right = entryCount - 1;
 
   while (right >= left) {
-    const currentIndex = Math.floor((left + right) / 2);
-    const currentEntry = readEntry(pageArray, entryCount, currentIndex, entryCache);
+    const currentEntryNumber = Math.floor((left + right) / 2);
+    const currentEntry = readEntry(pageArray, entryCount, currentEntryNumber, entryCache);
     const compareResult = compare(entry, currentEntry);
     if (compareResult === 0) {
       // found the entry
-      return [currentIndex, true];
+      return [currentEntryNumber, true];
     }
     if (
       left === right ||
-      (left === currentIndex && compareResult < 0) ||
-      (currentIndex === right && compareResult > 0)
+      (left === currentEntryNumber && compareResult < 0) ||
+      (currentEntryNumber === right && compareResult > 0)
     ) {
-      // if entry is smaller, then insert at the current index, otherwise after it
-      return [currentIndex + (compareResult > 0 ? 1 : 0), false];
+      // if entry is smaller, then insert at the current entryNumber, otherwise after it
+      return [currentEntryNumber + (compareResult > 0 ? 1 : 0), false];
     }
     if (compareResult < 0) {
-      right = currentIndex - 1;
+      right = currentEntryNumber - 1;
     } else {
-      left = currentIndex + 1;
+      left = currentEntryNumber + 1;
     }
   }
 
-  throw new Error("findEntryIndex did not find an index");
+  throw new Error("findEntryNumber did not find an entryNumber");
 }
 
 // export function scan() {}
@@ -223,90 +236,167 @@ function findEntryIndex(
 function initIfNecessary(pageArray: Uint8Array): void {
   if (pageArray[0] === 0) {
     pageArray[0] = 1;
-    writeUint16(pageArray, FREE_SPACE_POINTER, pageArray.length - 1);
+    writeUint16(pageArray, FREE_SPACE_END_POINTER, pageArray.length);
+    writeUint16(pageArray, FREE_CHUNKS_POINTER, 0);
     writeUint16(pageArray, ENTRY_COUNT, 0);
-    // this will read as the whole range between the end of the entries array and the end of the page
-    pageArray[pageArray.length - 1] = 0;
   }
 }
 
-function enoughBytesAvailable(pageArray: Uint8Array, entryCount: number, entryLength: number): boolean {
-  let currentTrailerPointer: number | undefined = readUint16(pageArray, FREE_SPACE_POINTER);
+const FREE_CHUNK_MIN_LENGTH = 3;
+const FREE_CHUNK_MAX_LENGTH = 0b0111_1111_1111_1111;
+const FREE_CHUNK_MAX_LENGTH_ONE_BYTE_MASK = 0b1000_0000;
+const FREE_CHUNK_MAX_LENGTH_ONE_BYTE = 0b0111_1111;
 
-  let available = 0;
-  while (currentTrailerPointer !== undefined) {
-    const [length, chunkEnd, nextTrailerPointer] = readLengthChunkEndAndNextTrailerPointer(
-      pageArray,
-      currentTrailerPointer
-    );
-    if (length === 0) {
-      if (nextTrailerPointer !== undefined) {
-        throw new Error("unexpected nextTrailerPointer");
-      }
-      // special chunk that goes to the end of the entries array with one additional entry
-      const entriesArrayEndPlusOneEntry = ENTRIES + (entryCount + 1) * 2;
-      // always assume two byte trailer, so subtract one extra byte and another extra one for the new trailer
-      available += chunkEnd - entriesArrayEndPlusOneEntry - 2;
-    } else {
-      available += length;
-    }
-    if (available >= entryLength) {
-      return true;
-    }
-    currentTrailerPointer = nextTrailerPointer;
+function writeFreeChunkLengthAndNext(
+  pageArray: Uint8Array,
+  chunkPointer: number,
+  length: number,
+  nextChunkPointer: number
+): void {
+  if (length < FREE_CHUNK_MIN_LENGTH) {
+    throw new Error("chunk too small: " + length);
+  }
+  if (length > FREE_CHUNK_MAX_LENGTH) {
+    // chain the chunks
+    const chainedChunkPointer = chunkPointer + FREE_CHUNK_MAX_LENGTH;
+    writeFreeChunkLengthAndNext(pageArray, chunkPointer, FREE_CHUNK_MAX_LENGTH, chainedChunkPointer);
+    writeFreeChunkLengthAndNext(pageArray, chainedChunkPointer, length - FREE_CHUNK_MAX_LENGTH, nextChunkPointer);
+  } else if (length <= FREE_CHUNK_MAX_LENGTH_ONE_BYTE) {
+    pageArray[chunkPointer] = length | FREE_CHUNK_MAX_LENGTH_ONE_BYTE_MASK;
+    writeUint16(pageArray, chunkPointer + 1, nextChunkPointer);
+  } else {
+    writeUint16(pageArray, chunkPointer, length);
+    writeUint16(pageArray, chunkPointer + 2, nextChunkPointer);
+  }
+}
+
+function isOneByteHeaderFreeChunk(freeChunkByte1: number) {
+  return (freeChunkByte1 & FREE_CHUNK_MAX_LENGTH_ONE_BYTE_MASK) !== 0;
+}
+
+function readFreeChunkLengthAndNext(pageArray: Uint8Array, chunkPointer: number): [number, number] {
+  const byte1 = pageArray[chunkPointer];
+  const oneByteLength = isOneByteHeaderFreeChunk(byte1);
+  const length = oneByteLength ? byte1 & FREE_CHUNK_MAX_LENGTH_ONE_BYTE : readUint16(pageArray, chunkPointer);
+  const nextChunkPointer: number = readUint16(pageArray, chunkPointer + (oneByteLength ? 1 : 2));
+  return [length, nextChunkPointer];
+}
+
+function remainingBytes(chunkLength: number, requiredBytes: number): number {
+  if (chunkLength - 2 >= requiredBytes) {
+    return 0;
+  }
+  if (chunkLength <= 4) {
+    // this chunk cannot be used
+    return requiredBytes;
+  }
+  return requiredBytes - (chunkLength - 4);
+}
+
+function enoughBytesAvailable(pageArray: Uint8Array, entryCount: number, entryLength: number): boolean {
+  // allow one extra space for the new entry entry
+  const freeSpaceStart = getEntryPointerIndex(entryCount + 1);
+  const freeSpaceEnd = readUint16(pageArray, FREE_SPACE_END_POINTER);
+  if (freeSpaceStart > freeSpaceEnd) {
+    // there is no space for another entry in the entries array
+    return false;
   }
 
+  let remainingRequiredBytes = entryLength;
+  // first check the free space (even though we will use the chunks first), because it is faster
+  remainingRequiredBytes = remainingBytes(freeSpaceEnd - freeSpaceStart, remainingRequiredBytes);
+  if (remainingRequiredBytes <= 0) {
+    return true;
+  }
+
+  let currentChunkPointer = readUint16(pageArray, FREE_CHUNKS_POINTER);
+  while (currentChunkPointer > 0) {
+    const [length, nextChunkPointer] = readFreeChunkLengthAndNext(pageArray, currentChunkPointer);
+    remainingRequiredBytes = remainingBytes(length, remainingRequiredBytes);
+    if (remainingRequiredBytes <= 0) {
+      return true;
+    }
+    currentChunkPointer = nextChunkPointer;
+  }
   return false;
 }
 
 function writeEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Array): number {
-  // the result will always be the old free space pointer
-  const entryTrailerPointer = readUint16(pageArray, FREE_SPACE_POINTER);
-  let currentTrailerPointer: number | undefined = entryTrailerPointer;
-
   let rest = entry;
-  while (currentTrailerPointer !== undefined) {
-    const [length, chunkEnd, nextTrailerPointer] = readLengthChunkEndAndNextTrailerPointer(
-      pageArray,
-      currentTrailerPointer
-    );
-    const restLength = rest.length;
-    if (length === 0) {
-      if (nextTrailerPointer !== undefined) {
-        throw new Error("unexpected nextTrailerPointer");
-      }
-      // special chunk that goes to the end of the entries array with one additional entry
-      const entriesArrayEndPlusOneEntry = ENTRIES + (entryCount + 1) * 2;
-      // always assume two byte trailer, so subtract one extra byte and another extra one for the new trailer
-      if (restLength > chunkEnd - entriesArrayEndPlusOneEntry - 2) {
-        // should not happen
-        break;
-      }
-      const twoBytes = restLength > TRAILER_LENGTH;
-      pageArray[currentTrailerPointer] = restLength & TRAILER_LENGTH;
-      if (twoBytes) {
-        const trailerByte2 = restLength >> 4;
-        if (trailerByte2 > 0xff) {
-          throw new Error("unexpected length: " + restLength);
-        }
-        pageArray[currentTrailerPointer - 1] = trailerByte2;
-      }
-      const realChunkEnd = currentTrailerPointer - (twoBytes ? 1 : 0);
-      const realChunkStart = realChunkEnd - restLength;
-      pageArray.set(rest, realChunkStart);
-      // write the new free space list head
-      pageArray[realChunkStart - 1] = 0;
-      writeUint16(pageArray, FREE_SPACE_POINTER, realChunkStart - 1);
-      return entryTrailerPointer;
-    } else {
-      // TODO
-      throw new Error("not implemented yet");
-      currentTrailerPointer = nextTrailerPointer;
+
+  let entryPointer: number | undefined = undefined;
+  let previousNextChunkPointerIndex: number | undefined = undefined;
+  function handleChunkPointer(chunkPointer: number): number {
+    if (previousNextChunkPointerIndex !== undefined) {
+      pageArray[previousNextChunkPointerIndex] = chunkPointer;
+      previousNextChunkPointerIndex = undefined;
     }
+    if (entryPointer === undefined) {
+      // first chunk
+      entryPointer = chunkPointer;
+    }
+    return entryPointer;
   }
 
-  // should not happen enoughBytesAvailable() should be called before this method
-  throw new Error("not enough space available");
+  let previousNextFreeChunkPointerIndex = FREE_CHUNKS_POINTER;
+  let currentChunkPointer = readUint16(pageArray, FREE_CHUNKS_POINTER);
+  while (currentChunkPointer > 0) {
+    const [freeChunkLength, nextFreeChunkPointer] = readFreeChunkLengthAndNext(pageArray, currentChunkPointer);
+    const restLength = rest.length;
+    const remainingChunkLengthIfLastChunk = freeChunkLength - 2 - restLength;
+    if (remainingChunkLengthIfLastChunk === 0 || remainingChunkLengthIfLastChunk >= FREE_CHUNK_MIN_LENGTH) {
+      // it is the last chunk
+      writeUint16(pageArray, currentChunkPointer, restLength);
+      pageArray.set(rest, currentChunkPointer + 2);
+
+      if (remainingChunkLengthIfLastChunk > 0) {
+        // create a new chunk with the remaining bytes
+        const newChunkPointer = currentChunkPointer + (freeChunkLength - remainingChunkLengthIfLastChunk);
+        writeFreeChunkLengthAndNext(pageArray, newChunkPointer, remainingChunkLengthIfLastChunk, nextFreeChunkPointer);
+        writeUint16(pageArray, previousNextFreeChunkPointerIndex, newChunkPointer);
+      } else {
+        writeUint16(pageArray, previousNextFreeChunkPointerIndex, nextFreeChunkPointer);
+      }
+
+      return handleChunkPointer(currentChunkPointer);
+    } else if (freeChunkLength > 4) {
+      // write as much as possible
+      const bytesToWrite = freeChunkLength - 4;
+      writeUint16(pageArray, currentChunkPointer, HEADER_MORE_CHUNKS | bytesToWrite);
+      pageArray.set(rest.slice(0, bytesToWrite), currentChunkPointer + 4);
+      rest = rest.slice(bytesToWrite);
+
+      handleChunkPointer(currentChunkPointer);
+      previousNextChunkPointerIndex = currentChunkPointer + 2;
+    } else {
+      // this chunk cannot be used in this case
+      previousNextFreeChunkPointerIndex =
+        currentChunkPointer + (isOneByteHeaderFreeChunk(pageArray[currentChunkPointer]) ? 1 : 2);
+    }
+
+    currentChunkPointer = nextFreeChunkPointer;
+  }
+
+  // free chunks were not sufficient, so use the free space
+  {
+    // allow one extra space for the new entry entry
+    const freeSpaceStart = getEntryPointerIndex(entryCount + 1);
+    const freeSpaceEnd = readUint16(pageArray, FREE_SPACE_END_POINTER);
+    const restLength = rest.length;
+    currentChunkPointer = freeSpaceEnd - 2 - restLength;
+    if (currentChunkPointer < freeSpaceStart) {
+      // should not happen enoughBytesAvailable() should be called before this method
+      throw new Error("not enough space available");
+    }
+
+    writeUint16(pageArray, currentChunkPointer, restLength);
+    pageArray.set(rest, currentChunkPointer + 2);
+
+    writeUint16(pageArray, previousNextFreeChunkPointerIndex, 0);
+    writeUint16(pageArray, FREE_SPACE_END_POINTER, currentChunkPointer);
+
+    return handleChunkPointer(currentChunkPointer);
+  }
 }
 
 /**
@@ -319,7 +409,7 @@ export function insertPageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
   }
   const entryCount = readEntryCount(pageArray);
   const entryCache: Uint8Array[] = [];
-  const [index, exists] = findEntryIndex(pageArray, entryCount, entry, entryCache);
+  const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, entry, entryCache);
   if (exists) {
     // entry already exists
     return true;
@@ -328,25 +418,25 @@ export function insertPageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
   if (entryCount === 0) {
     initIfNecessary(pageArray);
   }
-  let trailerPointer: number;
+  let headerPointer: number;
   if (entry.length === 0) {
-    // just use 0 as trailer pointer
-    trailerPointer = 0;
+    // just use 0 as header pointer
+    headerPointer = 0;
   } else {
     if (!enoughBytesAvailable(pageArray, entryCount, entry.length)) {
       return false;
     }
 
-    trailerPointer = writeEntry(pageArray, entryCount, entry);
+    headerPointer = writeEntry(pageArray, entryCount, entry);
   }
   // shift entries before inserting
-  for (let i = entryCount; i > index; i--) {
+  for (let i = entryCount; i > entryNumber; i--) {
     const base = ENTRIES + i * 2;
     pageArray[base] = pageArray[base - 2];
     pageArray[base + 1] = pageArray[base - 1];
   }
-  // write the trailerPointer
-  writeUint16(pageArray, ENTRIES + index * 2, trailerPointer);
+  // write the headerPointer
+  writeUint16(pageArray, getEntryPointerIndex(entryNumber), headerPointer);
   // and increase the count
   writeUint16(pageArray, ENTRY_COUNT, entryCount + 1);
   return true;
