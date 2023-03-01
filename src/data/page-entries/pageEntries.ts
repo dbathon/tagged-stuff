@@ -410,7 +410,7 @@ export function insertPageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
   }
   // shift entries before inserting
   for (let i = entryCount; i > entryNumber; i--) {
-    const base = ENTRIES + i * 2;
+    const base = getEntryPointerIndex(i);
     pageArray[base] = pageArray[base - 2];
     pageArray[base + 1] = pageArray[base - 1];
   }
@@ -421,6 +421,123 @@ export function insertPageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
   return true;
 }
 
+class FreeChunkInfo {
+  obsolete?: boolean;
+
+  constructor(readonly startIndex: number, public length: number) {}
+
+  get endIndex(): number {
+    return this.startIndex + this.length;
+  }
+}
+
+function readFreeChunkInfos(pageArray: Uint8Array): FreeChunkInfo[] {
+  const result: FreeChunkInfo[] = [];
+  let currentChunkPointer = readUint16(pageArray, FREE_CHUNKS_POINTER);
+  while (currentChunkPointer > 0) {
+    const [length, nextChunkPointer] = readFreeChunkLengthAndNext(pageArray, currentChunkPointer);
+    result.push(new FreeChunkInfo(currentChunkPointer, length));
+    currentChunkPointer = nextChunkPointer;
+  }
+  return result;
+}
+
+function mergeFreeChunkInfos(freeChunkInfos: FreeChunkInfo[]): void {
+  const sortedInfos = [...freeChunkInfos].sort((a, b) => a.startIndex - b.startIndex);
+  let previous: FreeChunkInfo | undefined = undefined;
+  for (const freeChunkInfo of sortedInfos) {
+    if (previous && previous.endIndex === freeChunkInfo.startIndex) {
+      // merge the two free chunks
+      previous.length += freeChunkInfo.length;
+      freeChunkInfo.obsolete = true;
+    } else {
+      previous = freeChunkInfo;
+    }
+  }
+}
+
+function writeFreeChunkInfos(pageArray: Uint8Array, freeChunkInfos: FreeChunkInfo[]): void {
+  let previous: FreeChunkInfo | undefined = undefined;
+  for (const freeChunkInfo of freeChunkInfos) {
+    if (freeChunkInfo.obsolete) {
+      // do not write obsolete ones
+      continue;
+    }
+    if (!previous) {
+      // first iteration
+      writeUint16(pageArray, FREE_CHUNKS_POINTER, freeChunkInfo.startIndex);
+    } else {
+      // write previous
+      writeFreeChunkLengthAndNext(pageArray, previous.startIndex, previous.length, freeChunkInfo.startIndex);
+    }
+    previous = freeChunkInfo;
+  }
+  if (!previous) {
+    // freeChunkInfos was empty
+    writeUint16(pageArray, FREE_CHUNKS_POINTER, 0);
+  } else {
+    // write the last chunk
+    writeFreeChunkLengthAndNext(pageArray, previous.startIndex, previous.length, 0);
+  }
+}
+
+/**
+ * @returns whether the entry existed
+ */
 export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boolean {
-  throw new Error("TODO");
+  if (entry.length > MAX_ENTRY_LENGTH) {
+    throw new Error("entry is too long");
+  }
+  const entryCount = readEntryCount(pageArray);
+  const entryCache: Uint8Array[] = [];
+  const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, entry, entryCache);
+  if (!exists) {
+    // entry already exists
+    return false;
+  }
+
+  let chunkPointer: number | undefined = readUint16(pageArray, getEntryPointerIndex(entryNumber));
+  // shift all the following entries backwards in the array
+  for (let i = entryNumber + 1; i < entryCount; i++) {
+    const base = getEntryPointerIndex(i);
+    pageArray[base - 2] = pageArray[base];
+    pageArray[base - 1] = pageArray[base + 1];
+  }
+  // and decrease the count
+  writeUint16(pageArray, ENTRY_COUNT, entryCount - 1);
+
+  if (chunkPointer) {
+    // add the new free chunks to the free chunk list
+
+    // we need to read all the free chunk infos, since we want to merge them if possible
+    const freeChunkInfos = readFreeChunkInfos(pageArray);
+
+    let result: Uint8Array;
+    while (chunkPointer !== undefined) {
+      const [length, _, nextHeaderPointer] = readLengthBytesStartAndNextHeaderPointer(pageArray, chunkPointer);
+      const isPrefixChunk = readUsePrefix(pageArray, chunkPointer);
+      const freeChunkLength = 2 + (nextHeaderPointer !== undefined ? 2 : 0) + (isPrefixChunk ? 0 : length);
+      freeChunkInfos.push(new FreeChunkInfo(chunkPointer, freeChunkLength));
+
+      chunkPointer = nextHeaderPointer;
+    }
+
+    mergeFreeChunkInfos(freeChunkInfos);
+
+    // check if we can merge one of the chunks with the free space end pointer
+    const freeSpaceEnd = readUint16(pageArray, FREE_SPACE_END_POINTER);
+    for (const freeChunkInfo of freeChunkInfos) {
+      if (!freeChunkInfo.obsolete && freeChunkInfo.startIndex === freeSpaceEnd) {
+        freeChunkInfo.obsolete = true;
+        writeUint16(pageArray, FREE_SPACE_END_POINTER, freeSpaceEnd + freeChunkInfo.length);
+        // there can be no other chunks, since we already merged them
+        break;
+      }
+    }
+
+    // write all of them again for simplicity, for chunks that did not change nothing will change in the array
+    writeFreeChunkInfos(pageArray, freeChunkInfos);
+  }
+
+  return true;
 }
