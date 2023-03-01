@@ -184,7 +184,7 @@ function findEntryNumber(
   let right = entryCount - 1;
 
   while (right >= left) {
-    const currentEntryNumber = Math.floor((left + right) / 2);
+    const currentEntryNumber = (left + right) >> 1;
     const currentEntry = readEntry(pageArray, entryCount, currentEntryNumber, entryCache);
     const compareResult = compareUint8Arrays(entry, currentEntry);
     if (compareResult === 0) {
