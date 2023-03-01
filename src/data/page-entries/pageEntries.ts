@@ -1,3 +1,5 @@
+import { compareUint8Arrays } from "./compareUint8Arrays";
+
 /**
  * The functions in this file allow treating "page data" (Uint8Array) like a sorted set of byte arrays (of up to 2000 bytes)...
  * The slightly complicated layout of the entries is to allow small diffs (bytes change "as little as possible").
@@ -165,29 +167,6 @@ export function readAllPageEntries(pageArray: Uint8Array): Uint8Array[] {
   return result;
 }
 
-function compare(array1: Uint8Array, array2: Uint8Array): -1 | 0 | 1 {
-  if (array1 === array2) {
-    return 0;
-  }
-  const length = Math.min(array1.length, array2.length);
-  for (let i = 0; i < length; i++) {
-    const diff = array1[i] - array2[i];
-    if (diff < 0) {
-      return -1;
-    }
-    if (diff > 0) {
-      return 1;
-    }
-  }
-  const after1: number | undefined = array1[length];
-  const after2: number | undefined = array2[length];
-  if (after1 !== after2) {
-    // one of them must be undefined
-    return after1 === undefined ? -1 : 1;
-  }
-  return 0;
-}
-
 /**
  * @returns an array containing the entryNumber where the entry either exists or would be inserted and whether it exists
  */
@@ -207,7 +186,7 @@ function findEntryNumber(
   while (right >= left) {
     const currentEntryNumber = Math.floor((left + right) / 2);
     const currentEntry = readEntry(pageArray, entryCount, currentEntryNumber, entryCache);
-    const compareResult = compare(entry, currentEntry);
+    const compareResult = compareUint8Arrays(entry, currentEntry);
     if (compareResult === 0) {
       // found the entry
       return [currentEntryNumber, true];
