@@ -25,6 +25,16 @@ import { compareUint8Arrays } from "./compareUint8Arrays";
  */
 
 /**
+ * The minimum page size is kind of arbitrary, but smaller don't really make sense.
+ */
+const MIN_PAGE_SIZE = 100;
+
+/**
+ * pageArray.length needs to fit into uint16 (see initIfNecessary()), so that is the max page size.
+ */
+const MAX_PAGE_SIZE = 0xffff;
+
+/**
  * The maximum length of an entry. This is an arbitrary restrictions to avoid entries that take too much space of a
  * page..., but also helps with not requiring too many bits for the length in the chunk headers.
  */
@@ -57,10 +67,10 @@ function writeUint16(array: Uint8Array, index: number, value: number): void {
 }
 
 function checkPageArraySize(pageArray: Uint8Array) {
-  if (pageArray.length < 4000) {
+  if (pageArray.length < MIN_PAGE_SIZE) {
     throw new Error("page is too small");
   }
-  if (pageArray.length > 0xffff) {
+  if (pageArray.length > MAX_PAGE_SIZE) {
     throw new Error("page is too large");
   }
 }

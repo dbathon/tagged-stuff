@@ -6,7 +6,7 @@ const FREE_CHUNKS_POINTER = 3;
 
 describe("pageEntries", () => {
   test("blank page has zero entries", () => {
-    const pageArray = new Uint8Array(4000);
+    const pageArray = new Uint8Array(100);
     const entries = readAllPageEntries(pageArray);
     expect(entries.length).toBe(0);
   });
@@ -27,7 +27,7 @@ describe("pageEntries", () => {
     ];
 
     for (const order of insertOrders) {
-      const pageArray = new Uint8Array(4000);
+      const pageArray = new Uint8Array(100);
       const dataView = new DataView(pageArray.buffer);
       for (const index of order) {
         expect(insertPageEntry(pageArray, testEntries[index])).toBe(true);
@@ -42,7 +42,7 @@ describe("pageEntries", () => {
   });
 
   test("remove works", () => {
-    const pageArray = new Uint8Array(4000);
+    const pageArray = new Uint8Array(400);
     const dataView = new DataView(pageArray.buffer);
 
     const startFreeSpace = readPageEntriesFreeSpace(pageArray);
