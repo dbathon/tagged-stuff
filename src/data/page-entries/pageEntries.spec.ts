@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { insertPageEntry, readAllPageEntries, readPageEntriesFreeSpace, removePageEntry } from "./pageEntries";
+import {
+  insertPageEntry,
+  readAllPageEntries,
+  readPageEntriesFreeSpace,
+  removePageEntry,
+  scanPageEntries,
+  scanPageEntriesReverse,
+} from "./pageEntries";
 
 // some copied constants
 const FREE_CHUNKS_POINTER = 3;
@@ -81,5 +88,89 @@ describe("pageEntries", () => {
     // no free chunks exist
     expect(dataView.getUint16(FREE_CHUNKS_POINTER)).toBe(0);
     expect(readPageEntriesFreeSpace(pageArray)).toBe(startFreeSpace);
+  });
+
+  test("scanPageEntries", () => {
+    const pageArray = new Uint8Array(100);
+
+    const collected: [Uint8Array, number][] = [];
+    let collectAll = true;
+    function collectCallback(entry: Uint8Array, entryNumber: number): boolean {
+      collected.push([entry, entryNumber]);
+      return collectAll;
+    }
+    function getAndClearCollected(): [Uint8Array, number][] {
+      const result = [...collected];
+      collected.length = 0;
+      return result;
+    }
+
+    function testEntry(byte: number) {
+      return Uint8Array.from([byte]);
+    }
+    const testEntryPairs: [Uint8Array, number][] = [
+      [testEntry(1), 0],
+      [testEntry(3), 1],
+      [testEntry(5), 2],
+    ];
+    testEntryPairs.forEach(([entry]) => {
+      expect(insertPageEntry(pageArray, entry)).toBe(true);
+    });
+
+    const forwardCases: [Uint8Array | number | undefined, number][] = [
+      [testEntry(0), 0],
+      [testEntry(1), 0],
+      [testEntry(2), 1],
+      [testEntry(3), 1],
+      [testEntry(4), 2],
+      [testEntry(5), 2],
+      [testEntry(6), 3],
+      [testEntry(7), 3],
+      [-1, 3],
+      [0, 0],
+      [1, 1],
+      [2, 2],
+      [3, 3],
+      [4, 3],
+      [undefined, 0],
+    ];
+    forwardCases.forEach(([startEntryOrEntryNumber, sliceStart]) => {
+      const expected = testEntryPairs.slice(sliceStart);
+      collectAll = true;
+      scanPageEntries(pageArray, startEntryOrEntryNumber, collectCallback);
+      expect(getAndClearCollected()).toEqual(expected);
+
+      collectAll = false;
+      scanPageEntries(pageArray, startEntryOrEntryNumber, collectCallback);
+      expect(getAndClearCollected()).toEqual(expected.slice(0, 1));
+    });
+
+    const reverseCases: [Uint8Array | number | undefined, number][] = [
+      [testEntry(0), 0],
+      [testEntry(1), 1],
+      [testEntry(2), 1],
+      [testEntry(3), 2],
+      [testEntry(4), 2],
+      [testEntry(5), 3],
+      [testEntry(6), 3],
+      [testEntry(7), 3],
+      [-1, 0],
+      [0, 1],
+      [1, 2],
+      [2, 3],
+      [3, 0],
+      [4, 0],
+      [undefined, 3],
+    ];
+    reverseCases.forEach(([startEntryOrEntryNumber, sliceCount]) => {
+      const expected = testEntryPairs.slice(0, sliceCount).reverse();
+      collectAll = true;
+      scanPageEntriesReverse(pageArray, startEntryOrEntryNumber, collectCallback);
+      expect(getAndClearCollected()).toEqual(expected);
+
+      collectAll = false;
+      scanPageEntriesReverse(pageArray, startEntryOrEntryNumber, collectCallback);
+      expect(getAndClearCollected()).toEqual(expected.slice(0, 1));
+    });
   });
 });

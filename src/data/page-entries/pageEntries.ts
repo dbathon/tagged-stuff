@@ -269,8 +269,62 @@ export function containsPageEntry(pageArray: Uint8Array, entry: Uint8Array): boo
   return getIndexOfPageEntry(pageArray, entry) !== undefined;
 }
 
-// export function scan() {}
-// export function count() {}
+function scan(
+  pageArray: Uint8Array,
+  entryCount: number,
+  entryCache: Uint8Array[],
+  startEntryNumber: number,
+  direction: -1 | 1,
+  callback: (entry: Uint8Array, entryNumber: number) => boolean
+): void {
+  for (let entryNumber = startEntryNumber; entryNumber >= 0 && entryNumber < entryCount; entryNumber += direction) {
+    const entry = readEntry(pageArray, entryCount, entryNumber, entryCache, true);
+    if (!callback(entry, entryNumber)) {
+      break;
+    }
+  }
+}
+
+export function scanPageEntries(
+  pageArray: Uint8Array,
+  startEntryOrEntryNumber: Uint8Array | number | undefined,
+  callback: (entry: Uint8Array, entryNumber: number) => boolean
+): void {
+  const entryCount = readPageEntriesCount(pageArray);
+  const entryCache: Uint8Array[] = [];
+  let startEntryNumber: number;
+  if (startEntryOrEntryNumber === undefined) {
+    startEntryNumber = 0;
+  } else if (typeof startEntryOrEntryNumber === "number") {
+    startEntryNumber = startEntryOrEntryNumber;
+  } else {
+    const [entryNumber, _] = findEntryNumber(pageArray, entryCount, startEntryOrEntryNumber, entryCache);
+    // in the forward scan case the returned entryNumber is always the right one
+    startEntryNumber = entryNumber;
+  }
+
+  scan(pageArray, entryCount, entryCache, startEntryNumber, 1, callback);
+}
+
+export function scanPageEntriesReverse(
+  pageArray: Uint8Array,
+  startEntryOrEntryNumber: Uint8Array | number | undefined,
+  callback: (entry: Uint8Array, entryNumber: number) => boolean
+): void {
+  const entryCount = readPageEntriesCount(pageArray);
+  const entryCache: Uint8Array[] = [];
+  let startEntryNumber: number;
+  if (startEntryOrEntryNumber === undefined) {
+    startEntryNumber = entryCount - 1;
+  } else if (typeof startEntryOrEntryNumber === "number") {
+    startEntryNumber = startEntryOrEntryNumber;
+  } else {
+    const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, startEntryOrEntryNumber, entryCache);
+    startEntryNumber = exists ? entryNumber : entryNumber - 1;
+  }
+
+  scan(pageArray, entryCount, entryCache, startEntryNumber, -1, callback);
+}
 
 function initIfNecessary(pageArray: Uint8Array): void {
   if (pageArray[0] === 0) {
