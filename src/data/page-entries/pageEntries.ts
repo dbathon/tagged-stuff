@@ -54,14 +54,18 @@ function writeUint16(array: Uint8Array, index: number, value: number): void {
   array[index + 1] = value & 0xff;
 }
 
-/** Also does some validation. */
-function readEntryCount(pageArray: Uint8Array): number {
+function checkPageArraySize(pageArray: Uint8Array) {
   if (pageArray.length < 4000) {
     throw new Error("page is too small");
   }
   if (pageArray.length > 0xffff) {
     throw new Error("page is too large");
   }
+}
+
+/** Also does some validation. */
+export function readPageEntriesCount(pageArray: Uint8Array): number {
+  checkPageArraySize(pageArray);
   const version = pageArray[0];
   if (version === 0) {
     // the page is empty
@@ -71,6 +75,12 @@ function readEntryCount(pageArray: Uint8Array): number {
     throw new Error("unexpected version: " + version);
   }
   return readUint16(pageArray, ENTRY_COUNT);
+}
+
+export function resetPageEntries(pageArray: Uint8Array): void {
+  checkPageArraySize(pageArray);
+  // just set the first byte to 0 (see readPageEntriesCount()
+  pageArray[0] = 0;
 }
 
 function concat(array1: Uint8Array, array2: Uint8Array): Uint8Array {
@@ -159,12 +169,18 @@ function readEntry(
 
 export function readAllPageEntries(pageArray: Uint8Array): Uint8Array[] {
   const result: Uint8Array[] = [];
-  const entryCount = readEntryCount(pageArray);
+  const entryCount = readPageEntriesCount(pageArray);
   const entryCache: Uint8Array[] = [];
   for (let i = 0; i < entryCount; i++) {
     result.push(readEntry(pageArray, entryCount, i, entryCache));
   }
   return result;
+}
+
+export function readPageEntryByNumber(pageArray: Uint8Array, entryNumber: number): Uint8Array {
+  const entryCount = readPageEntriesCount(pageArray);
+  const entryCache: Uint8Array[] = [];
+  return readEntry(pageArray, entryCount, entryNumber, entryCache);
 }
 
 /**
@@ -207,6 +223,17 @@ function findEntryNumber(
   }
 
   throw new Error("findEntryNumber did not find an entryNumber");
+}
+
+export function getIndexOfPageEntry(pageArray: Uint8Array, entry: Uint8Array): number | undefined {
+  const entryCount = readPageEntriesCount(pageArray);
+  const entryCache: Uint8Array[] = [];
+  const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, entry, entryCache);
+  return exists ? entryNumber : undefined;
+}
+
+export function containsPageEntry(pageArray: Uint8Array, entry: Uint8Array): boolean {
+  return getIndexOfPageEntry(pageArray, entry) !== undefined;
 }
 
 // export function scan() {}
@@ -386,7 +413,7 @@ export function insertPageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
   if (entry.length > MAX_ENTRY_LENGTH) {
     throw new Error("entry is too long");
   }
-  const entryCount = readEntryCount(pageArray);
+  const entryCount = readPageEntriesCount(pageArray);
   const entryCache: Uint8Array[] = [];
   const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, entry, entryCache);
   if (exists) {
@@ -488,7 +515,7 @@ export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
   if (entry.length > MAX_ENTRY_LENGTH) {
     throw new Error("entry is too long");
   }
-  const entryCount = readEntryCount(pageArray);
+  const entryCount = readPageEntriesCount(pageArray);
   const entryCache: Uint8Array[] = [];
   const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, entry, entryCache);
   if (!exists) {
