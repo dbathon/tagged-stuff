@@ -26,7 +26,7 @@ import { compareUint8Arrays } from "./compareUint8Arrays";
  */
 
 /**
- * The minimum page size is kind of arbitrary, but smaller don't really make sense.
+ * The minimum page size is kind of arbitrary, but smaller pages don't really make sense.
  */
 const MIN_PAGE_SIZE = 100;
 
