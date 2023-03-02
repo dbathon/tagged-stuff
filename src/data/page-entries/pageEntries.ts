@@ -553,7 +553,7 @@ export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
   const entryCache: Uint8Array[] = [];
   const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, entry, entryCache);
   if (!exists) {
-    // entry already exists
+    // entry does not exist
     return false;
   }
 
