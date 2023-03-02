@@ -8,6 +8,7 @@ import { compareUint8Arrays } from "./compareUint8Arrays";
  * If the first byte is 0, then the page is just considered empty. Otherwise it is the "layout version" (currently always 1).
  * End of free space pointer (2 bytes): a pointer to the end (exclusive) of the free space between the entries array and the data
  * Free chunks pointer (2 bytes): a pointer to the first chunk of free space (may be 0)
+ * Free chunks size (2 bytes): the sum of bytes available via the free chunks pointer
  * Entry count (2 bytes).
  * Entry pointers sorted by entry (2 bytes each)
  * Gap pointers (2 bytes each): pointers to the start of a gap between entries, the first two bytes of the gap denote its length (including those two bytes)
@@ -32,8 +33,9 @@ const MAX_ENTRY_LENGTH = 2000;
 // "pointers"
 const FREE_SPACE_END_POINTER = 1;
 const FREE_CHUNKS_POINTER = 3;
-const ENTRY_COUNT = 5;
-const ENTRIES = 7;
+const FREE_CHUNKS_SIZE = 5;
+const ENTRY_COUNT = 7;
+const ENTRIES = 9;
 
 // entry header masks
 const HEADER_MORE_CHUNKS = 0b1000_0000_0000_0000;
@@ -81,6 +83,18 @@ export function resetPageEntries(pageArray: Uint8Array): void {
   checkPageArraySize(pageArray);
   // just set the first byte to 0 (see readPageEntriesCount()
   pageArray[0] = 0;
+}
+
+export function readPageEntriesFreeSpace(pageArray: Uint8Array): number {
+  const entryCount = readPageEntriesCount(pageArray);
+  const freeSpaceStart = getEntryPointerIndex(entryCount + 1);
+  if (entryCount === 0 && pageArray[0] === 0) {
+    // not initialized, so we have to pretend it was initialized
+    return pageArray.length - freeSpaceStart;
+  } else {
+    const freeSpaceEnd = readUint16(pageArray, FREE_SPACE_END_POINTER);
+    return freeSpaceEnd - freeSpaceStart + readUint16(pageArray, FREE_CHUNKS_SIZE);
+  }
 }
 
 function concat(array1: Uint8Array, array2: Uint8Array): Uint8Array {
@@ -244,6 +258,7 @@ function initIfNecessary(pageArray: Uint8Array): void {
     pageArray[0] = 1;
     writeUint16(pageArray, FREE_SPACE_END_POINTER, pageArray.length);
     writeUint16(pageArray, FREE_CHUNKS_POINTER, 0);
+    writeUint16(pageArray, FREE_CHUNKS_SIZE, 0);
     writeUint16(pageArray, ENTRY_COUNT, 0);
   }
 }
@@ -344,20 +359,32 @@ function writeEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Array
     return entryPointer;
   }
 
+  function useFreeChunksSize(usedFreeChunksSize: number): void {
+    const oldFreeChunksSize = readUint16(pageArray, FREE_CHUNKS_SIZE);
+    if (usedFreeChunksSize > oldFreeChunksSize) {
+      // should never happen
+      throw new Error("usedFreeChunksSize > oldFreeChunksSize: " + usedFreeChunksSize + ", " + oldFreeChunksSize);
+    }
+    writeUint16(pageArray, FREE_CHUNKS_SIZE, oldFreeChunksSize - usedFreeChunksSize);
+  }
+
   let previousNextFreeChunkPointerIndex = FREE_CHUNKS_POINTER;
   let currentChunkPointer = readUint16(pageArray, FREE_CHUNKS_POINTER);
   while (currentChunkPointer > 0) {
     const [freeChunkLength, nextFreeChunkPointer] = readFreeChunkLengthAndNext(pageArray, currentChunkPointer);
     const restLength = rest.length;
-    const remainingChunkLengthIfLastChunk = freeChunkLength - 2 - restLength;
+    const usedBytesIfLastChunk = restLength + 2;
+    const remainingChunkLengthIfLastChunk = freeChunkLength - usedBytesIfLastChunk;
     if (remainingChunkLengthIfLastChunk === 0 || remainingChunkLengthIfLastChunk >= FREE_CHUNK_MIN_LENGTH) {
       // it is the last chunk
       writeUint16(pageArray, currentChunkPointer, restLength);
       pageArray.set(rest, currentChunkPointer + 2);
 
+      useFreeChunksSize(usedBytesIfLastChunk);
+
       if (remainingChunkLengthIfLastChunk > 0) {
         // create a new chunk with the remaining bytes
-        const newChunkPointer = currentChunkPointer + (freeChunkLength - remainingChunkLengthIfLastChunk);
+        const newChunkPointer = currentChunkPointer + usedBytesIfLastChunk;
         writeFreeChunkLengthAndNext(pageArray, newChunkPointer, remainingChunkLengthIfLastChunk, nextFreeChunkPointer);
         writeUint16(pageArray, previousNextFreeChunkPointerIndex, newChunkPointer);
       } else {
@@ -371,6 +398,8 @@ function writeEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Array
       writeUint16(pageArray, currentChunkPointer, HEADER_MORE_CHUNKS | bytesToWrite);
       pageArray.set(rest.slice(0, bytesToWrite), currentChunkPointer + 4);
       rest = rest.slice(bytesToWrite);
+
+      useFreeChunksSize(freeChunkLength);
 
       handleChunkPointer(currentChunkPointer);
       previousNextChunkPointerIndex = currentChunkPointer + 2;
@@ -485,11 +514,13 @@ function mergeFreeChunkInfos(freeChunkInfos: FreeChunkInfo[]): void {
 
 function writeFreeChunkInfos(pageArray: Uint8Array, freeChunkInfos: FreeChunkInfo[]): void {
   let previous: FreeChunkInfo | undefined = undefined;
+  let freeChunksSize = 0;
   for (const freeChunkInfo of freeChunkInfos) {
     if (freeChunkInfo.obsolete) {
       // do not write obsolete ones
       continue;
     }
+    freeChunksSize += freeChunkInfo.length;
     if (!previous) {
       // first iteration
       writeUint16(pageArray, FREE_CHUNKS_POINTER, freeChunkInfo.startIndex);
@@ -499,6 +530,7 @@ function writeFreeChunkInfos(pageArray: Uint8Array, freeChunkInfos: FreeChunkInf
     }
     previous = freeChunkInfo;
   }
+
   if (!previous) {
     // freeChunkInfos was empty
     writeUint16(pageArray, FREE_CHUNKS_POINTER, 0);
@@ -506,6 +538,8 @@ function writeFreeChunkInfos(pageArray: Uint8Array, freeChunkInfos: FreeChunkInf
     // write the last chunk
     writeFreeChunkLengthAndNext(pageArray, previous.startIndex, previous.length, 0);
   }
+
+  writeUint16(pageArray, FREE_CHUNKS_SIZE, freeChunksSize);
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { insertPageEntry, readAllPageEntries, removePageEntry } from "./pageEntries";
+import { insertPageEntry, readAllPageEntries, readPageEntriesFreeSpace, removePageEntry } from "./pageEntries";
 
 // some copied constants
 const FREE_CHUNKS_POINTER = 3;
@@ -45,12 +45,16 @@ describe("pageEntries", () => {
     const pageArray = new Uint8Array(4000);
     const dataView = new DataView(pageArray.buffer);
 
+    const startFreeSpace = readPageEntriesFreeSpace(pageArray);
+    expect(startFreeSpace).toBeGreaterThan(0);
+
     const entries: Uint8Array[] = [];
     const count = 20;
     for (let i = 0; i < count; i++) {
       const entry = Uint8Array.from([i, 0, 1, 2, 3, 4, 5]);
       expect(insertPageEntry(pageArray, entry)).toBe(true);
       entries.push(entry);
+      expect(readPageEntriesFreeSpace(pageArray)).toBeLessThan(startFreeSpace);
     }
 
     expect(readAllPageEntries(pageArray)).toEqual(entries);
@@ -76,5 +80,6 @@ describe("pageEntries", () => {
     expect(readAllPageEntries(pageArray)).toEqual([]);
     // no free chunks exist
     expect(dataView.getUint16(FREE_CHUNKS_POINTER)).toBe(0);
+    expect(readPageEntriesFreeSpace(pageArray)).toBe(startFreeSpace);
   });
 });
