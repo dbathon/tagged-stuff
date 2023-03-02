@@ -3,6 +3,7 @@ import { compareUint8Arrays } from "./compareUint8Arrays";
 /**
  * The functions in this file allow treating "page data" (Uint8Array) like a sorted set of byte arrays (of up to 2000 bytes)...
  * The slightly complicated layout of the entries is to allow small diffs (bytes change "as little as possible").
+ * The returned entries are always independent "copies" and don't share the ArrayBuffer with the pageArray.
  *
  * Page layout:
  * If the first byte is 0, then the page is just considered empty. Otherwise it is the "layout version" (currently always 1).
@@ -141,7 +142,7 @@ function readChunks(pageArray: Uint8Array, headerPointer: number): Uint8Array {
       pageArray,
       currentHeaderPointer
     );
-    const chunk = pageArray.slice(bytesStart, bytesStart + length);
+    const chunk = pageArray.subarray(bytesStart, bytesStart + length);
     result = result ? concat(result, chunk) : chunk;
     if (nextHeaderPointer === undefined) {
       return result;
@@ -154,13 +155,18 @@ function readEntry(
   pageArray: Uint8Array,
   entryCount: number,
   entryNumber: number,
-  entryCache: Uint8Array[]
+  entryCache: Uint8Array[],
+  copyRequired: boolean
 ): Uint8Array {
   if (entryNumber < 0 || entryNumber >= entryCount) {
     throw new Error("invalid entryNumber: " + entryNumber);
   }
-  const cachedResult = entryCache[entryNumber];
+  let cachedResult = entryCache[entryNumber];
   if (cachedResult) {
+    if (copyRequired && cachedResult.buffer === pageArray.buffer) {
+      cachedResult = cachedResult.slice();
+      entryCache[entryNumber] = cachedResult;
+    }
     return cachedResult;
   }
   const headerPointer = readUint16(pageArray, getEntryPointerIndex(entryNumber));
@@ -173,11 +179,11 @@ function readEntry(
       const prefixAfter = (pageArray[headerPointer] & HEADER_USE_PREFIX_AFTER) !== 0;
       const [length, _, nextHeaderPointer] = readLengthBytesStartAndNextHeaderPointer(pageArray, headerPointer);
       // TODO: improve this by not reading full entries where possible
-      const otherEntry = readEntry(pageArray, entryCount, entryNumber + (prefixAfter ? 1 : -1), entryCache);
+      const otherEntry = readEntry(pageArray, entryCount, entryNumber + (prefixAfter ? 1 : -1), entryCache, false);
       if (otherEntry.length < length) {
         throw new Error("otherEntry is too short for prefix length: " + otherEntry.length + ", " + length);
       }
-      const prefixChunk = otherEntry.slice(0, length);
+      const prefixChunk = otherEntry.subarray(0, length);
       if (nextHeaderPointer !== undefined) {
         result = concat(prefixChunk, readChunks(pageArray, nextHeaderPointer));
       } else {
@@ -186,6 +192,9 @@ function readEntry(
     } else {
       result = readChunks(pageArray, headerPointer);
     }
+  }
+  if (copyRequired && result.buffer === pageArray.buffer) {
+    result = result.slice();
   }
   entryCache[entryNumber] = result;
   return result;
@@ -196,7 +205,7 @@ export function readAllPageEntries(pageArray: Uint8Array): Uint8Array[] {
   const entryCount = readPageEntriesCount(pageArray);
   const entryCache: Uint8Array[] = [];
   for (let i = 0; i < entryCount; i++) {
-    result.push(readEntry(pageArray, entryCount, i, entryCache));
+    result.push(readEntry(pageArray, entryCount, i, entryCache, true));
   }
   return result;
 }
@@ -204,7 +213,7 @@ export function readAllPageEntries(pageArray: Uint8Array): Uint8Array[] {
 export function readPageEntryByNumber(pageArray: Uint8Array, entryNumber: number): Uint8Array {
   const entryCount = readPageEntriesCount(pageArray);
   const entryCache: Uint8Array[] = [];
-  return readEntry(pageArray, entryCount, entryNumber, entryCache);
+  return readEntry(pageArray, entryCount, entryNumber, entryCache, true);
 }
 
 /**
@@ -225,7 +234,7 @@ function findEntryNumber(
 
   while (right >= left) {
     const currentEntryNumber = (left + right) >> 1;
-    const currentEntry = readEntry(pageArray, entryCount, currentEntryNumber, entryCache);
+    const currentEntry = readEntry(pageArray, entryCount, currentEntryNumber, entryCache, false);
     const compareResult = compareUint8Arrays(entry, currentEntry);
     if (compareResult === 0) {
       // found the entry
@@ -406,8 +415,8 @@ function writeEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Array
       // write as much as possible
       const bytesToWrite = freeChunkLength - 4;
       writeUint16(pageArray, currentChunkPointer, HEADER_MORE_CHUNKS | bytesToWrite);
-      pageArray.set(rest.slice(0, bytesToWrite), currentChunkPointer + 4);
-      rest = rest.slice(bytesToWrite);
+      pageArray.set(rest.subarray(0, bytesToWrite), currentChunkPointer + 4);
+      rest = rest.subarray(bytesToWrite);
 
       useFreeChunksSize(freeChunkLength);
 
