@@ -422,7 +422,7 @@ function writeEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Array
   let previousNextChunkPointerIndex: number | undefined = undefined;
   function handleChunkPointer(chunkPointer: number): number {
     if (previousNextChunkPointerIndex !== undefined) {
-      pageArray[previousNextChunkPointerIndex] = chunkPointer;
+      writeUint16(pageArray, previousNextChunkPointerIndex, chunkPointer);
       previousNextChunkPointerIndex = undefined;
     }
     if (entryPointer === undefined) {
