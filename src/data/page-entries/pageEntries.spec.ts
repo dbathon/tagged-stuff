@@ -106,7 +106,7 @@ describe("pageEntries", () => {
     }
 
     const entries: Uint8Array[] = [];
-    const shortCount = 40;
+    const shortCount = 50;
     const shortLength = 10;
     for (let i = 0; i < shortCount; i++) {
       const entry = makeEntry(i, shortLength);

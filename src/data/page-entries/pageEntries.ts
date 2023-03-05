@@ -370,46 +370,20 @@ function readFreeChunkLengthAndNext(pageArray: Uint8Array, chunkPointer: number)
   return [length, nextChunkPointer];
 }
 
-function remainingBytes(chunkLength: number, requiredBytes: number): number {
-  if (chunkLength - 2 >= requiredBytes) {
-    return 0;
-  }
-  if (chunkLength <= 4) {
-    // this chunk cannot be used
-    return requiredBytes;
-  }
-  return requiredBytes - (chunkLength - 4);
-}
-
-function enoughBytesAvailable(pageArray: Uint8Array, entryCount: number, entryLength: number): boolean {
+function tryWriteEntry(
+  pageArray: Uint8Array,
+  entryCount: number,
+  entry: Uint8Array,
+  onlyOneExactFreeChunkAllowed: boolean
+): number | undefined {
   // allow one extra space for the new entry entry
   const freeSpaceStart = getEntryPointerIndex(entryCount + 1);
   const freeSpaceEnd = readUint16(pageArray, FREE_SPACE_END_POINTER);
   if (freeSpaceStart > freeSpaceEnd) {
     // there is no space for another entry in the entries array
-    return false;
+    return undefined;
   }
-
-  let remainingRequiredBytes = entryLength;
-  // first check the free space (even though we will use the chunks first), because it is faster
-  remainingRequiredBytes = remainingBytes(freeSpaceEnd - freeSpaceStart, remainingRequiredBytes);
-  if (remainingRequiredBytes <= 0) {
-    return true;
-  }
-
-  let currentChunkPointer = readUint16(pageArray, FREE_CHUNKS_POINTER);
-  while (currentChunkPointer > 0) {
-    const [length, nextChunkPointer] = readFreeChunkLengthAndNext(pageArray, currentChunkPointer);
-    remainingRequiredBytes = remainingBytes(length, remainingRequiredBytes);
-    if (remainingRequiredBytes <= 0) {
-      return true;
-    }
-    currentChunkPointer = nextChunkPointer;
-  }
-  return false;
-}
-
-function writeEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Array): number {
+  const writeTasks: (() => void)[] = [];
   let rest = entry;
 
   let entryPointer: number | undefined = undefined;
@@ -442,8 +416,14 @@ function writeEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Array
     const restLength = rest.length;
     const usedBytesIfLastChunk = restLength + 2;
     const remainingChunkLengthIfLastChunk = freeChunkLength - usedBytesIfLastChunk;
-    if (remainingChunkLengthIfLastChunk === 0 || remainingChunkLengthIfLastChunk >= FREE_CHUNK_MIN_LENGTH) {
+    if (
+      remainingChunkLengthIfLastChunk === 0 ||
+      (!onlyOneExactFreeChunkAllowed && remainingChunkLengthIfLastChunk >= FREE_CHUNK_MIN_LENGTH)
+    ) {
       // it is the last chunk
+      // execute potential previous writes
+      writeTasks.forEach((task) => task());
+
       writeUint16(pageArray, currentChunkPointer, restLength);
       pageArray.set(rest, currentChunkPointer + 2);
 
@@ -459,17 +439,21 @@ function writeEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Array
       }
 
       return handleChunkPointer(currentChunkPointer);
-    } else if (freeChunkLength > 4) {
+    } else if (!onlyOneExactFreeChunkAllowed && freeChunkLength > 4) {
       // write as much as possible
-      const bytesToWrite = freeChunkLength - 4;
-      writeUint16(pageArray, currentChunkPointer, HEADER_MORE_CHUNKS | bytesToWrite);
-      pageArray.set(rest.subarray(0, bytesToWrite), currentChunkPointer + 4);
-      rest = rest.subarray(bytesToWrite);
+      const bytesToWriteLength = freeChunkLength - 4;
+      const bytesToWrite = rest.subarray(0, bytesToWriteLength);
+      const chunkPointerForTask = currentChunkPointer;
+      writeTasks.push(() => {
+        writeUint16(pageArray, chunkPointerForTask, HEADER_MORE_CHUNKS | bytesToWriteLength);
+        pageArray.set(bytesToWrite, chunkPointerForTask + 4);
 
-      useFreeChunksSize(freeChunkLength);
+        useFreeChunksSize(freeChunkLength);
 
-      handleChunkPointer(currentChunkPointer);
-      previousNextChunkPointerIndex = currentChunkPointer + 2;
+        handleChunkPointer(chunkPointerForTask);
+        previousNextChunkPointerIndex = chunkPointerForTask + 2;
+      });
+      rest = rest.subarray(bytesToWriteLength);
     } else {
       // this chunk cannot be used in this case
       previousNextFreeChunkPointerIndex =
@@ -479,17 +463,24 @@ function writeEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Array
     currentChunkPointer = nextFreeChunkPointer;
   }
 
-  // free chunks were not sufficient, so use the free space
+  // free chunks were not sufficient, so use the free space if possible
   {
-    // allow one extra space for the new entry entry
-    const freeSpaceStart = getEntryPointerIndex(entryCount + 1);
-    const freeSpaceEnd = readUint16(pageArray, FREE_SPACE_END_POINTER);
     const restLength = rest.length;
     currentChunkPointer = freeSpaceEnd - 2 - restLength;
     if (currentChunkPointer < freeSpaceStart) {
-      // should not happen enoughBytesAvailable() should be called before this method
-      throw new Error("not enough space available");
+      // not enough space
+      return undefined;
     }
+    if (onlyOneExactFreeChunkAllowed) {
+      // only use a chunk from the free space in this case if there is more free space than free chunks
+      // this avoids unnecessarily removing space for further entries in the entries array
+      if (readUint16(pageArray, FREE_CHUNKS_SIZE) > freeSpaceEnd - freeSpaceStart) {
+        return undefined;
+      }
+    }
+
+    // execute potential previous writes
+    writeTasks.forEach((task) => task());
 
     writeUint16(pageArray, currentChunkPointer, restLength);
     pageArray.set(rest, currentChunkPointer + 2);
@@ -525,11 +516,18 @@ export function insertPageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
     // just use 0 as header pointer
     headerPointer = 0;
   } else {
-    if (!enoughBytesAvailable(pageArray, entryCount, entry.length)) {
+    // first try to write it in one chunk (either one free chunk or in the free space)
+    let writeResult = tryWriteEntry(pageArray, entryCount, entry, true);
+    if (writeResult === undefined) {
+      // if one chunk is not possible, then try with multiple or partial chunks
+      writeResult = tryWriteEntry(pageArray, entryCount, entry, false);
+    }
+    if (writeResult === undefined) {
+      // could not write
       return false;
     }
 
-    headerPointer = writeEntry(pageArray, entryCount, entry);
+    headerPointer = writeResult;
   }
   // shift entries before inserting
   for (let i = entryCount; i > entryNumber; i--) {
