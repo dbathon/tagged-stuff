@@ -155,18 +155,13 @@ function readEntry(
   pageArray: Uint8Array,
   entryCount: number,
   entryNumber: number,
-  entryCache: Uint8Array[],
-  copyRequired: boolean
+  entryCache: Uint8Array[]
 ): Uint8Array {
   if (entryNumber < 0 || entryNumber >= entryCount) {
     throw new Error("invalid entryNumber: " + entryNumber);
   }
-  let cachedResult = entryCache[entryNumber];
+  const cachedResult = entryCache[entryNumber];
   if (cachedResult) {
-    if (copyRequired && cachedResult.buffer === pageArray.buffer) {
-      cachedResult = cachedResult.slice();
-      entryCache[entryNumber] = cachedResult;
-    }
     return cachedResult;
   }
   const headerPointer = readUint16(pageArray, getEntryPointerIndex(entryNumber));
@@ -179,7 +174,7 @@ function readEntry(
       const prefixAfter = (pageArray[headerPointer] & HEADER_USE_PREFIX_AFTER) !== 0;
       const [length, _, nextHeaderPointer] = readLengthBytesStartAndNextHeaderPointer(pageArray, headerPointer);
       // TODO: improve this by not reading full entries where possible
-      const otherEntry = readEntry(pageArray, entryCount, entryNumber + (prefixAfter ? 1 : -1), entryCache, false);
+      const otherEntry = readEntry(pageArray, entryCount, entryNumber + (prefixAfter ? 1 : -1), entryCache);
       if (otherEntry.length < length) {
         throw new Error("otherEntry is too short for prefix length: " + otherEntry.length + ", " + length);
       }
@@ -193,9 +188,6 @@ function readEntry(
       result = readChunks(pageArray, headerPointer);
     }
   }
-  if (copyRequired && result.buffer === pageArray.buffer) {
-    result = result.slice();
-  }
   entryCache[entryNumber] = result;
   return result;
 }
@@ -205,7 +197,7 @@ export function readAllPageEntries(pageArray: Uint8Array): Uint8Array[] {
   const entryCount = readPageEntriesCount(pageArray);
   const entryCache: Uint8Array[] = [];
   for (let i = 0; i < entryCount; i++) {
-    result.push(readEntry(pageArray, entryCount, i, entryCache, true));
+    result.push(readEntry(pageArray, entryCount, i, entryCache));
   }
   return result;
 }
@@ -213,7 +205,7 @@ export function readAllPageEntries(pageArray: Uint8Array): Uint8Array[] {
 export function readPageEntryByNumber(pageArray: Uint8Array, entryNumber: number): Uint8Array {
   const entryCount = readPageEntriesCount(pageArray);
   const entryCache: Uint8Array[] = [];
-  return readEntry(pageArray, entryCount, entryNumber, entryCache, true);
+  return readEntry(pageArray, entryCount, entryNumber, entryCache);
 }
 
 /**
@@ -234,7 +226,7 @@ function findEntryNumber(
 
   while (right >= left) {
     const currentEntryNumber = (left + right) >> 1;
-    const currentEntry = readEntry(pageArray, entryCount, currentEntryNumber, entryCache, false);
+    const currentEntry = readEntry(pageArray, entryCount, currentEntryNumber, entryCache);
     const compareResult = compareUint8Arrays(entry, currentEntry);
     if (compareResult === 0) {
       // found the entry
@@ -278,7 +270,7 @@ function scan(
   callback: (entry: Uint8Array, entryNumber: number) => boolean
 ): void {
   for (let entryNumber = startEntryNumber; entryNumber >= 0 && entryNumber < entryCount; entryNumber += direction) {
-    const entry = readEntry(pageArray, entryCount, entryNumber, entryCache, true);
+    const entry = readEntry(pageArray, entryCount, entryNumber, entryCache);
     if (!callback(entry, entryNumber)) {
       break;
     }
