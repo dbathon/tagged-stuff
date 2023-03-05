@@ -3,7 +3,9 @@ import { compareUint8Arrays } from "./compareUint8Arrays";
 /**
  * The functions in this file allow treating "page data" (Uint8Array) like a sorted set of byte arrays (of up to 2000 bytes)...
  * The slightly complicated layout of the entries is to allow small diffs (bytes change "as little as possible").
- * The returned entries are always independent "copies" and don't share the ArrayBuffer with the pageArray.
+ * The returned entries often share the underlying ArrayBuffer with the passed pageArray (to avoid unnecessary copies).
+ * So the returned entries can change if pageArray is modified, if necessary the caller should copy the returned
+ * entries.
  *
  * Page layout:
  * If the first byte is 0, then the page is just considered empty. Otherwise it is the "layout version" (currently always 1).
