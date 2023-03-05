@@ -667,3 +667,37 @@ export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
 
   return true;
 }
+
+export function debugPageEntriesChunks(pageArray: Uint8Array): [number, number, string][] {
+  const entryCount = readPageEntriesCount(pageArray);
+  if (entryCount === 0 && pageArray[0] === 0) {
+    return [];
+  }
+  const result: [number, number, string][] = [];
+  const freeSpaceStart = getEntryPointerIndex(entryCount);
+  const freeSpaceEnd = readUint16(pageArray, FREE_SPACE_END_POINTER);
+  result.push([freeSpaceStart, freeSpaceEnd, "free space"]);
+  readFreeChunkInfos(pageArray).forEach((info, index) =>
+    result.push([info.startIndex, info.endIndex, "free chunk " + index])
+  );
+  for (let i = 0; i < entryCount; i++) {
+    let headerPointer: number | undefined = readUint16(pageArray, getEntryPointerIndex(i));
+    let chunkIndex = 0;
+    while (headerPointer) {
+      const [length, bytesStart, nextHeaderPointer] = readLengthBytesStartAndNextHeaderPointer(
+        pageArray,
+        headerPointer
+      );
+      if (readUsePrefix(pageArray, headerPointer)) {
+        result.push([headerPointer, bytesStart, "entry chunk " + i + "-" + chunkIndex + " (prefix)"]);
+      } else {
+        result.push([headerPointer, bytesStart + length, "entry chunk " + i + "-" + chunkIndex]);
+      }
+      headerPointer = nextHeaderPointer;
+      chunkIndex++;
+    }
+  }
+
+  result.sort((a, b) => a[0] - b[0]);
+  return result;
+}
