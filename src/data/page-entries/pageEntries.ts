@@ -151,6 +151,8 @@ function readChunks(pageArray: Uint8Array, headerPointer: number): Uint8Array {
   }
 }
 
+const SHARED_EMPTY_ARRAY = new Uint8Array(0);
+
 function readEntry(
   pageArray: Uint8Array,
   entryCount: number,
@@ -168,7 +170,7 @@ function readEntry(
   let result: Uint8Array;
   if (headerPointer === 0) {
     // special case for empty array
-    result = new Uint8Array(0);
+    result = SHARED_EMPTY_ARRAY;
   } else {
     if (readUsePrefix(pageArray, headerPointer)) {
       const prefixAfter = (pageArray[headerPointer] & HEADER_USE_PREFIX_AFTER) !== 0;
