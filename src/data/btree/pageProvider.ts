@@ -14,7 +14,7 @@ export interface PageProviderForWrite {
   getPage(pageNumber: number): Uint8Array;
 
   /**
-   * This is like getPage(), but this message is used, when the page will be updated and not just read.
+   * This is like getPage(), but this method is used, when the page will be updated and not just read.
    *
    * @returns the page
    */
