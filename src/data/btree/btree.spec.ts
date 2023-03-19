@@ -190,10 +190,11 @@ describe("btree", () => {
 
     const entries: Uint8Array[] = [];
 
-    // do inserts in a "random" order
+    // do inserts in a "random" order and with "random" lengths
     let cur = 1;
     for (let i = 0; i < 150; i++) {
-      const newEntry = makeEntry(cur, 64);
+      const length = 4 + (Math.abs(cur) % 80);
+      const newEntry = makeEntry(cur, length);
       entries.push(newEntry);
       entries.sort(compareUint8Arrays);
       expect(insertBtreeEntry(pageProvider, rootPageNumber, newEntry)).toBe(true);
