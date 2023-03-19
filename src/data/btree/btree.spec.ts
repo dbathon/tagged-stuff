@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { compareUint8Arrays } from "../page-entries/compareUint8Arrays";
 import { insertPageEntry } from "../page-entries/pageEntries";
 import { allocateAndInitBtreeRootPage, insertBtreeEntry, scanBtreeEntries, scanBtreeEntriesReverse } from "./btree";
 import { PageProvider, PageProviderForWrite } from "./pageProvider";
@@ -76,7 +77,7 @@ function createPageProviderForWrite(pageSize: number): PageProviderForWriteWithE
 
 function testScanResult(
   pageProvider: PageProvider,
-  params: { forward?: boolean; startEntry?: number[]; abort?: boolean },
+  params: { forward?: boolean; startEntry?: ArrayLike<number>; abort?: boolean },
   expected: ArrayLike<number>[],
   rootPageNumber = 0
 ): void {
@@ -169,10 +170,18 @@ describe("btree", () => {
     expect(pageProvider.releasedPageNumbers.size).toBe(0);
   });
 
-  function makeEntry(number: number, length: number): Uint8Array {
+  function makeEntry(int32: number, length: number): Uint8Array {
     const result = new Uint8Array(length);
-    new DataView(result.buffer).setUint32(0, number);
+    new DataView(result.buffer).setInt32(0, int32);
     return result;
+  }
+
+  function xorShift32(x: number): number {
+    /* Algorithm "xor" from p. 4 of Marsaglia, "Xorshift RNGs" */
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    return x;
   }
 
   test("insert larger entries", () => {
@@ -181,15 +190,37 @@ describe("btree", () => {
 
     const entries: Uint8Array[] = [];
 
-    for (let i = 0; i < 50; i++) {
-      const newEntry = makeEntry(i, 64);
+    // do inserts in a "random" order
+    let cur = 1;
+    for (let i = 0; i < 150; i++) {
+      const newEntry = makeEntry(cur, 64);
       entries.push(newEntry);
+      entries.sort(compareUint8Arrays);
       expect(insertBtreeEntry(pageProvider, rootPageNumber, newEntry)).toBe(true);
       expect(insertBtreeEntry(pageProvider, rootPageNumber, newEntry)).toBe(false);
+
       testScanResult(pageProvider.getPage, { forward: true }, entries, rootPageNumber);
+      cur = xorShift32(cur);
+    }
+
+    // test partial scans
+    for (let i = 0; i < entries.length; i++) {
+      testScanResult(pageProvider.getPage, { forward: true, startEntry: entries[i] }, entries.slice(i), rootPageNumber);
+      testScanResult(
+        pageProvider.getPage,
+        { forward: false, startEntry: entries[i] },
+        entries.slice(0, i + 1).reverse(),
+        rootPageNumber
+      );
     }
 
     expect(pageProvider.pages.length).toBeGreaterThan(1);
     expect(pageProvider.releasedPageNumbers.size).toBe(0);
+
+    // check that the first too layers are inner pages
+    const rootPage = pageProvider.getPage(rootPageNumber);
+    expect(rootPage[0]).toBe(0b10010);
+    const childPage = pageProvider.getPage(new DataView(rootPage.buffer, rootPage.byteOffset + 1).getUint32(0));
+    expect(childPage[0]).toBe(0b10010);
   });
 });

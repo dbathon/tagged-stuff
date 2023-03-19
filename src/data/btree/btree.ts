@@ -3,6 +3,7 @@ import {
   containsPageEntry,
   getIndexOfPageEntry,
   insertPageEntry,
+  readAllPageEntries,
   readPageEntriesCount,
   removePageEntry,
   resetPageEntries,
@@ -186,9 +187,18 @@ export function allocateAndInitBtreeRootPage(pageProvider: PageProviderForWrite)
   return allocateAndInitPage(pageProvider, NODE_TYPE_LEAF);
 }
 
-function insertPageEntryWithThrow(pageArray: Uint8Array, entry: Uint8Array): void {
+function insertPageEntryWithThrow(pageArray: Uint8Array, entry: Uint8Array, tryRewrite = false): void {
   if (!insertPageEntry(pageArray, entry)) {
-    throw new Error("entry insert failed unexpectedly");
+    if (!tryRewrite) {
+      throw new Error("entry insert failed unexpectedly");
+    }
+    // reset the page and insert all entries again (including the new entry) to remove potential "fragmentation"
+    const oldEntries = readAllPageEntries(pageArray).map((entry) => Uint8Array.from(entry));
+    resetPageEntries(pageArray);
+    for (const oldEntry of oldEntries) {
+      insertPageEntryWithThrow(pageArray, oldEntry);
+    }
+    insertPageEntryWithThrow(pageArray, entry);
   }
 }
 
@@ -212,6 +222,18 @@ interface NewChildPageResult {
   childPageNumber: number;
 }
 
+function getSortedEntriesWithNewEntry(entriesPageArray: Uint8Array, newEntry: Uint8Array): Uint8Array[] {
+  const entries = [newEntry];
+  scanPageEntries(entriesPageArray, undefined, (entry) => {
+    // copy the array to make sure it stays stable
+    entries.push(Uint8Array.from(entry));
+    return true;
+  });
+  // sort to move newEntry to the correct place
+  entries.sort(compareUint8Arrays);
+  return entries;
+}
+
 /**
  * This implementation might not be the most efficient, but it is relatively clear and simple...
  */
@@ -220,14 +242,7 @@ function splitLeafPageAndInsert(
   leftEntriesPageArrayForUpdate: Uint8Array,
   newEntry: Uint8Array
 ): NewChildPageResult {
-  const allEntries = [newEntry];
-  scanPageEntries(leftEntriesPageArrayForUpdate, undefined, (entry) => {
-    // copy the array to make sure it stays stable
-    allEntries.push(Uint8Array.from(entry));
-    return true;
-  });
-  // sort to move newEntry to the correct place
-  allEntries.sort(compareUint8Arrays);
+  const allEntries = getSortedEntriesWithNewEntry(leftEntriesPageArrayForUpdate, newEntry);
 
   const totalCount = allEntries.length;
   const rightStartIndex = findSplitIndex(allEntries);
@@ -248,14 +263,7 @@ function splitLeafPageAndInsert(
   const newEntryIndex = allEntries.indexOf(newEntry);
   if (newEntryIndex < rightStartIndex) {
     // insert newEntry into the left page
-    const insertSuccess = insertPageEntry(leftEntriesPageArrayForUpdate, newEntry);
-    if (!insertSuccess) {
-      // should be rare, but might happen because of "fragmentation" => reset the page and insert all entries again
-      resetPageEntries(leftEntriesPageArrayForUpdate);
-      for (let i = 0; i < rightStartIndex; i++) {
-        insertPageEntryWithThrow(leftEntriesPageArrayForUpdate, allEntries[i]);
-      }
-    }
+    insertPageEntryWithThrow(leftEntriesPageArrayForUpdate, newEntry, true);
   }
 
   // sanity check
@@ -283,6 +291,75 @@ function splitLeafPageAndInsert(
   }
 }
 
+/**
+ * This implementation might not be the most efficient, but it is relatively clear and simple...
+ */
+function splitInnerPageAndInsert(
+  pageProvider: PageProviderForWrite,
+  leftPageArrayForUpdate: Uint8Array,
+  leftEntriesPageArrayForUpdate: Uint8Array,
+  childInsertResult: NewChildPageResult
+): NewChildPageResult {
+  const allEntries = getSortedEntriesWithNewEntry(leftEntriesPageArrayForUpdate, childInsertResult.lowerBound);
+
+  // totalCount is also the old child count
+  const totalCount = allEntries.length;
+  if (totalCount < 3) {
+    throw new Error("cannot split inner page with less then 3 entries");
+  }
+  const allChildPageNumbers: number[] = [];
+  const leftChildPageNumbersDataView = getInnerNodeChildPageNumbersDataView(leftPageArrayForUpdate);
+  for (let i = 0; i < totalCount; i++) {
+    allChildPageNumbers.push(leftChildPageNumbersDataView.getUint32(i << 2));
+  }
+  const newEntryIndex = allEntries.indexOf(childInsertResult.lowerBound);
+  // insert the new child number
+  allChildPageNumbers.splice(newEntryIndex + 1, 0, childInsertResult.childPageNumber);
+
+  const splitIndex = findSplitIndex(allEntries);
+  const middleIndex = splitIndex > 1 ? splitIndex - 1 : splitIndex;
+
+  const rightStartIndex = middleIndex + 1;
+  const rightPageNumber = allocateAndInitPage(pageProvider, NODE_TYPE_INNER);
+  const rightPageArrayForUpdate = pageProvider.getPageForUpdate(rightPageNumber);
+  const rightEntriesPageArrayForUpdate = getEntriesPageArray(rightPageArrayForUpdate, NODE_TYPE_INNER);
+
+  // insert entries into right page
+  for (let i = rightStartIndex; i < totalCount; i++) {
+    insertPageEntryWithThrow(rightEntriesPageArrayForUpdate, allEntries[i]);
+  }
+  // write child page numbers in right page
+  const rightChildPageNumbersDataView = getInnerNodeChildPageNumbersDataView(rightPageArrayForUpdate);
+  for (let i = rightStartIndex; i <= totalCount; i++) {
+    rightChildPageNumbersDataView.setUint32((i - rightStartIndex) << 2, allChildPageNumbers[i]);
+  }
+
+  // remove entries from left page in reverse order
+  for (let i = totalCount - 1; i >= middleIndex; i--) {
+    removePageEntry(leftEntriesPageArrayForUpdate, allEntries[i]);
+  }
+  if (newEntryIndex < middleIndex) {
+    // insert lowerBound into the left page
+    insertPageEntryWithThrow(leftEntriesPageArrayForUpdate, childInsertResult.lowerBound, true);
+    // in this case we also need to rewrite some child page numbers
+    for (let i = newEntryIndex + 1; i <= middleIndex; i++) {
+      leftChildPageNumbersDataView.setUint32(i << 2, allChildPageNumbers[i]);
+    }
+  }
+
+  // sanity check
+  const leftCount = readPageEntriesCount(leftEntriesPageArrayForUpdate);
+  const rightCount = readPageEntriesCount(rightEntriesPageArrayForUpdate);
+  if (leftCount < 1 || rightCount < 1 || leftCount + rightCount !== totalCount - 1) {
+    throw new Error("unexpected counts: " + leftCount + ", " + rightCount + ", " + totalCount);
+  }
+
+  return {
+    lowerBound: allEntries[middleIndex],
+    childPageNumber: rightPageNumber,
+  };
+}
+
 function writeChildPageNumber(
   childPageNumbersDataView: DataView,
   childPageNumber: number,
@@ -295,6 +372,46 @@ function writeChildPageNumber(
   }
   // write the childPageNumber
   childPageNumbersDataView.setUint32(index << 2, childPageNumber);
+}
+
+function finishRootPageSplit(
+  pageProvider: PageProviderForWrite,
+  rootPageArrayForUpdate: Uint8Array,
+  rootPageArrayBefore: Uint8Array,
+  splitResult: NewChildPageResult
+): void {
+  // we want to just keep the root page, so allocate a new page for the left child
+  const nodeType = getNodeType(rootPageArrayForUpdate);
+  const leftChildPageNumber = allocateAndInitPage(pageProvider, nodeType);
+  const leftChildPageArrayForUpdate = pageProvider.getPageForUpdate(leftChildPageNumber);
+  const leftChildEntriesPageArrayForUpdate = getEntriesPageArray(leftChildPageArrayForUpdate, nodeType);
+  // copy the entries
+  scanPageEntries(getEntriesPageArray(rootPageArrayForUpdate, nodeType), undefined, (entryToCopy) => {
+    insertPageEntryWithThrow(leftChildEntriesPageArrayForUpdate, entryToCopy);
+    return true;
+  });
+  // copy the child page numbers if necessary
+  if (nodeType === NODE_TYPE_INNER) {
+    const childPageNumbersCount = readPageEntriesCount(leftChildEntriesPageArrayForUpdate) + 1;
+    const bytesToCopy = childPageNumbersCount << 2;
+    const childPageNumbersDataView = getInnerNodeChildPageNumbersDataView(rootPageArrayForUpdate);
+    if (bytesToCopy > childPageNumbersDataView.byteLength) {
+      throw new Error("unexpected number of child page numbers");
+    }
+    // create a Uint8Array view to be able to use set
+    leftChildPageArrayForUpdate.set(
+      new Uint8Array(childPageNumbersDataView.buffer, childPageNumbersDataView.byteOffset, bytesToCopy),
+      1
+    );
+  }
+
+  // now reset the root page and convert it into an inner page with two children
+  rootPageArrayForUpdate.set(rootPageArrayBefore);
+  initPageArray(rootPageArrayForUpdate, NODE_TYPE_INNER);
+  insertPageEntryWithThrow(getEntriesPageArray(rootPageArrayForUpdate, NODE_TYPE_INNER), splitResult.lowerBound);
+  const childPageNumbersDataView = getInnerNodeChildPageNumbersDataView(rootPageArrayForUpdate);
+  childPageNumbersDataView.setUint32(0, leftChildPageNumber);
+  childPageNumbersDataView.setUint32(4, splitResult.childPageNumber);
 }
 
 function insert(
@@ -332,23 +449,7 @@ function insert(
     }
     const splitResult = splitLeafPageAndInsert(pageProvider, entriesPageArrayForUpdate, entry);
     if (rootPageArrayBefore) {
-      // we want to just keep the root page, so allocate a new page for the left child
-      const leftChildPageNumber = allocateAndInitPage(pageProvider, NODE_TYPE_LEAF);
-      const leftChildEntriesPageArrayForUpdate = getEntriesPageArray(
-        pageProvider.getPageForUpdate(leftChildPageNumber),
-        NODE_TYPE_LEAF
-      );
-      scanPageEntries(entriesPageArrayForUpdate, undefined, (entryToCopy) => {
-        insertPageEntryWithThrow(leftChildEntriesPageArrayForUpdate, entryToCopy);
-        return true;
-      });
-      // now reset the root page and convert it into an inner page
-      pageArrayForUpdate.set(rootPageArrayBefore);
-      initPageArray(pageArrayForUpdate, NODE_TYPE_INNER);
-      insertPageEntryWithThrow(getEntriesPageArray(pageArrayForUpdate, NODE_TYPE_INNER), splitResult.lowerBound);
-      const childPageNumbersDataView = getInnerNodeChildPageNumbersDataView(pageArrayForUpdate);
-      childPageNumbersDataView.setUint32(0, leftChildPageNumber);
-      childPageNumbersDataView.setUint32(4, splitResult.childPageNumber);
+      finishRootPageSplit(pageProvider, pageArrayForUpdate, rootPageArrayBefore, splitResult);
       return true;
     } else {
       return splitResult;
@@ -388,13 +489,30 @@ function insert(
         );
         return true;
       } else {
+        // we need to split the page
         if (countBefore < 2) {
           // this should not happen, but potentially could because of page entry fragmentation?...
           // TODO: we could potentially rewrite the pages or even split anyway and have a page that just has a child pointer...
           throw new Error("cannot split page with less than two entries");
         }
 
-        throw new Error("TODO: splitting of inner node not implemented yet");
+        let rootPageArrayBefore: Uint8Array | undefined = undefined;
+        if (isRootPage) {
+          // copy the page, before the split to minimize the diff
+          rootPageArrayBefore = Uint8Array.from(pageArrayForUpdate);
+        }
+        const splitResult = splitInnerPageAndInsert(
+          pageProvider,
+          pageArrayForUpdate,
+          entriesPageArrayForUpdate,
+          childInsertResult
+        );
+        if (rootPageArrayBefore) {
+          finishRootPageSplit(pageProvider, pageArrayForUpdate, rootPageArrayBefore, splitResult);
+          return true;
+        } else {
+          return splitResult;
+        }
       }
     }
   }
