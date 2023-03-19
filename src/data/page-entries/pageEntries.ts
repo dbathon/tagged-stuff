@@ -441,7 +441,11 @@ function tryWriteEntry(
       }
 
       return handleChunkPointer(currentChunkPointer);
-    } else if (!onlyOneExactFreeChunkAllowed && freeChunkLength > 4) {
+    } else if (
+      !onlyOneExactFreeChunkAllowed &&
+      freeChunkLength > 4 /* we need to write at least one byte */ &&
+      rest.length > freeChunkLength - 4 /* but we cannot write all bytes and then a next pointer */
+    ) {
       // write as much as possible
       const bytesToWriteLength = freeChunkLength - 4;
       const bytesToWrite = rest.subarray(0, bytesToWriteLength);
@@ -468,6 +472,9 @@ function tryWriteEntry(
   // free chunks were not sufficient, so use the free space if possible
   {
     const restLength = rest.length;
+    if (restLength === 0) {
+      throw new Error("rest is empty after free chunks loop");
+    }
     currentChunkPointer = freeSpaceEnd - 2 - restLength;
     if (currentChunkPointer < freeSpaceStart) {
       // not enough space
