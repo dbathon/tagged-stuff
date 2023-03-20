@@ -430,7 +430,7 @@ function insert(
       return false;
     }
     // ensure the size constraint
-    const maxLength = Math.min(entriesPageArray.length / 4, 2000);
+    const maxLength = Math.min(pageArray.length / 4, 2000);
     if (entry.length > maxLength) {
       throw new Error("entry is too large: " + entry.length);
     }
