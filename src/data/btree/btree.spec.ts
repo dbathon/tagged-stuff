@@ -152,6 +152,30 @@ describe("btree", () => {
     }
   });
 
+  test("inner pages with just one child", () => {
+    // this should usually not happen, but is allowed
+    const possibleMiddles = [[1, 0], [1, 1], [2], [2, 1], [3]];
+    for (const possibleMiddle of possibleMiddles) {
+      const pageProvider = createPageProvider([
+        innerPage([possibleMiddle], [1, 2], 400),
+        innerPage([], [3], 400),
+        innerPage([], [4], 400),
+        leafPage([[1]], 400),
+        leafPage([[3]], 400),
+      ]);
+      testScanForOneAndThreeEntries(pageProvider);
+    }
+  });
+
+  test("root page with just one child", () => {
+    // this should not happen, but is allowed
+    const possibleMiddles = [[1, 0], [1, 1], [2], [2, 1], [3]];
+    for (const possibleMiddle of possibleMiddles) {
+      const pageProvider = createPageProvider([innerPage([], [1], 400), leafPage([[1], [3]], 400)]);
+      testScanForOneAndThreeEntries(pageProvider);
+    }
+  });
+
   test("allocate and init", () => {
     const pageProvider = createPageProviderForWrite(400);
     const rootPageNumber = allocateAndInitBtreeRootPage(pageProvider);

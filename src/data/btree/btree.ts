@@ -116,9 +116,6 @@ function scan(
     }
     return aborted ? ABORTED : CONTINUE;
   } else {
-    if (entryCount < 1) {
-      throw new Error("no entries for inner page: " + entryCount);
-    }
     let startChildPageNumberIndex = forward ? 0 : entryCount;
     if (startEntry !== undefined) {
       if (forward) {
@@ -132,9 +129,6 @@ function scan(
           startChildPageNumberIndex = entryNumber + (compareResult === 0 ? 1 : 0);
           return false;
         });
-      }
-      if (startChildPageNumberIndex === -1) {
-        return CONTINUE;
       }
     }
 
