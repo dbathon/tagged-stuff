@@ -241,12 +241,17 @@ function getSortedEntriesWithNewEntry(entriesPageArray: Uint8Array, newEntry: Ui
 function splitLeafPageAndInsert(
   pageProvider: PageProviderForWrite,
   leftEntriesPageArrayForUpdate: Uint8Array,
-  newEntry: Uint8Array
+  newEntry: Uint8Array,
+  isRightMostSibling: boolean
 ): NewChildPageResult {
   const allEntries = getSortedEntriesWithNewEntry(leftEntriesPageArrayForUpdate, newEntry);
-
+  const newEntryIndex = allEntries.indexOf(newEntry);
   const totalCount = allEntries.length;
-  const rightStartIndex = findSplitIndex(allEntries);
+
+  // Optimization for mostly ascending inserts (this avoids leaving most pages half empty for those cases)
+  const onlyNewEntryInNewPage = isRightMostSibling && newEntryIndex === totalCount - 1;
+
+  const rightStartIndex = onlyNewEntryInNewPage ? newEntryIndex : findSplitIndex(allEntries);
   const rightPageNumber = allocateAndInitPage(pageProvider, PAGE_TYPE_LEAF);
   const rightEntriesPageArrayForUpdate = getEntriesPageArray(
     pageProvider.getPageForUpdate(rightPageNumber),
@@ -261,7 +266,6 @@ function splitLeafPageAndInsert(
   for (let i = totalCount - 1; i >= rightStartIndex; i--) {
     removePageEntry(leftEntriesPageArrayForUpdate, allEntries[i]);
   }
-  const newEntryIndex = allEntries.indexOf(newEntry);
   if (newEntryIndex < rightStartIndex) {
     // insert newEntry into the left page
     insertPageEntryWithThrow(leftEntriesPageArrayForUpdate, newEntry, true);
@@ -299,7 +303,8 @@ function splitInnerPageAndInsert(
   pageProvider: PageProviderForWrite,
   leftPageArrayForUpdate: Uint8Array,
   leftEntriesPageArrayForUpdate: Uint8Array,
-  childInsertResult: NewChildPageResult
+  childInsertResult: NewChildPageResult,
+  isRightMostSibling: boolean
 ): NewChildPageResult {
   const allEntries = getSortedEntriesWithNewEntry(leftEntriesPageArrayForUpdate, childInsertResult.lowerBound);
 
@@ -317,7 +322,10 @@ function splitInnerPageAndInsert(
   // insert the new child number
   allChildPageNumbers.splice(newEntryIndex + 1, 0, childInsertResult.childPageNumber);
 
-  const splitIndex = findSplitIndex(allEntries);
+  // Optimization for mostly ascending inserts (this avoids leaving most pages half empty for those cases)
+  const onlyNewEntryInNewPage = isRightMostSibling && newEntryIndex === totalCount - 1;
+
+  const splitIndex = onlyNewEntryInNewPage ? newEntryIndex : findSplitIndex(allEntries);
   const middleIndex = splitIndex > 1 ? splitIndex - 1 : splitIndex;
 
   const rightStartIndex = middleIndex + 1;
@@ -431,7 +439,8 @@ function insert(
   pageProvider: PageProviderForWrite,
   pageNumber: number,
   entry: Uint8Array,
-  isRootPage: boolean
+  isRootPage: boolean,
+  isRightMostSibling: boolean
 ): boolean | NewChildPageResult {
   const pageArray = pageProvider.getPage(pageNumber);
   const pageType = getPageType(pageArray);
@@ -460,7 +469,7 @@ function insert(
       // copy the page, before the split to minimize the diff
       rootPageArrayBefore = Uint8Array.from(pageArrayForUpdate);
     }
-    const splitResult = splitLeafPageAndInsert(pageProvider, entriesPageArrayForUpdate, entry);
+    const splitResult = splitLeafPageAndInsert(pageProvider, entriesPageArrayForUpdate, entry, isRightMostSibling);
     if (rootPageArrayBefore) {
       finishRootPageSplit(pageProvider, pageArrayForUpdate, rootPageArrayBefore, splitResult);
       return true;
@@ -470,7 +479,8 @@ function insert(
   } else {
     const childIndex = findChildIndex(entriesPageArray, entry);
     const childPageNumber = getInnerPageChildPageNumbersDataView(pageArray).getUint32(childIndex << 2);
-    const childInsertResult = insert(pageProvider, childPageNumber, entry, false);
+    const entriesCount = readPageEntriesCount(entriesPageArray);
+    const childInsertResult = insert(pageProvider, childPageNumber, entry, false, childIndex === entriesCount);
     if (typeof childInsertResult === "boolean") {
       return childInsertResult;
     } else {
@@ -514,7 +524,8 @@ function insert(
           pageProvider,
           pageArrayForUpdate,
           entriesPageArrayForUpdate,
-          childInsertResult
+          childInsertResult,
+          isRightMostSibling
         );
         if (rootPageArrayBefore) {
           finishRootPageSplit(pageProvider, pageArrayForUpdate, rootPageArrayBefore, splitResult);
@@ -532,7 +543,7 @@ export function insertBtreeEntry(
   rootPageNumber: number,
   entry: Uint8Array
 ): boolean {
-  const insertResult = insert(pageProvider, rootPageNumber, entry, true);
+  const insertResult = insert(pageProvider, rootPageNumber, entry, true, true);
   if (typeof insertResult !== "boolean") {
     throw new Error("insert on root page returned unexpected result");
   }
