@@ -1,7 +1,13 @@
 import { describe, expect, test } from "vitest";
 import { compareUint8Arrays } from "../page-entries/compareUint8Arrays";
 import { insertPageEntry } from "../page-entries/pageEntries";
-import { allocateAndInitBtreeRootPage, insertBtreeEntry, scanBtreeEntries, scanBtreeEntriesReverse } from "./btree";
+import {
+  allocateAndInitBtreeRootPage,
+  insertBtreeEntry,
+  removeBtreeEntry,
+  scanBtreeEntries,
+  scanBtreeEntriesReverse,
+} from "./btree";
 import { PageProvider, PageProviderForWrite } from "./pageProvider";
 
 function leafPage(entries: number[][], pageSize: number): Uint8Array {
@@ -223,5 +229,35 @@ describe("btree", () => {
     expect(rootPage[0]).toBe(0b10010);
     const childPage = pageProvider.getPage(new DataView(rootPage.buffer, rootPage.byteOffset + 1).getUint32(0));
     expect(childPage[0]).toBe(0b10010);
+  });
+
+  test("remove", () => {
+    const pageProvider = createPageProviderForWrite(400);
+    const rootPageNumber = allocateAndInitBtreeRootPage(pageProvider);
+
+    const entries: Uint8Array[] = [];
+    const count = 50;
+    const size = 40;
+    for (let i = 0; i < count; i++) {
+      const entry = makeEntry(i, size);
+      entries.push(entry);
+      expect(insertBtreeEntry(pageProvider, rootPageNumber, entry)).toBe(true);
+    }
+
+    testScanResult(pageProvider.getPage, { forward: true }, entries, rootPageNumber);
+
+    expect(pageProvider.pages.length).toBeGreaterThan(1);
+    expect(pageProvider.releasedPageNumbers.size).toBe(0);
+
+    // remove the entries again (in reverse order)
+    entries.reverse().forEach((entry) => {
+      expect(removeBtreeEntry(pageProvider, rootPageNumber, entry)).toBe(true);
+      expect(removeBtreeEntry(pageProvider, rootPageNumber, entry)).toBe(false);
+    });
+
+    testScanResult(pageProvider.getPage, { forward: true }, [], rootPageNumber);
+
+    expect(pageProvider.pages.length - pageProvider.releasedPageNumbers.size).toBe(1);
+    expect(pageProvider.releasedPageNumbers.size).toBeGreaterThan(0);
   });
 });
