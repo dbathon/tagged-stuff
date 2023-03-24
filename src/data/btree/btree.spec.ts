@@ -46,12 +46,13 @@ function createPageProvider(pageArrays: Uint8Array[]): PageProvider {
 }
 
 interface PageProviderForWriteWithExtra extends PageProviderForWrite {
+  clone(): PageProviderForWriteWithExtra;
   pages: Uint8Array[];
   releasedPageNumbers: Set<number>;
 }
 
-function createPageProviderForWrite(pageSize: number): PageProviderForWriteWithExtra {
-  const pages: Uint8Array[] = [];
+function createPageProviderForWrite(pageSize: number, ...initialPages: Uint8Array[]): PageProviderForWriteWithExtra {
+  const pages: Uint8Array[] = [...initialPages];
   const releasedPageNumbers = new Set<number>();
   function getPage(pageNumber: number): Uint8Array {
     const result = pages[pageNumber];
@@ -75,6 +76,12 @@ function createPageProviderForWrite(pageSize: number): PageProviderForWriteWithE
       // call get to ensure the page exists
       getPage(pageNumber);
       releasedPageNumbers.add(pageNumber);
+    },
+    clone() {
+      const result = createPageProviderForWrite(pageSize);
+      pages.forEach((page) => result.pages.push(Uint8Array.from(page)));
+      releasedPageNumbers.forEach((pageNumber) => result.releasedPageNumbers.add(pageNumber));
+      return result;
     },
     pages,
     releasedPageNumbers,
@@ -273,15 +280,50 @@ describe("btree", () => {
     expect(pageProvider.pages.length).toBeGreaterThan(1);
     expect(pageProvider.releasedPageNumbers.size).toBe(0);
 
-    // remove the entries again (in reverse order)
-    entries.reverse().forEach((entry) => {
-      expect(removeBtreeEntry(pageProvider, rootPageNumber, entry)).toBe(true);
-      expect(removeBtreeEntry(pageProvider, rootPageNumber, entry)).toBe(false);
-    });
+    // test removing in different orders
+    for (const removeOrder of [entries, [...entries].reverse()]) {
+      const removePageProvider = pageProvider.clone();
 
-    testScanResult(pageProvider.getPage, { forward: true }, [], rootPageNumber);
+      // remove the entries
+      removeOrder.forEach((entry) => {
+        expect(removeBtreeEntry(removePageProvider, rootPageNumber, entry)).toBe(true);
+        expect(removeBtreeEntry(removePageProvider, rootPageNumber, entry)).toBe(false);
+      });
 
-    expect(pageProvider.pages.length - pageProvider.releasedPageNumbers.size).toBe(1);
-    expect(pageProvider.releasedPageNumbers.size).toBeGreaterThan(0);
+      testScanResult(removePageProvider.getPage, { forward: true }, [], rootPageNumber);
+
+      expect(removePageProvider.pages.length - removePageProvider.releasedPageNumbers.size).toBe(1);
+      expect(removePageProvider.releasedPageNumbers.size).toBeGreaterThan(0);
+    }
+  });
+
+  test("leaf page merge during remove", () => {
+    const entries = [[1], [2], [3], [4], [5], [6]];
+    const middle = entries.length / 2;
+    const pageProvider = createPageProviderForWrite(
+      400,
+      innerPage([entries[middle]], [1, 2], 400),
+      leafPage(entries.slice(0, middle), 400),
+      leafPage(entries.slice(middle), 400)
+    );
+    const rootPageNumber = 0;
+
+    testScanResult(pageProvider.getPage, { forward: true }, entries, rootPageNumber);
+
+    // removal of each entry should merge the two leaf pages and result in one root leaf page
+    for (const entry of entries) {
+      const removePageProvider = pageProvider.clone();
+      expect(removeBtreeEntry(removePageProvider, rootPageNumber, Uint8Array.from(entry))).toBe(true);
+      expect(removeBtreeEntry(removePageProvider, rootPageNumber, Uint8Array.from(entry))).toBe(false);
+      testScanResult(
+        removePageProvider.getPage,
+        { forward: true },
+        entries.filter((e) => e !== entry),
+        rootPageNumber
+      );
+
+      expect(removePageProvider.pages.length - removePageProvider.releasedPageNumbers.size).toBe(1);
+      expect(removePageProvider.releasedPageNumbers.size).toBe(2);
+    }
   });
 });

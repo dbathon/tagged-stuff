@@ -5,6 +5,7 @@ import {
   insertPageEntry,
   readAllPageEntries,
   readPageEntriesCount,
+  readPageEntriesFreeSpace,
   readPageEntryByNumber,
   removePageEntry,
   resetPageEntries,
@@ -550,6 +551,51 @@ export function insertBtreeEntry(
   return insertResult;
 }
 
+// attempt to merge pages if both of them have 70% of free space
+const MERGE_THRESHOLD = 0.7;
+
+function maybeMergeLeafPages(
+  pageProvider: PageProviderForWrite,
+  sourceEntriesPageArray: Uint8Array,
+  entryToRemove: Uint8Array,
+  targetPageNumber: number
+): boolean {
+  const targetPageArray = pageProvider.getPage(targetPageNumber);
+  if (getPageType(targetPageArray) !== PAGE_TYPE_LEAF) {
+    // should not happen, but just "ignore" it and return false
+    return false;
+  }
+  const targetEntriesPageArray = getEntriesPageArray(targetPageArray, PAGE_TYPE_LEAF);
+  const targetFreeSpacePercent = readPageEntriesFreeSpace(targetEntriesPageArray) / targetEntriesPageArray.length;
+  if (targetFreeSpacePercent < MERGE_THRESHOLD) {
+    return false;
+  }
+  let entryNumberToSkip = -1;
+  scanPageEntries(sourceEntriesPageArray, entryToRemove, (entry, entryNumber) => {
+    if (compareUint8Arrays(entryToRemove, entry) === 0) {
+      entryNumberToSkip = entryNumber;
+    }
+    return false;
+  });
+  if (entryNumberToSkip < 0) {
+    throw new Error("sourceEntriesPageArray does not contain entryToRemove");
+  }
+
+  const targetEntriesPageArrayForUpdate = getEntriesPageArray(
+    pageProvider.getPageForUpdate(targetPageNumber),
+    PAGE_TYPE_LEAF
+  );
+  scanPageEntries(sourceEntriesPageArray, undefined, (entry, entryNumber) => {
+    if (entryNumber !== entryNumberToSkip) {
+      // use tryRewrite = true, because the entries of the two pages should definitely fit into the target page
+      insertPageEntryWithThrow(targetEntriesPageArrayForUpdate, entry, true);
+    }
+    return true;
+  });
+
+  return true;
+}
+
 const REMOVE_CHILD_PAGE = 1;
 
 function remove(
@@ -572,13 +618,33 @@ function remove(
 
     if (!isRootPage) {
       const entriesCount = readPageEntriesCount(entriesPageArray);
+      let removePage = false;
       if (entriesCount === 1) {
+        // it is the only entry, just remove this page
+        removePage = true;
+      } else {
+        // maybe merge this page into a sibling page
+        const freeSpacePercent = readPageEntriesFreeSpace(entriesPageArray) / entriesPageArray.length;
+        if (freeSpacePercent >= MERGE_THRESHOLD) {
+          if (leftSiblingPageNumber !== undefined) {
+            if (maybeMergeLeafPages(pageProvider, entriesPageArray, entry, leftSiblingPageNumber)) {
+              removePage = true;
+            }
+          }
+          if (!removePage && rightSiblingPageNumber !== undefined) {
+            if (maybeMergeLeafPages(pageProvider, entriesPageArray, entry, rightSiblingPageNumber)) {
+              removePage = true;
+            }
+          }
+        }
+      }
+
+      // TODO check/do page merging with sibling pages...
+      if (removePage) {
         // it is the only entry, just remove this page
         pageProvider.releasePage(pageNumber);
         return REMOVE_CHILD_PAGE;
       }
-
-      // TODO check/do page merging with sibling pages...
     }
 
     const entriesPageArrayForUpdate = getEntriesPageArray(pageProvider.getPageForUpdate(pageNumber), pageType);
@@ -591,7 +657,7 @@ function remove(
     const leftSiblingPageNumber =
       childIndex > 0 ? childPageNumbersDataView.getUint32((childIndex - 1) << 2) : undefined;
     const rightSiblingPageNumber =
-      childIndex <= entriesCount ? childPageNumbersDataView.getUint32((childIndex + 1) << 2) : undefined;
+      childIndex < entriesCount ? childPageNumbersDataView.getUint32((childIndex + 1) << 2) : undefined;
     const childRemoveResult = remove(
       pageProvider,
       childPageNumber,
