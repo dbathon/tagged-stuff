@@ -1,7 +1,7 @@
 import { compareUint8Arrays } from "../page-entries/compareUint8Arrays";
 import {
   containsPageEntry,
-  getIndexOfPageEntry,
+  getEntryNumberOfPageEntry,
   insertPageEntry,
   readAllPageEntries,
   readPageEntriesCount,
@@ -579,7 +579,7 @@ function insert(
         if (countBefore + 1 !== readPageEntriesCount(entriesPageArrayForUpdate)) {
           throw new Error("lowerBound already existed");
         }
-        const insertedAtIndex = getIndexOfPageEntry(entriesPageArrayForUpdate, childInsertResult.lowerBound);
+        const insertedAtIndex = getEntryNumberOfPageEntry(entriesPageArrayForUpdate, childInsertResult.lowerBound);
         if (insertedAtIndex !== childIndex) {
           throw new Error("unexpected insertedAtIndex: " + insertedAtIndex + ", " + childIndex);
         }
@@ -703,7 +703,7 @@ function maybeMergeIntoLeftSibling(
   ) {
     return false;
   }
-  let entryNumberToRemove = getIndexOfPageEntry(entriesPageArray, entryToRemove);
+  let entryNumberToRemove = getEntryNumberOfPageEntry(entriesPageArray, entryToRemove);
   if (entryNumberToRemove === undefined) {
     throw new Error("sourceEntriesPageArray does not contain entryToRemove");
   }

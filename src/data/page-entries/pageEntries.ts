@@ -254,7 +254,7 @@ function findEntryNumber(
   throw new Error("findEntryNumber did not find an entryNumber");
 }
 
-export function getIndexOfPageEntry(pageArray: Uint8Array, entry: Uint8Array): number | undefined {
+export function getEntryNumberOfPageEntry(pageArray: Uint8Array, entry: Uint8Array): number | undefined {
   const entryCount = readPageEntriesCount(pageArray);
   const entryCache: Uint8Array[] = [];
   const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, entry, entryCache);
@@ -262,7 +262,7 @@ export function getIndexOfPageEntry(pageArray: Uint8Array, entry: Uint8Array): n
 }
 
 export function containsPageEntry(pageArray: Uint8Array, entry: Uint8Array): boolean {
-  return getIndexOfPageEntry(pageArray, entry) !== undefined;
+  return getEntryNumberOfPageEntry(pageArray, entry) !== undefined;
 }
 
 function scan(
