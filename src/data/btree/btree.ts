@@ -639,9 +639,7 @@ function remove(
         }
       }
 
-      // TODO check/do page merging with sibling pages...
       if (removePage) {
-        // it is the only entry, just remove this page
         pageProvider.releasePage(pageNumber);
         return REMOVE_CHILD_PAGE;
       }
