@@ -703,14 +703,8 @@ function maybeMergeIntoLeftSibling(
   ) {
     return false;
   }
-  let entryNumberToRemove = -1;
-  scanPageEntries(entriesPageArray, entryToRemove, (entry, entryNumber) => {
-    if (compareUint8Arrays(entryToRemove, entry) === 0) {
-      entryNumberToRemove = entryNumber;
-    }
-    return false;
-  });
-  if (entryNumberToRemove < 0) {
+  let entryNumberToRemove = getIndexOfPageEntry(entriesPageArray, entryToRemove);
+  if (entryNumberToRemove === undefined) {
     throw new Error("sourceEntriesPageArray does not contain entryToRemove");
   }
 
