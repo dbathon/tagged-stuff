@@ -72,7 +72,7 @@ function getInnerPageChildPageNumbersDataView(pageArray: Uint8Array): DataView {
   return new DataView(pageArray.buffer, pageArray.byteOffset + 1, maxChildPageNumbers << 2);
 }
 
-function findChildIndex(entriesPageArray: Uint8Array, entry: Uint8Array) {
+function findChildIndex(entriesPageArray: Uint8Array, entry: Uint8Array): number {
   let childIndex = 0;
   // scan backward to find the entry before or equal
   scanPageEntriesReverse(entriesPageArray, entry, (_, index) => {
@@ -100,7 +100,7 @@ function scan(
   }
   const pageType = getPageType(pageArray);
   const entriesPageArray = getEntriesPageArray(pageArray, pageType);
-  const entryCount = readPageEntriesCount(entriesPageArray);
+  const entriesCount = readPageEntriesCount(entriesPageArray);
   if (pageType === PAGE_TYPE_LEAF) {
     let aborted = false;
     const wrappedCallback = (entry: Uint8Array) => {
@@ -117,7 +117,7 @@ function scan(
     }
     return aborted ? ABORTED : CONTINUE;
   } else {
-    let startChildPageNumberIndex = forward ? 0 : entryCount;
+    let startChildPageNumberIndex = forward ? 0 : entriesCount;
     if (startEntry !== undefined) {
       if (forward) {
         startChildPageNumberIndex = findChildIndex(entriesPageArray, startEntry);
@@ -134,14 +134,14 @@ function scan(
     }
 
     const childPageNumbersDataView = getInnerPageChildPageNumbersDataView(pageArray);
-    if (childPageNumbersDataView.byteLength < (entryCount + 1) << 2) {
+    if (childPageNumbersDataView.byteLength < (entriesCount + 1) << 2) {
       // this should not happen (should be prevented by the insert logic)
       throw new Error("too many entries for inner page");
     }
     const direction = forward ? 1 : -1;
     for (
       let childIndex = startChildPageNumberIndex;
-      childIndex >= 0 && childIndex <= entryCount;
+      childIndex >= 0 && childIndex <= entriesCount;
       childIndex += direction
     ) {
       const childPageNumber = childPageNumbersDataView.getUint32(childIndex << 2);
@@ -172,6 +172,88 @@ export function scanBtreeEntriesReverse(
 ): boolean {
   const result = scan(pageProvider, rootPageNumber, startEntry, false, callback);
   return result !== MISSING_PAGE;
+}
+
+export function checkIntegrity(
+  pageProvider: PageProvider,
+  pageNumber: number
+): { depth: number; firstEntry?: Uint8Array; lastEntry?: Uint8Array } {
+  const pageArray = pageProvider(pageNumber);
+  if (!pageArray) {
+    throw new Error("page is missing: " + pageNumber);
+  }
+  const pageType = getPageType(pageArray);
+  const entriesPageArray = getEntriesPageArray(pageArray, pageType);
+  const entriesCount = readPageEntriesCount(entriesPageArray);
+  if (pageType === PAGE_TYPE_LEAF) {
+    if (entriesCount === 0) {
+      // probably an empty root page
+      return {
+        depth: 1,
+      };
+    } else {
+      // we assume, that the order in the page entries is correct...
+      return {
+        depth: 1,
+        firstEntry: readPageEntryByNumber(entriesPageArray, 0),
+        lastEntry: readPageEntryByNumber(entriesPageArray, entriesCount - 1),
+      };
+    }
+  } else {
+    let childDepth: number | undefined = undefined;
+    let firstEntry: Uint8Array | undefined = undefined;
+    let lastEntry: Uint8Array | undefined = undefined;
+    const childPageNumbersDataView = getInnerPageChildPageNumbersDataView(pageArray);
+    const pageEntries = readAllPageEntries(entriesPageArray);
+    for (let i = 0; i <= entriesCount; i++) {
+      const childResult = checkIntegrity(pageProvider, childPageNumbersDataView.getUint32(i << 2));
+      if (childDepth === undefined) {
+        childDepth = childResult.depth;
+      } else if (childDepth !== childResult.depth) {
+        throw new Error("different depth in child trees: " + childDepth + ", " + childResult.depth);
+      }
+      if (!firstEntry) {
+        firstEntry = childResult.firstEntry;
+      }
+      if (childResult.lastEntry) {
+        lastEntry = childResult.lastEntry;
+      }
+      if (i < entriesCount && childResult.lastEntry) {
+        const upperBoundExclusive = pageEntries[i];
+        if (compareUint8Arrays(childResult.lastEntry, upperBoundExclusive) >= 0) {
+          throw new Error("last entry of child tree too large: " + pageNumber + ", " + i);
+        }
+      }
+      if (i > 0 && childResult.firstEntry) {
+        const lowerBound = pageEntries[i - 1];
+        if (compareUint8Arrays(lowerBound, childResult.firstEntry) > 0) {
+          throw new Error("first entry of child tree too large: " + pageNumber + ", " + i);
+        }
+      }
+    }
+    if (childDepth === undefined) {
+      // this should never happen, since entriesCount is at least 0
+      throw new Error("unexpected");
+    }
+    if (!firstEntry || !lastEntry) {
+      throw new Error("no entries in tree of page " + pageNumber);
+    }
+    return {
+      depth: childDepth + 1,
+      firstEntry,
+      lastEntry,
+    };
+  }
+}
+
+/**
+ * Scans the whole tree and checks that all invariants are met, in particular equal depth for all child trees and
+ * proper order of the entries. If there is any problem, then an error is thrown.
+ *
+ * This method expects that the pageProvider has all pages available.
+ */
+export function checkBtreeIntegrity(pageProvider: PageProvider, rootPageNumber: number): void {
+  checkIntegrity(pageProvider, rootPageNumber);
 }
 
 function initPageArray(pageArray: Uint8Array, pageType: PageType): void {
@@ -554,58 +636,139 @@ export function insertBtreeEntry(
 // attempt to merge pages if both of them have 70% of free space
 const MERGE_THRESHOLD = 0.7;
 
-function maybeMergeLeafPages(
-  pageProvider: PageProviderForWrite,
-  sourceEntriesPageArray: Uint8Array,
-  entryToRemove: Uint8Array,
-  targetPageNumber: number
+function canBeMerged(
+  pageArray: Uint8Array,
+  entriesPageArray: Uint8Array,
+  pageType: PageType,
+  extraEntry?: Uint8Array
 ): boolean {
-  const targetPageArray = pageProvider.getPage(targetPageNumber);
-  if (getPageType(targetPageArray) !== PAGE_TYPE_LEAF) {
-    // should not happen, but just "ignore" it and return false
+  const freeSpace = readPageEntriesFreeSpace(entriesPageArray) - (extraEntry?.length ?? 0);
+  const freeSpacePercent = freeSpace / entriesPageArray.length;
+  if (freeSpacePercent < MERGE_THRESHOLD) {
     return false;
   }
-  const targetEntriesPageArray = getEntriesPageArray(targetPageArray, PAGE_TYPE_LEAF);
-  const targetFreeSpacePercent = readPageEntriesFreeSpace(targetEntriesPageArray) / targetEntriesPageArray.length;
-  if (targetFreeSpacePercent < MERGE_THRESHOLD) {
+  if (pageType === PAGE_TYPE_INNER) {
+    const childCount = readPageEntriesCount(entriesPageArray) + 1;
+    const maxChildCount = getInnerPageMaxChildPageNumbers(pageArray);
+    const freeChildCountPercent = (maxChildCount - childCount) / maxChildCount;
+    if (freeChildCountPercent < MERGE_THRESHOLD) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function maybeMergeIntoLeftSibling(
+  pageProvider: PageProviderForWrite,
+  pageArray: Uint8Array,
+  entriesPageArray: Uint8Array,
+  entryToRemove: Uint8Array,
+  childIndexToRemove: number | undefined,
+  parentPageArray: Uint8Array | undefined,
+  parentChildIndex: number | undefined,
+  pageType: PageType
+): boolean {
+  if (
+    !parentPageArray ||
+    parentChildIndex === undefined ||
+    parentChildIndex < 1 ||
+    !canBeMerged(pageArray, entriesPageArray, pageType)
+  ) {
     return false;
   }
-  let entryNumberToSkip = -1;
-  scanPageEntries(sourceEntriesPageArray, entryToRemove, (entry, entryNumber) => {
+
+  const leftSiblingPageNumber = getInnerPageChildPageNumbersDataView(parentPageArray).getUint32(
+    (parentChildIndex - 1) << 2
+  );
+  const leftSiblingPageArray = pageProvider.getPage(leftSiblingPageNumber);
+  if (getPageType(leftSiblingPageArray) !== pageType) {
+    throw new Error("left sibling page type does not match " + pageType);
+  }
+
+  let parentLowerBoundEntry: Uint8Array | undefined = undefined;
+  if (pageType === PAGE_TYPE_INNER) {
+    parentLowerBoundEntry = readPageEntryByNumber(
+      getEntriesPageArray(parentPageArray, PAGE_TYPE_INNER),
+      parentChildIndex - 1
+    );
+  }
+  if (
+    !canBeMerged(
+      leftSiblingPageArray,
+      getEntriesPageArray(leftSiblingPageArray, pageType),
+      pageType,
+      parentLowerBoundEntry
+    )
+  ) {
+    return false;
+  }
+  let entryNumberToRemove = -1;
+  scanPageEntries(entriesPageArray, entryToRemove, (entry, entryNumber) => {
     if (compareUint8Arrays(entryToRemove, entry) === 0) {
-      entryNumberToSkip = entryNumber;
+      entryNumberToRemove = entryNumber;
     }
     return false;
   });
-  if (entryNumberToSkip < 0) {
+  if (entryNumberToRemove < 0) {
     throw new Error("sourceEntriesPageArray does not contain entryToRemove");
   }
 
-  const targetEntriesPageArrayForUpdate = getEntriesPageArray(
-    pageProvider.getPageForUpdate(targetPageNumber),
-    PAGE_TYPE_LEAF
-  );
-  scanPageEntries(sourceEntriesPageArray, undefined, (entry, entryNumber) => {
-    if (entryNumber !== entryNumberToSkip) {
-      // use tryRewrite = true, because the entries of the two pages should definitely fit into the target page
-      insertPageEntryWithThrow(targetEntriesPageArrayForUpdate, entry, true);
+  const leftSiblingPageArrayForUpdate = pageProvider.getPageForUpdate(leftSiblingPageNumber);
+  const leftSiblingEntriesPageArrayForUpdate = getEntriesPageArray(leftSiblingPageArrayForUpdate, pageType);
+  const leftSiblingEntryCountBefore = readPageEntriesCount(leftSiblingEntriesPageArrayForUpdate);
+  if (parentLowerBoundEntry) {
+    insertPageEntryWithThrow(leftSiblingEntriesPageArrayForUpdate, parentLowerBoundEntry, true);
+  }
+  scanPageEntries(entriesPageArray, undefined, (entry, entryNumber) => {
+    if (entryNumber !== entryNumberToRemove) {
+      // use tryRewrite = true, because the entries of the two pages should definitely fit into the left sibling page
+      insertPageEntryWithThrow(leftSiblingEntriesPageArrayForUpdate, entry, true);
     }
     return true;
   });
+
+  if (pageType === PAGE_TYPE_INNER) {
+    if (childIndexToRemove === undefined) {
+      throw new Error("childIndexToRemove is required for inner pages");
+    }
+    // handle the children
+    const childPageNumbersDataView = getInnerPageChildPageNumbersDataView(pageArray);
+    const childCount = readPageEntriesCount(entriesPageArray) + 1;
+    const leftSiblingChildPageNumbersDataView = getInnerPageChildPageNumbersDataView(leftSiblingPageArrayForUpdate);
+    let leftSiblingChildCount = leftSiblingEntryCountBefore + 1;
+    for (let i = 0; i < childCount; i++) {
+      if (i !== childIndexToRemove) {
+        writeChildPageNumber(
+          leftSiblingChildPageNumbersDataView,
+          childPageNumbersDataView.getUint32(i << 2),
+          leftSiblingChildCount,
+          leftSiblingChildCount
+        );
+        leftSiblingChildCount++;
+      }
+    }
+  }
 
   return true;
 }
 
 const REMOVE_CHILD_PAGE = 1;
 
+/**
+ * Implementation note: this implementation intentionally only implements merging a page into its left sibling page.
+ * This simplifies the implementation significantly (less special cases) and should not lead to real problems. It can
+ * lead to relatively empty leftmost leaf pages (not empty ones, those would be removed) and to leftmost inner pages
+ * that have no entries and only one child page number, but that should be okay...
+ */
 function remove(
   pageProvider: PageProviderForWrite,
   pageNumber: number,
   entry: Uint8Array,
-  isRootPage: boolean,
-  leftSiblingPageNumber: number | undefined,
-  rightSiblingPageNumber: number | undefined
+  parentPageArray: Uint8Array | undefined,
+  parentChildIndex: number | undefined
 ): boolean | typeof REMOVE_CHILD_PAGE {
+  const isRootPage = !parentPageArray;
   const pageArray = pageProvider.getPage(pageNumber);
   const pageType = getPageType(pageArray);
   const entriesPageArray = getEntriesPageArray(pageArray, pageType);
@@ -618,25 +781,21 @@ function remove(
 
     if (!isRootPage) {
       const entriesCount = readPageEntriesCount(entriesPageArray);
-      let removePage = false;
+      let removePage;
       if (entriesCount === 1) {
         // it is the only entry, just remove this page
         removePage = true;
       } else {
-        // maybe merge this page into a sibling page
-        const freeSpacePercent = readPageEntriesFreeSpace(entriesPageArray) / entriesPageArray.length;
-        if (freeSpacePercent >= MERGE_THRESHOLD) {
-          if (leftSiblingPageNumber !== undefined) {
-            if (maybeMergeLeafPages(pageProvider, entriesPageArray, entry, leftSiblingPageNumber)) {
-              removePage = true;
-            }
-          }
-          if (!removePage && rightSiblingPageNumber !== undefined) {
-            if (maybeMergeLeafPages(pageProvider, entriesPageArray, entry, rightSiblingPageNumber)) {
-              removePage = true;
-            }
-          }
-        }
+        removePage = maybeMergeIntoLeftSibling(
+          pageProvider,
+          pageArray,
+          entriesPageArray,
+          entry,
+          undefined,
+          parentPageArray,
+          parentChildIndex,
+          PAGE_TYPE_LEAF
+        );
       }
 
       if (removePage) {
@@ -652,48 +811,61 @@ function remove(
     const entriesCount = readPageEntriesCount(entriesPageArray);
     const childPageNumbersDataView = getInnerPageChildPageNumbersDataView(pageArray);
     const childPageNumber = childPageNumbersDataView.getUint32(childIndex << 2);
-    const leftSiblingPageNumber =
-      childIndex > 0 ? childPageNumbersDataView.getUint32((childIndex - 1) << 2) : undefined;
-    const rightSiblingPageNumber =
-      childIndex < entriesCount ? childPageNumbersDataView.getUint32((childIndex + 1) << 2) : undefined;
-    const childRemoveResult = remove(
-      pageProvider,
-      childPageNumber,
-      entry,
-      false,
-      leftSiblingPageNumber,
-      rightSiblingPageNumber
-    );
+    const childRemoveResult = remove(pageProvider, childPageNumber, entry, pageArray, childIndex);
     if (typeof childRemoveResult === "boolean") {
       return childRemoveResult;
     } else {
+      const entryNumberToRemove = Math.max(0, childIndex - 1);
       // the child needs to be removed
-      const pageArrayForUpdate = pageProvider.getPageForUpdate(pageNumber);
       if (isRootPage) {
         if (entriesCount === 0) {
           // should not happen, but we can still support it, the tree is now completely empty
-          initPageArray(pageArrayForUpdate, PAGE_TYPE_LEAF);
+          initPageArray(pageProvider.getPageForUpdate(pageNumber), PAGE_TYPE_LEAF);
+          return true;
         } else if (entriesCount === 1) {
-          const remainingChildPageNumber = childIndex === 0 ? rightSiblingPageNumber : leftSiblingPageNumber;
-          if (remainingChildPageNumber === undefined) {
-            throw new Error("remainingChildPageNumber is undefined");
-          }
+          const pageArrayForUpdate = pageProvider.getPageForUpdate(pageNumber);
+          const remainingChildPageNumber = childPageNumbersDataView.getUint32((childIndex === 0 ? 1 : 0) << 2);
           const remainingChildPageArray = pageProvider.getPage(remainingChildPageNumber);
           const remainingChildPageType = getPageType(remainingChildPageArray);
           initPageArray(pageArrayForUpdate, remainingChildPageType);
           copyPageContent(remainingChildPageArray, pageArrayForUpdate, remainingChildPageType);
           pageProvider.releasePage(remainingChildPageNumber);
-        } else {
-          const entryNumberToRemove = Math.max(0, childIndex - 1);
-          const entriesPageArrayForUpdate = getEntriesPageArray(pageArrayForUpdate, pageType);
-          const entryToRemove = readPageEntryByNumber(entriesPageArrayForUpdate, entryNumberToRemove);
-          removePageEntry(entriesPageArrayForUpdate, entryToRemove);
-          removeChildPageNumber(getInnerPageChildPageNumbersDataView(pageArrayForUpdate), childIndex, entriesCount + 1);
+          return true;
         }
-        return true;
       } else {
-        throw new Error("TODO");
+        let removePage = false;
+        if (entriesCount === 0) {
+          // the last child was removed, so this node also needs to be removed
+          removePage = true;
+        } else if (
+          /* do redundant checks here to avoid calling readPageEntryByNumber() if possible */
+          parentChildIndex != undefined &&
+          parentChildIndex > 0 &&
+          canBeMerged(pageArray, entriesPageArray, PAGE_TYPE_INNER)
+        ) {
+          removePage = maybeMergeIntoLeftSibling(
+            pageProvider,
+            pageArray,
+            entriesPageArray,
+            readPageEntryByNumber(entriesPageArray, entryNumberToRemove),
+            childIndex,
+            parentPageArray,
+            parentChildIndex,
+            PAGE_TYPE_INNER
+          );
+        }
+
+        if (removePage) {
+          pageProvider.releasePage(pageNumber);
+          return REMOVE_CHILD_PAGE;
+        }
       }
+      const pageArrayForUpdate = pageProvider.getPageForUpdate(pageNumber);
+      const entriesPageArrayForUpdate = getEntriesPageArray(pageArrayForUpdate, pageType);
+      const entryToRemove = readPageEntryByNumber(entriesPageArrayForUpdate, entryNumberToRemove);
+      removePageEntry(entriesPageArrayForUpdate, entryToRemove);
+      removeChildPageNumber(getInnerPageChildPageNumbersDataView(pageArrayForUpdate), childIndex, entriesCount + 1);
+      return true;
     }
   }
 }
@@ -703,7 +875,7 @@ export function removeBtreeEntry(
   rootPageNumber: number,
   entry: Uint8Array
 ): boolean {
-  const removeResult = remove(pageProvider, rootPageNumber, entry, true, undefined, undefined);
+  const removeResult = remove(pageProvider, rootPageNumber, entry, undefined, undefined);
   if (typeof removeResult !== "boolean") {
     throw new Error("remove on root page returned unexpected result");
   }

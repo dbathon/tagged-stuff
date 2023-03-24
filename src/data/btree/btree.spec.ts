@@ -3,6 +3,7 @@ import { compareUint8Arrays } from "../page-entries/compareUint8Arrays";
 import { insertPageEntry } from "../page-entries/pageEntries";
 import {
   allocateAndInitBtreeRootPage,
+  checkBtreeIntegrity,
   insertBtreeEntry,
   removeBtreeEntry,
   scanBtreeEntries,
@@ -105,7 +106,27 @@ function testScanResult(
     : scanBtreeEntriesReverse(pageProvider, rootPageNumber, startEntry, callback);
   expect(scanResult).toBe(true);
   const expectedResult = expected.map((array) => Uint8Array.from(array));
-  expect(expectedResult).toEqual(result);
+  expect(result).toEqual(expectedResult);
+
+  checkBtreeIntegrity(pageProvider, rootPageNumber);
+}
+
+function xorShift32(x: number): number {
+  /* Algorithm "xor" from p. 4 of Marsaglia, "Xorshift RNGs" */
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  return x;
+}
+
+function randomizeOrder<T>(array: T[], seed = 1): T[] {
+  const positions = new Map<T, number>();
+  let cur = seed;
+  array.forEach((entry) => {
+    cur = xorShift32(cur);
+    positions.set(entry, cur);
+  });
+  return [...array].sort((a, b) => positions.get(a)! - positions.get(b)!);
 }
 
 describe("btree", () => {
@@ -213,14 +234,6 @@ describe("btree", () => {
     return result;
   }
 
-  function xorShift32(x: number): number {
-    /* Algorithm "xor" from p. 4 of Marsaglia, "Xorshift RNGs" */
-    x ^= x << 13;
-    x ^= x >> 17;
-    x ^= x << 5;
-    return x;
-  }
-
   test("insert larger entries", () => {
     const pageProvider = createPageProviderForWrite(400);
     const rootPageNumber = allocateAndInitBtreeRootPage(pageProvider);
@@ -267,7 +280,7 @@ describe("btree", () => {
     const rootPageNumber = allocateAndInitBtreeRootPage(pageProvider);
 
     const entries: Uint8Array[] = [];
-    const count = 50;
+    const count = 350;
     const size = 40;
     for (let i = 0; i < count; i++) {
       const entry = makeEntry(i, size);
@@ -281,7 +294,7 @@ describe("btree", () => {
     expect(pageProvider.releasedPageNumbers.size).toBe(0);
 
     // test removing in different orders
-    for (const removeOrder of [entries, [...entries].reverse()]) {
+    for (const removeOrder of [entries, [...entries].reverse(), randomizeOrder(entries)]) {
       const removePageProvider = pageProvider.clone();
 
       // remove the entries
@@ -299,19 +312,20 @@ describe("btree", () => {
 
   test("leaf page merge during remove", () => {
     const entries = [[1], [2], [3], [4], [5], [6]];
-    const middle = entries.length / 2;
+    const middle1 = 2;
+    const middle2 = 4;
     const pageProvider = createPageProviderForWrite(
       400,
-      innerPage([entries[middle]], [1, 2], 400),
-      leafPage(entries.slice(0, middle), 400),
-      leafPage(entries.slice(middle), 400)
+      innerPage([entries[middle1], entries[middle2]], [1, 2, 3], 400),
+      leafPage(entries.slice(0, middle1), 400),
+      leafPage(entries.slice(middle1, middle2), 400),
+      leafPage(entries.slice(middle2), 400)
     );
     const rootPageNumber = 0;
 
     testScanResult(pageProvider.getPage, { forward: true }, entries, rootPageNumber);
 
-    // removal of each entry should merge the two leaf pages and result in one root leaf page
-    for (const entry of entries) {
+    entries.forEach((entry, index) => {
       const removePageProvider = pageProvider.clone();
       expect(removeBtreeEntry(removePageProvider, rootPageNumber, Uint8Array.from(entry))).toBe(true);
       expect(removeBtreeEntry(removePageProvider, rootPageNumber, Uint8Array.from(entry))).toBe(false);
@@ -322,8 +336,14 @@ describe("btree", () => {
         rootPageNumber
       );
 
-      expect(removePageProvider.pages.length - removePageProvider.releasedPageNumbers.size).toBe(1);
-      expect(removePageProvider.releasedPageNumbers.size).toBe(2);
-    }
+      expect(removePageProvider.pages.length).toBe(4);
+      if (index < middle1) {
+        // no merge for the leftmost child
+        expect(removePageProvider.releasedPageNumbers.size).toBe(0);
+      } else {
+        // removal of the entry should have merged two leaf pages
+        expect(removePageProvider.releasedPageNumbers.size).toBe(1);
+      }
+    });
   });
 });
