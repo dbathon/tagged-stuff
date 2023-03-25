@@ -52,7 +52,7 @@ function getPageType(pageArray: Uint8Array): PageType {
  * reserve 25% of the page size (because the actual entries are maybe 12 bytes with overhead, but that is just a
  * guess...).
  */
-function getInnerPageMaxChildPageNumbers(pageArray: Uint8Array): number {
+function getMaxChildPageNumbers(pageArray: Uint8Array): number {
   // divide by 16 and floor (a quarter of the pages size and 4 bytes per page number)
   const result = pageArray.length >> 4;
   if (result < 3) {
@@ -63,13 +63,12 @@ function getInnerPageMaxChildPageNumbers(pageArray: Uint8Array): number {
 }
 
 function getEntriesPageArray(pageArray: Uint8Array, pageType: PageType): Uint8Array {
-  const offset = pageType === PAGE_TYPE_LEAF ? 1 : 1 + (getInnerPageMaxChildPageNumbers(pageArray) << 2);
+  const offset = pageType === PAGE_TYPE_LEAF ? 1 : 1 + (getMaxChildPageNumbers(pageArray) << 2);
   return new Uint8Array(pageArray.buffer, pageArray.byteOffset + offset, pageArray.byteLength - offset);
 }
 
-function getInnerPageChildPageNumbersDataView(pageArray: Uint8Array): DataView {
-  const maxChildPageNumbers = getInnerPageMaxChildPageNumbers(pageArray);
-  return new DataView(pageArray.buffer, pageArray.byteOffset + 1, maxChildPageNumbers << 2);
+function getChildPageNumbers(pageArray: Uint8Array): DataView {
+  return new DataView(pageArray.buffer, pageArray.byteOffset + 1, getMaxChildPageNumbers(pageArray) << 2);
 }
 
 function findChildIndex(entriesPageArray: Uint8Array, entry: Uint8Array): number {
@@ -133,18 +132,14 @@ function scan(
       }
     }
 
-    const childPageNumbersDataView = getInnerPageChildPageNumbersDataView(pageArray);
-    if (childPageNumbersDataView.byteLength < (entriesCount + 1) << 2) {
-      // this should not happen (should be prevented by the insert logic)
-      throw new Error("too many entries for inner page");
-    }
+    const childPageNumbers = getChildPageNumbers(pageArray);
     const direction = forward ? 1 : -1;
     for (
       let childIndex = startChildPageNumberIndex;
       childIndex >= 0 && childIndex <= entriesCount;
       childIndex += direction
     ) {
-      const childPageNumber = childPageNumbersDataView.getUint32(childIndex << 2);
+      const childPageNumber = childPageNumbers.getUint32(childIndex << 2);
       const childScanResult = scan(pageProvider, childPageNumber, startEntry, forward, callback);
       if (childScanResult !== CONTINUE) {
         return childScanResult;
@@ -203,10 +198,10 @@ export function checkIntegrity(
     let childDepth: number | undefined = undefined;
     let firstEntry: Uint8Array | undefined = undefined;
     let lastEntry: Uint8Array | undefined = undefined;
-    const childPageNumbersDataView = getInnerPageChildPageNumbersDataView(pageArray);
+    const childPageNumbers = getChildPageNumbers(pageArray);
     const pageEntries = readAllPageEntries(entriesPageArray);
     for (let i = 0; i <= entriesCount; i++) {
-      const childResult = checkIntegrity(pageProvider, childPageNumbersDataView.getUint32(i << 2));
+      const childResult = checkIntegrity(pageProvider, childPageNumbers.getUint32(i << 2));
       if (childDepth === undefined) {
         childDepth = childResult.depth;
       } else if (childDepth !== childResult.depth) {
@@ -397,9 +392,9 @@ function splitInnerPageAndInsert(
     throw new Error("cannot split inner page with less then 3 entries");
   }
   const allChildPageNumbers: number[] = [];
-  const leftChildPageNumbersDataView = getInnerPageChildPageNumbersDataView(leftPageArrayForUpdate);
+  const leftChildPageNumbers = getChildPageNumbers(leftPageArrayForUpdate);
   for (let i = 0; i < totalCount; i++) {
-    allChildPageNumbers.push(leftChildPageNumbersDataView.getUint32(i << 2));
+    allChildPageNumbers.push(leftChildPageNumbers.getUint32(i << 2));
   }
   const newEntryIndex = allEntries.indexOf(childInsertResult.lowerBound);
   // insert the new child number
@@ -421,9 +416,9 @@ function splitInnerPageAndInsert(
     insertPageEntryWithThrow(rightEntriesPageArrayForUpdate, allEntries[i]);
   }
   // write child page numbers in right page
-  const rightChildPageNumbersDataView = getInnerPageChildPageNumbersDataView(rightPageArrayForUpdate);
+  const rightChildPageNumbers = getChildPageNumbers(rightPageArrayForUpdate);
   for (let i = rightStartIndex; i <= totalCount; i++) {
-    rightChildPageNumbersDataView.setUint32((i - rightStartIndex) << 2, allChildPageNumbers[i]);
+    rightChildPageNumbers.setUint32((i - rightStartIndex) << 2, allChildPageNumbers[i]);
   }
 
   // remove entries from left page in reverse order
@@ -435,7 +430,7 @@ function splitInnerPageAndInsert(
     insertPageEntryWithThrow(leftEntriesPageArrayForUpdate, childInsertResult.lowerBound, true);
     // in this case we also need to rewrite some child page numbers
     for (let i = newEntryIndex + 1; i <= middleIndex; i++) {
-      leftChildPageNumbersDataView.setUint32(i << 2, allChildPageNumbers[i]);
+      leftChildPageNumbers.setUint32(i << 2, allChildPageNumbers[i]);
     }
   }
 
@@ -453,23 +448,23 @@ function splitInnerPageAndInsert(
 }
 
 function writeChildPageNumber(
-  childPageNumbersDataView: DataView,
+  childPageNumbers: DataView,
   childPageNumber: number,
   index: number,
   countBefore: number
 ): void {
   // move entries after the new entry to the right
   for (let i = countBefore; i > index; i--) {
-    childPageNumbersDataView.setUint32(i << 2, childPageNumbersDataView.getUint32((i - 1) << 2));
+    childPageNumbers.setUint32(i << 2, childPageNumbers.getUint32((i - 1) << 2));
   }
   // write the childPageNumber
-  childPageNumbersDataView.setUint32(index << 2, childPageNumber);
+  childPageNumbers.setUint32(index << 2, childPageNumber);
 }
 
-function removeChildPageNumber(childPageNumbersDataView: DataView, index: number, countBefore: number): void {
+function removeChildPageNumber(childPageNumbers: DataView, index: number, countBefore: number): void {
   // move entries after the the removed entry to the left
   for (let i = index + 1; i < countBefore; i++) {
-    childPageNumbersDataView.setUint32((i - 1) << 2, childPageNumbersDataView.getUint32(i << 2));
+    childPageNumbers.setUint32((i - 1) << 2, childPageNumbers.getUint32(i << 2));
   }
 }
 
@@ -484,15 +479,12 @@ function copyPageContent(fromPageArray: Uint8Array, toPageArrayForUpdate: Uint8A
   if (pageType === PAGE_TYPE_INNER) {
     const childPageNumbersCount = readPageEntriesCount(toEntriesPageArrayForUpdate) + 1;
     const bytesToCopy = childPageNumbersCount << 2;
-    const childPageNumbersDataView = getInnerPageChildPageNumbersDataView(fromPageArray);
-    if (bytesToCopy > childPageNumbersDataView.byteLength) {
+    const childPageNumbers = getChildPageNumbers(fromPageArray);
+    if (bytesToCopy > childPageNumbers.byteLength) {
       throw new Error("unexpected number of child page numbers");
     }
     // create a Uint8Array view to be able to use set
-    toPageArrayForUpdate.set(
-      new Uint8Array(childPageNumbersDataView.buffer, childPageNumbersDataView.byteOffset, bytesToCopy),
-      1
-    );
+    toPageArrayForUpdate.set(new Uint8Array(childPageNumbers.buffer, childPageNumbers.byteOffset, bytesToCopy), 1);
   }
 }
 
@@ -513,9 +505,9 @@ function finishRootPageSplit(
   rootPageArrayForUpdate.set(rootPageArrayBefore);
   initPageArray(rootPageArrayForUpdate, PAGE_TYPE_INNER);
   insertPageEntryWithThrow(getEntriesPageArray(rootPageArrayForUpdate, PAGE_TYPE_INNER), splitResult.lowerBound);
-  const childPageNumbersDataView = getInnerPageChildPageNumbersDataView(rootPageArrayForUpdate);
-  childPageNumbersDataView.setUint32(0, leftChildPageNumber);
-  childPageNumbersDataView.setUint32(4, splitResult.childPageNumber);
+  const childPageNumbers = getChildPageNumbers(rootPageArrayForUpdate);
+  childPageNumbers.setUint32(0, leftChildPageNumber);
+  childPageNumbers.setUint32(4, splitResult.childPageNumber);
 }
 
 function insert(
@@ -561,7 +553,7 @@ function insert(
     }
   } else {
     const childIndex = findChildIndex(entriesPageArray, entry);
-    const childPageNumber = getInnerPageChildPageNumbersDataView(pageArray).getUint32(childIndex << 2);
+    const childPageNumber = getChildPageNumbers(pageArray).getUint32(childIndex << 2);
     const entriesCount = readPageEntriesCount(entriesPageArray);
     const childInsertResult = insert(pageProvider, childPageNumber, entry, false, childIndex === entriesCount);
     if (typeof childInsertResult === "boolean") {
@@ -571,7 +563,7 @@ function insert(
       const pageArrayForUpdate = pageProvider.getPageForUpdate(pageNumber);
       const entriesPageArrayForUpdate = getEntriesPageArray(pageArrayForUpdate, pageType);
       const countBefore = readPageEntriesCount(entriesPageArrayForUpdate);
-      const moreChildrenPossible = countBefore + 1 < getInnerPageMaxChildPageNumbers(pageArrayForUpdate);
+      const moreChildrenPossible = countBefore + 1 < getMaxChildPageNumbers(pageArrayForUpdate);
       const insertSuccess =
         moreChildrenPossible && insertPageEntry(entriesPageArrayForUpdate, childInsertResult.lowerBound);
       if (insertSuccess) {
@@ -584,7 +576,7 @@ function insert(
           throw new Error("unexpected insertedAtIndex: " + insertedAtIndex + ", " + childIndex);
         }
         writeChildPageNumber(
-          getInnerPageChildPageNumbersDataView(pageArrayForUpdate),
+          getChildPageNumbers(pageArrayForUpdate),
           childInsertResult.childPageNumber,
           childIndex + 1,
           countBefore + 1
@@ -649,7 +641,7 @@ function canBeMerged(
   }
   if (pageType === PAGE_TYPE_INNER) {
     const childCount = readPageEntriesCount(entriesPageArray) + 1;
-    const maxChildCount = getInnerPageMaxChildPageNumbers(pageArray);
+    const maxChildCount = getMaxChildPageNumbers(pageArray);
     const freeChildCountPercent = (maxChildCount - childCount) / maxChildCount;
     if (freeChildCountPercent < MERGE_THRESHOLD) {
       return false;
@@ -678,9 +670,7 @@ function maybeMergeIntoLeftSibling(
     return false;
   }
 
-  const leftSiblingPageNumber = getInnerPageChildPageNumbersDataView(parentPageArray).getUint32(
-    (parentChildIndex - 1) << 2
-  );
+  const leftSiblingPageNumber = getChildPageNumbers(parentPageArray).getUint32((parentChildIndex - 1) << 2);
   const leftSiblingPageArray = pageProvider.getPage(leftSiblingPageNumber);
   if (getPageType(leftSiblingPageArray) !== pageType) {
     throw new Error("left sibling page type does not match " + pageType);
@@ -727,15 +717,15 @@ function maybeMergeIntoLeftSibling(
       throw new Error("childIndexToRemove is required for inner pages");
     }
     // handle the children
-    const childPageNumbersDataView = getInnerPageChildPageNumbersDataView(pageArray);
+    const childPageNumbers = getChildPageNumbers(pageArray);
     const childCount = readPageEntriesCount(entriesPageArray) + 1;
-    const leftSiblingChildPageNumbersDataView = getInnerPageChildPageNumbersDataView(leftSiblingPageArrayForUpdate);
+    const leftSiblingChildPageNumbers = getChildPageNumbers(leftSiblingPageArrayForUpdate);
     let leftSiblingChildCount = leftSiblingEntryCountBefore + 1;
     for (let i = 0; i < childCount; i++) {
       if (i !== childIndexToRemove) {
         writeChildPageNumber(
-          leftSiblingChildPageNumbersDataView,
-          childPageNumbersDataView.getUint32(i << 2),
+          leftSiblingChildPageNumbers,
+          childPageNumbers.getUint32(i << 2),
           leftSiblingChildCount,
           leftSiblingChildCount
         );
@@ -803,8 +793,8 @@ function remove(
   } else {
     const childIndex = findChildIndex(entriesPageArray, entry);
     const entriesCount = readPageEntriesCount(entriesPageArray);
-    const childPageNumbersDataView = getInnerPageChildPageNumbersDataView(pageArray);
-    const childPageNumber = childPageNumbersDataView.getUint32(childIndex << 2);
+    const childPageNumbers = getChildPageNumbers(pageArray);
+    const childPageNumber = childPageNumbers.getUint32(childIndex << 2);
     const childRemoveResult = remove(pageProvider, childPageNumber, entry, pageArray, childIndex);
     if (typeof childRemoveResult === "boolean") {
       return childRemoveResult;
@@ -818,7 +808,7 @@ function remove(
           return true;
         } else if (entriesCount === 1) {
           const pageArrayForUpdate = pageProvider.getPageForUpdate(pageNumber);
-          const remainingChildPageNumber = childPageNumbersDataView.getUint32((childIndex === 0 ? 1 : 0) << 2);
+          const remainingChildPageNumber = childPageNumbers.getUint32(childIndex === 0 ? 4 : 0);
           const remainingChildPageArray = pageProvider.getPage(remainingChildPageNumber);
           const remainingChildPageType = getPageType(remainingChildPageArray);
           initPageArray(pageArrayForUpdate, remainingChildPageType);
@@ -858,7 +848,7 @@ function remove(
       const entriesPageArrayForUpdate = getEntriesPageArray(pageArrayForUpdate, pageType);
       const entryToRemove = readPageEntryByNumber(entriesPageArrayForUpdate, entryNumberToRemove);
       removePageEntry(entriesPageArrayForUpdate, entryToRemove);
-      removeChildPageNumber(getInnerPageChildPageNumbersDataView(pageArrayForUpdate), childIndex, entriesCount + 1);
+      removeChildPageNumber(getChildPageNumbers(pageArrayForUpdate), childIndex, entriesCount + 1);
       return true;
     }
   }
