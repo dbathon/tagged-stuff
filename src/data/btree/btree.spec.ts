@@ -4,6 +4,8 @@ import { insertPageEntry } from "../page-entries/pageEntries";
 import {
   allocateAndInitBtreeRootPage,
   checkBtreeIntegrity,
+  countBtreeEntries,
+  EntriesRange,
   insertBtreeEntry,
   removeBtreeEntry,
   scanBtreeEntries,
@@ -51,11 +53,7 @@ function innerPage(
 
 function createPageProvider(pageArrays: Uint8Array[]): PageProvider {
   return (pageNumber) => {
-    const result = pageArrays[pageNumber];
-    if (!result) {
-      throw new Error("unknown page: " + pageNumber);
-    }
-    return result;
+    return pageArrays[pageNumber];
   };
 }
 
@@ -364,5 +362,124 @@ describe("btree", () => {
         expect(removePageProvider.releasedPageNumbers.size).toBe(1);
       }
     });
+  });
+
+  interface TestEntriesRange {
+    start?: ArrayLike<number>;
+    /** Defaults to false. */
+    startExclusive?: boolean;
+
+    end?: ArrayLike<number>;
+    /** Defaults to true. */
+    endExclusive?: boolean;
+  }
+
+  function testCount(
+    pageProvider: PageProvider,
+    rootPageNumber: number,
+    expectedCount: number | undefined,
+    testRange?: TestEntriesRange
+  ) {
+    const range: EntriesRange | undefined = testRange && {
+      ...testRange,
+      start: testRange.start && Uint8Array.from(testRange.start),
+      end: testRange.end && Uint8Array.from(testRange.end),
+    };
+    expect(countBtreeEntries(pageProvider, rootPageNumber, range)).toBe(expectedCount);
+
+    // also test the defaults for exclusive
+    if (range?.startExclusive === undefined) {
+      const rangeWithExplicit: EntriesRange = {
+        ...(range || {}),
+        startExclusive: false,
+      };
+      expect(countBtreeEntries(pageProvider, rootPageNumber, rangeWithExplicit)).toBe(expectedCount);
+      if (rangeWithExplicit.endExclusive === undefined) {
+        rangeWithExplicit.endExclusive = true;
+        expect(countBtreeEntries(pageProvider, rootPageNumber, rangeWithExplicit)).toBe(expectedCount);
+      }
+    }
+    if (range?.endExclusive === undefined) {
+      const rangeWithExplicit: EntriesRange = {
+        ...(range || {}),
+        endExclusive: true,
+      };
+      expect(countBtreeEntries(pageProvider, rootPageNumber, rangeWithExplicit)).toBe(expectedCount);
+    }
+  }
+
+  test("count with fixed tree", () => {
+    const entries = [[1], [2], [3], [4], [5], [6], [6, 1], [7], [8]];
+    const middle1 = 2;
+    const middle2 = 4;
+    const pageProvider = createPageProvider([
+      innerPage([entries[middle1], [4, 1]], [1, 2, 3], [middle1, middle2 - middle1, entries.length - middle2], 400),
+      leafPage(entries.slice(0, middle1), 400),
+      leafPage(entries.slice(middle1, middle2), 400),
+      leafPage(entries.slice(middle2), 400),
+    ]);
+    const rootPageNumber = 0;
+
+    testCount(pageProvider, rootPageNumber, entries.length);
+    testCount(pageProvider, rootPageNumber, entries.length, { start: [0] });
+    testCount(pageProvider, rootPageNumber, entries.length, { end: [100] });
+    testCount(pageProvider, rootPageNumber, entries.length, { start: [0], end: [100] });
+
+    testCount(pageProvider, rootPageNumber, 0, { start: [100], end: [0] });
+    testCount(pageProvider, rootPageNumber, 0, { start: [100], end: [0], endExclusive: false });
+    testCount(pageProvider, rootPageNumber, 0, { start: [100] });
+    testCount(pageProvider, rootPageNumber, 0, { start: [100], startExclusive: true });
+    testCount(pageProvider, rootPageNumber, 0, { end: [0] });
+    testCount(pageProvider, rootPageNumber, 0, { end: [0], endExclusive: false });
+
+    testCount(pageProvider, 100, undefined);
+
+    for (let i = 0; i < entries.length; i++) {
+      testCount(pageProvider, rootPageNumber, entries.length - i, {
+        start: entries[i],
+      });
+      testCount(pageProvider, rootPageNumber, entries.length - i, {
+        start: entries[i],
+        end: [100],
+      });
+      testCount(pageProvider, rootPageNumber, Math.max(entries.length - i - 1, 0), {
+        start: entries[i],
+        startExclusive: true,
+      });
+
+      testCount(pageProvider, rootPageNumber, i, {
+        end: entries[i],
+      });
+      testCount(pageProvider, rootPageNumber, i, {
+        start: [0],
+        end: entries[i],
+      });
+      testCount(pageProvider, rootPageNumber, Math.min(i + 1, entries.length), {
+        end: entries[i],
+        endExclusive: false,
+      });
+
+      for (let j = i; j < entries.length; j++) {
+        testCount(pageProvider, rootPageNumber, j - i, {
+          start: entries[i],
+          end: entries[j],
+        });
+        testCount(pageProvider, rootPageNumber, j - i + 1, {
+          start: entries[i],
+          end: [...entries[j], 0],
+        });
+        testCount(pageProvider, rootPageNumber, j - i + 1, {
+          start: entries[i],
+          end: entries[j],
+          endExclusive: false,
+        });
+        testCount(pageProvider, rootPageNumber, j - i, {
+          start: entries[i],
+          startExclusive: true,
+          end: entries[j],
+          endExclusive: false,
+        });
+      }
+    }
   });
 });

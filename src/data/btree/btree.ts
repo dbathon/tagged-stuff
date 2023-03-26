@@ -206,6 +206,125 @@ export function scanBtreeEntriesReverse(
   return result !== MISSING_PAGE;
 }
 
+export interface EntriesRange {
+  start?: Uint8Array;
+  /** Defaults to false. */
+  startExclusive?: boolean;
+
+  end?: Uint8Array;
+  /** Defaults to true. */
+  endExclusive?: boolean;
+}
+
+function countEntries(pageProvider: PageProvider, pageNumber: number, range?: EntriesRange): number | undefined {
+  const pageArray = pageProvider(pageNumber);
+  if (!pageArray) {
+    return undefined;
+  }
+  const pageType = getPageType(pageArray);
+  const entriesPageArray = getEntriesPageArray(pageArray, pageType);
+  const entriesCount = readPageEntriesCount(entriesPageArray);
+  const start = range?.start;
+  const end = range?.end;
+  if (pageType === PAGE_TYPE_LEAF) {
+    if (!start && !end) {
+      return entriesCount;
+    }
+    let startEntryNumber = 0;
+    if (start) {
+      const startExclusive = range?.startExclusive ?? false;
+      startEntryNumber = entriesCount;
+      scanPageEntries(entriesPageArray, start, (entry, entryNumber) => {
+        startEntryNumber = entryNumber;
+        if (startExclusive && compareUint8Arrays(start, entry) === 0) {
+          startEntryNumber++;
+        }
+        return false;
+      });
+    }
+    let endEntryNumber = entriesCount - 1;
+    if (end) {
+      const endExclusive = range?.endExclusive ?? true;
+      endEntryNumber = -1;
+      scanPageEntriesReverse(entriesPageArray, end, (entry, entryNumber) => {
+        endEntryNumber = entryNumber;
+        if (endExclusive && compareUint8Arrays(end, entry) === 0) {
+          endEntryNumber--;
+        }
+        return false;
+      });
+    }
+    return Math.max(endEntryNumber - startEntryNumber + 1, 0);
+  } else {
+    const childCallIndexes: number[] = [];
+
+    let childEntriesCountsStartIndex = 0;
+    if (start) {
+      const startExclusive = range?.startExclusive ?? false;
+      childEntriesCountsStartIndex = entriesCount;
+      let childCallNeeded = true;
+      scanPageEntries(entriesPageArray, start, (entry, entryNumber) => {
+        const compareResult = compareUint8Arrays(start, entry);
+        childEntriesCountsStartIndex = entryNumber + (compareResult < 0 ? 0 : 1);
+        if (compareResult === 0 && !startExclusive) {
+          childCallNeeded = false;
+        }
+        return false;
+      });
+      if (childCallNeeded) {
+        childCallIndexes.push(childEntriesCountsStartIndex);
+        childEntriesCountsStartIndex++;
+      }
+    }
+    let childEntriesCountsEndIndex = entriesCount;
+    if (end) {
+      childEntriesCountsEndIndex = 0;
+      scanPageEntriesReverse(entriesPageArray, end, (entry, entryNumber) => {
+        const compareResult = compareUint8Arrays(end, entry);
+        childEntriesCountsEndIndex = entryNumber + (compareResult < 0 ? 0 : 1);
+        return false;
+      });
+      childCallIndexes.push(childEntriesCountsEndIndex);
+      childEntriesCountsEndIndex--;
+    }
+
+    let count = 0;
+
+    if (childEntriesCountsStartIndex <= childEntriesCountsEndIndex) {
+      const childEntriesCounts = getChildEntriesCounts(pageArray);
+      for (let i = childEntriesCountsStartIndex; i <= childEntriesCountsEndIndex; i++) {
+        const childCount = childEntriesCounts.getUint16(i << 1);
+        if (childCount > 0) {
+          count += childCount;
+        } else {
+          childCallIndexes.push(i);
+        }
+      }
+    }
+
+    if (childCallIndexes.length) {
+      const childPageNumbers = getChildPageNumbers(pageArray);
+      for (const childCallIndex of new Set(childCallIndexes)) {
+        const childCountResult = countEntries(pageProvider, childPageNumbers.getUint32(childCallIndex << 2), range);
+        if (childCountResult === undefined) {
+          return undefined;
+        }
+        count += childCountResult;
+      }
+    }
+
+    return count;
+  }
+}
+
+export function countBtreeEntries(
+  pageProvider: PageProvider,
+  rootPageNumber: number,
+  range?: EntriesRange
+): number | undefined {
+  return countEntries(pageProvider, rootPageNumber, range);
+}
+
 export function checkIntegrity(
   pageProvider: PageProvider,
   pageNumber: number
