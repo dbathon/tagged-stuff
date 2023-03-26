@@ -444,8 +444,6 @@ export class PageStore {
           pageNumber,
           Patch.mergePatches([...(newIndexPage.pageNumberToPatches.get(pageNumber) ?? []), ...patches])
         );
-
-        newIndexPage.maxPageNumber = Math.max(newIndexPage.maxPageNumber, pageNumber);
       }
     });
 

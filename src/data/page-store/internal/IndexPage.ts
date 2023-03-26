@@ -43,8 +43,6 @@ export class IndexPage extends MetaPageWithPatches {
    */
   transactionIdsPageStoreTransactionId: number;
 
-  maxPageNumber: number;
-
   readonly pageGroupNumberToTransactionId: Map<number, number> = new Map();
 
   constructor(bufferOrIndexPageOrUndefined: ArrayBuffer | IndexPage | undefined) {
@@ -55,16 +53,12 @@ export class IndexPage extends MetaPageWithPatches {
       this.pageSize = 0;
 
       this.transactionIdsPageStoreTransactionId = 0;
-
-      // no pages yet
-      this.maxPageNumber = -1;
     } else if (bufferOrIndexPageOrUndefined instanceof IndexPage) {
       const sourceIndexPage = bufferOrIndexPageOrUndefined;
       // just copy all the data from sourceIndexPage
       this.transactionId = sourceIndexPage.transactionId;
       this.pageSize = sourceIndexPage.pageSize;
       this.transactionIdsPageStoreTransactionId = sourceIndexPage.transactionIdsPageStoreTransactionId;
-      this.maxPageNumber = sourceIndexPage.maxPageNumber;
       sourceIndexPage.pageNumberToPatches.forEach((patches, pageNumber) =>
         this.pageNumberToPatches.set(pageNumber, [...patches])
       );
@@ -84,9 +78,6 @@ export class IndexPage extends MetaPageWithPatches {
       this.transactionIdsPageStoreTransactionId = readUint48FromDataView(view, offset);
       offset += 6;
 
-      this.maxPageNumber = view.getUint32(8);
-      offset += 4;
-
       offset = this.readPatches(view, offset);
 
       offset = readUint32ToUint48Map(view, offset, this.pageGroupNumberToTransactionId);
@@ -98,7 +89,6 @@ export class IndexPage extends MetaPageWithPatches {
       MetaPageWithPatches.headerSerializedLength +
       4 +
       6 +
-      4 +
       this.patchesSerializedLength +
       2 +
       10 * this.pageGroupNumberToTransactionId.size
@@ -121,9 +111,6 @@ export class IndexPage extends MetaPageWithPatches {
 
     writeUint48toDataView(view, offset, this.transactionIdsPageStoreTransactionId);
     offset += 6;
-
-    view.setUint32(offset, this.maxPageNumber);
-    offset += 4;
 
     offset = this.writePatches(view, offset);
 
