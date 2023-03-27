@@ -245,81 +245,92 @@ describe("btree", () => {
     return result;
   }
 
-  test("insert larger entries", () => {
-    const pageProvider = createPageProviderForWrite(400);
-    const rootPageNumber = allocateAndInitBtreeRootPage(pageProvider);
+  function testInsertAndRemove(originalEntries: Uint8Array[]) {
+    const sortedEntries = [...originalEntries].sort(compareUint8Arrays);
+    // test insert and remove in different orders (all combinations)
+    const orders = [sortedEntries, [...sortedEntries].reverse(), randomizeOrder(sortedEntries)];
 
+    for (const insertOrder of orders) {
+      const pageProvider = createPageProviderForWrite(400);
+      const rootPageNumber = allocateAndInitBtreeRootPage(pageProvider);
+
+      const entries: Uint8Array[] = [];
+      for (const entry of insertOrder) {
+        entries.push(entry);
+        entries.sort(compareUint8Arrays);
+        expect(insertBtreeEntry(pageProvider, rootPageNumber, entry)).toBe(true);
+        expect(insertBtreeEntry(pageProvider, rootPageNumber, entry)).toBe(false);
+
+        testScanResult(pageProvider.getPage, { forward: true }, entries, rootPageNumber);
+        expect(countBtreeEntries(pageProvider.getPage, rootPageNumber)).toBe(entries.length);
+      }
+
+      // test partial scans
+      for (let i = 0; i < entries.length; i++) {
+        testScanResult(
+          pageProvider.getPage,
+          { forward: true, startEntry: entries[i] },
+          entries.slice(i),
+          rootPageNumber
+        );
+        testScanResult(
+          pageProvider.getPage,
+          { forward: false, startEntry: entries[i] },
+          entries.slice(0, i + 1).reverse(),
+          rootPageNumber
+        );
+      }
+
+      expect(pageProvider.pages.length).toBeGreaterThan(1);
+      expect(pageProvider.releasedPageNumbers.size).toBe(0);
+
+      // check that the first two layers are inner pages
+      const rootPage = pageProvider.getPage(rootPageNumber);
+      expect(rootPage[0]).toBe(0b10010);
+      const childPage = pageProvider.getPage(new DataView(rootPage.buffer, rootPage.byteOffset + 1).getUint32(0));
+      expect(childPage[0]).toBe(0b10010);
+
+      for (const removeOrder of orders) {
+        const removePageProvider = pageProvider.clone();
+
+        let remaining = removeOrder.length;
+        // remove the entries
+        removeOrder.forEach((entry) => {
+          expect(removeBtreeEntry(removePageProvider, rootPageNumber, entry)).toBe(true);
+          expect(removeBtreeEntry(removePageProvider, rootPageNumber, entry)).toBe(false);
+          checkBtreeIntegrity(removePageProvider.getPage, rootPageNumber);
+          expect(countBtreeEntries(removePageProvider.getPage, rootPageNumber)).toBe(--remaining);
+        });
+
+        testScanResult(removePageProvider.getPage, { forward: true }, [], rootPageNumber);
+
+        expect(removePageProvider.pages.length - removePageProvider.releasedPageNumbers.size).toBe(1);
+        expect(removePageProvider.releasedPageNumbers.size).toBeGreaterThan(0);
+      }
+    }
+  }
+
+  test("insert and remove of ascending entries of equal size", () => {
     const entries: Uint8Array[] = [];
+    for (let i = 0; i < 250; i++) {
+      const entry = makeEntry(i, 40);
+      entries.push(entry);
+    }
 
-    // do inserts in a "random" order and with "random" lengths
+    testInsertAndRemove(entries);
+  });
+
+  test("insert and remove of random entries of varying sizes", () => {
+    // generate "random" entries with "random" lengths
+    const entries: Uint8Array[] = [];
     let cur = 1;
-    for (let i = 0; i < 150; i++) {
+    for (let i = 0; i < 200; i++) {
       const length = 4 + (Math.abs(cur) % 80);
-      const newEntry = makeEntry(cur, length);
-      entries.push(newEntry);
-      entries.sort(compareUint8Arrays);
-      expect(insertBtreeEntry(pageProvider, rootPageNumber, newEntry)).toBe(true);
-      expect(insertBtreeEntry(pageProvider, rootPageNumber, newEntry)).toBe(false);
-
-      testScanResult(pageProvider.getPage, { forward: true }, entries, rootPageNumber);
+      entries.push(makeEntry(cur, length));
       cur = xorShift32(cur);
     }
 
-    // test partial scans
-    for (let i = 0; i < entries.length; i++) {
-      testScanResult(pageProvider.getPage, { forward: true, startEntry: entries[i] }, entries.slice(i), rootPageNumber);
-      testScanResult(
-        pageProvider.getPage,
-        { forward: false, startEntry: entries[i] },
-        entries.slice(0, i + 1).reverse(),
-        rootPageNumber
-      );
-    }
-
-    expect(pageProvider.pages.length).toBeGreaterThan(1);
-    expect(pageProvider.releasedPageNumbers.size).toBe(0);
-
-    // check that the first too layers are inner pages
-    const rootPage = pageProvider.getPage(rootPageNumber);
-    expect(rootPage[0]).toBe(0b10010);
-    const childPage = pageProvider.getPage(new DataView(rootPage.buffer, rootPage.byteOffset + 1).getUint32(0));
-    expect(childPage[0]).toBe(0b10010);
-  });
-
-  test("remove", () => {
-    const pageProvider = createPageProviderForWrite(400);
-    const rootPageNumber = allocateAndInitBtreeRootPage(pageProvider);
-
-    const entries: Uint8Array[] = [];
-    const count = 350;
-    const size = 40;
-    for (let i = 0; i < count; i++) {
-      const entry = makeEntry(i, size);
-      entries.push(entry);
-      expect(insertBtreeEntry(pageProvider, rootPageNumber, entry)).toBe(true);
-    }
-
-    testScanResult(pageProvider.getPage, { forward: true }, entries, rootPageNumber);
-
-    expect(pageProvider.pages.length).toBeGreaterThan(1);
-    expect(pageProvider.releasedPageNumbers.size).toBe(0);
-
-    // test removing in different orders
-    for (const removeOrder of [entries, [...entries].reverse(), randomizeOrder(entries)]) {
-      const removePageProvider = pageProvider.clone();
-
-      // remove the entries
-      removeOrder.forEach((entry) => {
-        expect(removeBtreeEntry(removePageProvider, rootPageNumber, entry)).toBe(true);
-        expect(removeBtreeEntry(removePageProvider, rootPageNumber, entry)).toBe(false);
-        checkBtreeIntegrity(removePageProvider.getPage, rootPageNumber);
-      });
-
-      testScanResult(removePageProvider.getPage, { forward: true }, [], rootPageNumber);
-
-      expect(removePageProvider.pages.length - removePageProvider.releasedPageNumbers.size).toBe(1);
-      expect(removePageProvider.releasedPageNumbers.size).toBeGreaterThan(0);
-    }
+    testInsertAndRemove(entries);
   });
 
   test("leaf page merge during remove", () => {
