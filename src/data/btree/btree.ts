@@ -325,7 +325,7 @@ export function countBtreeEntries(
   return countEntries(pageProvider, rootPageNumber, range);
 }
 
-export function checkIntegrity(
+function checkIntegrity(
   pageProvider: PageProvider,
   pageNumber: number
 ): { depth: number; entriesCount: number; firstEntry?: Uint8Array; lastEntry?: Uint8Array } {
