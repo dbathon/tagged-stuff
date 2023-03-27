@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { compareUint8Arrays } from "../page-entries/compareUint8Arrays";
+import { compareUint8Arrays } from "../shared/compareUint8Arrays";
 import { insertPageEntry } from "../page-entries/pageEntries";
 import {
   allocateAndInitBtreeRootPage,
