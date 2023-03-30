@@ -1,35 +1,27 @@
-const LIMIT1 = 0b0011_1111;
-const LIMIT2 = (LIMIT1 << 8) | 0xff;
-const LIMIT3 = (LIMIT2 << 8) | 0xff;
-
-function getCompressedUint32Length(uint32: number): 1 | 2 | 3 | 5 {
+function getFullBytes(uint32: number): number {
   if (uint32 >>> 0 !== uint32) {
     throw new Error("not a uint32: " + uint32);
   }
-  if (uint32 <= LIMIT1) {
-    return 1;
+  if (uint32 <= 0x3fff) {
+    return uint32 <= 0x3f ? 0 : 1;
   }
-  if (uint32 <= LIMIT2) {
-    return 2;
+  if (uint32 <= 0x1fffffff) {
+    return uint32 <= 0x3fffff ? 2 : 3;
   }
-  if (uint32 <= LIMIT3) {
-    return 3;
-  }
-  // we don't use length 4, because we encode the length in 2 bits, so there are only 4 options
-  return 5;
+  return 4;
 }
 
 /**
- * Writes the given uint32 to the array starting at offset. Writes 1, 2, 3 or 5 bytes depending on the uint32. The used
+ * Writes the given uint32 to the array starting at offset. Writes 1 to 5 bytes depending on the uint32. The used
  * "encoding" is also "order preserving".
  *
  * Use readCompressedUint32() to read uint32s written with this function.
  *
  * @returns the number of written bytes
  */
-export function writeCompressedUint32(array: Uint8Array, offset: number, uint32: number): 1 | 2 | 3 | 5 {
-  const compressedLength = getCompressedUint32Length(uint32);
-  let index = offset + compressedLength - 1;
+export function writeCompressedUint32(array: Uint8Array, offset: number, uint32: number): number {
+  const fullBytes = getFullBytes(uint32);
+  let index = offset + fullBytes;
   if (index >= array.length) {
     throw new Error("not enough space");
   }
@@ -37,10 +29,10 @@ export function writeCompressedUint32(array: Uint8Array, offset: number, uint32:
     array[index] = uint32 & 0xff;
     uint32 >>>= 8;
   }
-  const markerBits = compressedLength === 5 ? 3 : compressedLength - 1;
-  array[offset] = uint32 | (markerBits << 6);
+  const markerBits = fullBytes === 4 ? 0b111 : fullBytes << 1;
+  array[offset] = uint32 | (markerBits << 5);
 
-  return compressedLength;
+  return fullBytes + 1;
 }
 
 /**
@@ -52,9 +44,9 @@ export function writeCompressedUint32(array: Uint8Array, offset: number, uint32:
  */
 export function readCompressedUint32(array: Uint8Array, offset: number): { uint32: number; length: number } {
   const firstByte = array[offset];
-  const markerBits = firstByte >> 6;
-  const fullBytes = markerBits === 3 ? 4 : markerBits;
-  let result = firstByte & LIMIT1;
+  const markerBits = firstByte >> 5;
+  const fullBytes = markerBits === 0b111 ? 4 : markerBits >> 1;
+  let result = firstByte & 0x3f;
   for (let i = 0; i < fullBytes; i++) {
     offset++;
     result = (result << 8) | array[offset];

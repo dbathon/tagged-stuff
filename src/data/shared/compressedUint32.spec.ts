@@ -15,22 +15,51 @@ describe("read/writeCompressedUint32()", () => {
     const zeroArray = new Uint8Array(5);
     const tests: [number, number][] = [
       [1, 0xffffffff],
-      [1, 0xffffff],
-      [3, 0xfffff],
-      [4, 0xfff],
+      [1, 0x2fffffff],
+      [2, 0x1fffffff],
+      [2, 0xffffff],
+      [2, 0x4fffff],
+      [3, 0x3fffff],
+      [4, 0x3fff],
       [5, 0x0],
     ];
     for (const [offset, uint32] of tests) {
+      array.set(zeroArray);
       expect(() => writeCompressedUint32(array, offset, uint32)).toThrowError("not enough space");
       // no modification
       expect(array).toEqual(zeroArray);
+
+      expect(() => writeCompressedUint32(array, offset - 1, uint32)).not.toThrowError("not enough space");
     }
   });
 
   const testValues = [
-    0, 1, 2, 3, 0xf, 0xff, 0xfff, 0xffff, 0xfffff, 0xffffff, 0xfffffff, 0xffffffff,
-    0b10101010_10101010_10101010_10101010, 0b01010101_01010101_01010101_01010101, 0xf0f0f0f0, 0x0f0f0f0f,
-  ];
+    0,
+    1,
+    2,
+    3,
+    0xf,
+    0xff,
+    0xfff,
+    0xffff,
+    0xfffff,
+    0xffffff,
+    0xfffffff,
+    0xffffffff,
+    0b10101010_10101010_10101010_10101010,
+    0b01010101_01010101_01010101_01010101,
+    0xf0f0f0f0,
+    0x0f0f0f0f,
+    0x3f,
+    0x3fff,
+    0x3fffff,
+    0x1fffffff,
+    0x3f + 1,
+    0x3fff + 1,
+    0x3fffff + 1,
+    0x1fffffff + 1,
+  ].sort((a, b) => a - b);
+
   test("reads the written value", () => {
     const array = new Uint8Array(7);
     const zeroArray = new Uint8Array(7);
@@ -62,13 +91,12 @@ describe("read/writeCompressedUint32()", () => {
       expect(compareUint8Arrays(a, b)).toBe(-1);
     }
 
-    const sortedTestValues = [...testValues].sort((a, b) => a - b);
-    for (let i = 1; i < sortedTestValues.length; i++) {
-      testPreserving(sortedTestValues[i - 1], sortedTestValues[i]);
+    for (let i = 1; i < testValues.length; i++) {
+      testPreserving(testValues[i - 1], testValues[i]);
       for (let j = 1; j < 10; j++) {
-        const value = sortedTestValues[i] - j;
+        const value = testValues[i] - j;
         if (value >= 0) {
-          testPreserving(value, sortedTestValues[i]);
+          testPreserving(value, testValues[i]);
         }
       }
     }
@@ -86,12 +114,14 @@ describe("read/writeCompressedUint32()", () => {
     testRead([], 0, 1);
     testRead([0b01000000], 0, 2);
     testRead([0b10000000], 0, 3);
-    testRead([0b11000000], 0, 5);
+    testRead([0b11000000], 0, 4);
+    testRead([0b11100000], 0, 5);
     testRead([0b10000111, 0x34], 0x73400, 3);
 
     // numbers that are encoded in too many bytes
     testRead([0b01000000, 1], 1, 2);
     testRead([0b10000000, 0, 2], 2, 3);
-    testRead([0b11000000, 0, 0, 0, 4], 4, 5);
+    testRead([0b11000000, 0, 0, 3], 3, 4);
+    testRead([0b11100000, 0, 0, 0, 4], 4, 5);
   });
 });
