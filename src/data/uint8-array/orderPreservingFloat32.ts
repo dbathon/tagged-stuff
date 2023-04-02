@@ -4,7 +4,7 @@ const scratchDataView = new DataView(scratchArray.buffer);
 
 export function writeOrderPreservingFloat32(array: Uint8Array, offset: number, number: number): void {
   if (offset < 0 || offset + 4 > array.length) {
-    throw new Error("offset is out of bounds");
+    throw new RangeError("offset is out of bounds");
   }
   if (number !== number) {
     // NaN: use one canonical serialization
@@ -34,7 +34,7 @@ export function writeOrderPreservingFloat32(array: Uint8Array, offset: number, n
  */
 export function readOrderPreservingFloat32(array: Uint8Array, offset: number): number {
   if (offset < 0 || offset + 4 > array.length) {
-    throw new Error("offset is out of bounds");
+    throw new RangeError("offset is out of bounds");
   }
   if (array[offset] <= 0b0111_1111) {
     scratchArray[offset] = ~array[offset];

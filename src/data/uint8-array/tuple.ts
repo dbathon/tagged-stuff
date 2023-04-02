@@ -122,7 +122,7 @@ export function writeTuple<T extends TupleTypeDefinition>(
   const length = getLengthSum(lengthsOrArrays);
 
   if (offset < 0 || offset + length > array.length) {
-    throw new Error("offset is out of bounds");
+    throw new RangeError("offset is out of bounds");
   }
 
   writeTupleInternal(array, offset, tupleType, values, lengthsOrArrays);
@@ -162,7 +162,7 @@ export function readTuple<T extends TupleTypeDefinition>(
     return { values: [] as TupleType<T>, length: 0 };
   }
   if (offset < 0 || offset >= array.length) {
-    throw new Error("offset is out of bounds");
+    throw new RangeError("offset is out of bounds");
   }
 
   let index = offset;

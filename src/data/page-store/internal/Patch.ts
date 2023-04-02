@@ -10,10 +10,10 @@ const MAX_LENGTH = 255;
 export class Patch {
   constructor(readonly offset: number, readonly bytes: Uint8Array) {
     if (offset < 0 || offset > MAX_OFFSET) {
-      throw new Error("invalid offset: " + offset);
+      throw new RangeError("invalid offset: " + offset);
     }
     if (bytes.length > MAX_LENGTH) {
-      throw new Error("too many bytes: " + bytes.length);
+      throw new RangeError("too many bytes: " + bytes.length);
     }
     const a: ArrayLike<number> = bytes;
   }

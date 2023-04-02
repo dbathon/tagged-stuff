@@ -1,6 +1,6 @@
 function getFullBytes(uint32: number): number {
   if (uint32 >>> 0 !== uint32) {
-    throw new Error("not a uint32: " + uint32);
+    throw new TypeError("not a uint32: " + uint32);
   }
   if (uint32 <= 0x3fff) {
     return uint32 <= 0x3f ? 0 : 1;
@@ -23,7 +23,7 @@ export function writeCompressedUint32(array: Uint8Array, offset: number, uint32:
   const fullBytes = getFullBytes(uint32);
   let index = offset + fullBytes;
   if (index >= array.length) {
-    throw new Error("not enough space");
+    throw new RangeError("not enough space");
   }
   for (; index > offset; index--) {
     array[index] = uint32 & 0xff;

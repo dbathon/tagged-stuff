@@ -43,7 +43,7 @@ export function writeCompressedFloat64(array: Uint8Array, offset: number, value:
 
   const length = (twoByteExponent ? 2 : 1) + fractionBytes;
   if (offset < 0 || offset + length > array.length) {
-    throw new Error("offset is out of bounds");
+    throw new RangeError("offset is out of bounds");
   }
 
   array[offset] =
