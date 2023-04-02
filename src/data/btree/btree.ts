@@ -1,4 +1,4 @@
-import { compareUint8Arrays } from "../shared/compareUint8Arrays";
+import { compareUint8Arrays } from "../uint8-array/compareUint8Arrays";
 import {
   containsPageEntry,
   getEntryNumberOfPageEntry,

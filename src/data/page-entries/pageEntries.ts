@@ -1,4 +1,4 @@
-import { compareUint8Arrays } from "../shared/compareUint8Arrays";
+import { compareUint8Arrays } from "../uint8-array/compareUint8Arrays";
 
 /**
  * The functions in this file allow treating "page data" (Uint8Array) like a sorted set of byte arrays (of up to 2000 bytes)...
