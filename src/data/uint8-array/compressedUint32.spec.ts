@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { compareUint8Arrays } from "./compareUint8Arrays";
-import { readCompressedUint32, writeCompressedUint32 } from "./compressedUint32";
+import { getCompressedUint32ByteLength, readCompressedUint32, writeCompressedUint32 } from "./compressedUint32";
 
 describe("read/writeCompressedUint32()", () => {
   test("throws on invalid unit32", () => {
@@ -78,6 +78,8 @@ describe("read/writeCompressedUint32()", () => {
       const { uint32: readValue, length: readLength } = readCompressedUint32(array, 1);
       expect(readValue).toBe(testValue);
       expect(readLength).toBe(writeLength);
+
+      expect(getCompressedUint32ByteLength(testValue)).toBe(writeLength);
     }
   });
 

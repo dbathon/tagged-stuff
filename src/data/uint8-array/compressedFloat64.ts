@@ -5,6 +5,43 @@ const EXPONENT_MASK = (1 << EXPONENT_BITS) - 1;
 
 const scratchDataView = new DataView(new ArrayBuffer(8));
 
+function getFractionBytes(part1: number, part2: number): number {
+  if (part2) {
+    if (part2 & 0xfff) {
+      return part2 & 0xf ? 7 : 6;
+    } else if (part2 & 0xffff000) {
+      return part2 & 0xff000 ? 5 : 4;
+    } else {
+      return 3;
+    }
+  } else {
+    if (part1 & 0xfff) {
+      return part1 & 0xf ? 3 : 2;
+    } else {
+      return part1 & 0xff000 ? 1 : 0;
+    }
+  }
+}
+
+/**
+ * @param value
+ * @returns the number bytes necessary to serialize the given value
+ */
+export function getCompressedFloat64ByteLength(value: number): number {
+  scratchDataView.setFloat64(0, value);
+  const part1 = scratchDataView.getUint32(0);
+  const part2 = scratchDataView.getUint32(4);
+
+  // the following code is duplicated from writeCompressedFloat64()...
+  const exponent = (part1 >>> FRACTION_BITS_IN_PART1) & EXPONENT_MASK;
+  // convert the exponent so that values close to 1023 are close to 0 to get better compression for common numbers
+  const transformedExponent = exponent <= 1023 ? ((1023 - exponent) << 1) | 1 : (exponent - 1024) << 1;
+  // we need 2 bytes for the "exponent part" if the exponent is longer than 3 bits
+  const twoByteExponent = transformedExponent > 0b111;
+
+  return (twoByteExponent ? 2 : 1) + getFractionBytes(part1, part2);
+}
+
 /**
  * Writes the given float64 number to the array starting at offset. Writes 1 to 9 bytes depending on the number.
  *
@@ -24,22 +61,7 @@ export function writeCompressedFloat64(array: Uint8Array, offset: number, value:
   // we need 2 bytes for the "exponent part" if the exponent is longer than 3 bits
   const twoByteExponent = transformedExponent > 0b111;
 
-  let fractionBytes: number;
-  if (part2) {
-    if (part2 & 0xfff) {
-      fractionBytes = part2 & 0xf ? 7 : 6;
-    } else if (part2 & 0xffff000) {
-      fractionBytes = part2 & 0xff000 ? 5 : 4;
-    } else {
-      fractionBytes = 3;
-    }
-  } else {
-    if (part1 & 0xfff) {
-      fractionBytes = part1 & 0xf ? 3 : 2;
-    } else {
-      fractionBytes = part1 & 0xff000 ? 1 : 0;
-    }
-  }
+  const fractionBytes = getFractionBytes(part1, part2);
 
   const length = (twoByteExponent ? 2 : 1) + fractionBytes;
   if (offset < 0 || offset + length > array.length) {

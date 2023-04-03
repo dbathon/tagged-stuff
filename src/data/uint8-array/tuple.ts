@@ -1,5 +1,5 @@
-import { readCompressedFloat64, writeCompressedFloat64 } from "./compressedFloat64";
-import { readCompressedUint32, writeCompressedUint32 } from "./compressedUint32";
+import { getCompressedFloat64ByteLength, readCompressedFloat64, writeCompressedFloat64 } from "./compressedFloat64";
+import { getCompressedUint32ByteLength, readCompressedUint32, writeCompressedUint32 } from "./compressedUint32";
 
 export type TupleElementTypeName = "number" | "uint32" | "string";
 
@@ -14,8 +14,6 @@ export type TupleType<T extends TupleTypeDefinition> = T extends readonly []
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-const scratchArray = new Uint8Array(10);
-
 function toLengthsOrArrays<T extends TupleTypeDefinition>(tupleType: T, values: TupleType<T>): (number | Uint8Array)[] {
   const result: (number | Uint8Array)[] = [];
   const length = tupleType.length;
@@ -23,14 +21,14 @@ function toLengthsOrArrays<T extends TupleTypeDefinition>(tupleType: T, values: 
     const typeName = tupleType[i];
     switch (typeName) {
       case "number":
-        result.push(writeCompressedFloat64(scratchArray, 0, values[i] as number));
+        result.push(getCompressedFloat64ByteLength(values[i] as number));
         break;
       case "uint32":
-        result.push(writeCompressedUint32(scratchArray, 0, values[i] as number));
+        result.push(getCompressedUint32ByteLength(values[i] as number));
         break;
       case "string":
         const encodedString = textEncoder.encode(values[i] as string);
-        result.push(writeCompressedUint32(scratchArray, 0, encodedString.length), encodedString);
+        result.push(getCompressedUint32ByteLength(encodedString.length), encodedString);
         break;
     }
   }

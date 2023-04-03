@@ -12,6 +12,14 @@ function getFullBytes(uint32: number): number {
 }
 
 /**
+ * @param uint32
+ * @returns the number bytes necessary to serialize the given uint32
+ */
+export function getCompressedUint32ByteLength(uint32: number): number {
+  return getFullBytes(uint32) + 1;
+}
+
+/**
  * Writes the given uint32 to the array starting at offset. Writes 1 to 5 bytes depending on the uint32. The used
  * "encoding" is also "order preserving".
  *

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { readCompressedFloat64, writeCompressedFloat64 } from "./compressedFloat64";
+import { getCompressedFloat64ByteLength, readCompressedFloat64, writeCompressedFloat64 } from "./compressedFloat64";
 
 describe("read/writeCompressedFloat64()", () => {
   test("throws on offset is out of bounds", () => {
@@ -109,6 +109,8 @@ describe("read/writeCompressedFloat64()", () => {
     const { value: readValue, length: readLength } = readCompressedFloat64(array, 1);
     expect(readValue).toBe(testValue);
     expect(readLength).toBe(writeLength);
+
+    expect(getCompressedFloat64ByteLength(testValue)).toBe(writeLength);
   }
 
   test("reads the written value", () => {
