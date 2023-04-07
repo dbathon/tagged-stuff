@@ -23,12 +23,14 @@ function testTuple<T extends TupleTypeDefinition>(tupleType: T, values: TupleTyp
 test("tuple", () => {
   testTuple([] as const, []);
   testTuple(["string", "uint32"] as const, ["some string", 55]);
-  testTuple(["string", "uint32", "string", "number", "number", "number", "number"] as const, [
+  testTuple(["string", "uint32", "string", "number", "number", "uint32raw", "array", "number", "number"] as const, [
     "string1",
     42,
     "string2",
     1,
     -42.2345,
+    12345,
+    Uint8Array.from([1, 2, 3, 4, 5]),
     NaN,
     -Infinity,
   ]);

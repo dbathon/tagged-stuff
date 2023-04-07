@@ -1,14 +1,23 @@
 import { getCompressedFloat64ByteLength, readCompressedFloat64, writeCompressedFloat64 } from "./compressedFloat64";
 import { getCompressedUint32ByteLength, readCompressedUint32, writeCompressedUint32 } from "./compressedUint32";
 
-export type TupleElementTypeName = "number" | "uint32" | "string";
+export type TupleElementTypeName = "number" | "uint32" | "uint32raw" | "string" | "array";
 
 export type TupleTypeDefinition = readonly TupleElementTypeName[];
 
 export type TupleType<T extends TupleTypeDefinition> = T extends readonly []
   ? []
   : T extends readonly [infer TN, ...infer Rest extends TupleTypeDefinition]
-  ? [TN extends "number" | "uint32" ? number : TN extends "string" ? string : never, ...TupleType<Rest>]
+  ? [
+      TN extends "number" | "uint32" | "uint32raw"
+        ? number
+        : TN extends "string"
+        ? string
+        : TN extends "array"
+        ? Uint8Array
+        : never,
+      ...TupleType<Rest>
+    ]
   : never;
 
 const textEncoder = new TextEncoder();
@@ -26,9 +35,16 @@ function toLengthsOrArrays<T extends TupleTypeDefinition>(tupleType: T, values: 
       case "uint32":
         result.push(getCompressedUint32ByteLength(values[i] as number));
         break;
+      case "uint32raw":
+        result.push(4);
+        break;
       case "string":
         const encodedString = textEncoder.encode(values[i] as string);
         result.push(getCompressedUint32ByteLength(encodedString.length), encodedString);
+        break;
+      case "array":
+        const bytes = values[i] as Uint8Array;
+        result.push(getCompressedUint32ByteLength(bytes.length), bytes);
         break;
     }
   }
@@ -51,6 +67,9 @@ function getLengthSum(lengthsOrArrays: (number | Uint8Array)[]) {
 export function getTupleByteLength<T extends TupleTypeDefinition>(tupleType: T, values: TupleType<T>): number {
   return getLengthSum(toLengthsOrArrays(tupleType, values));
 }
+
+const scratchUint8Array = new Uint8Array(4);
+const scratchDataView = new DataView(scratchUint8Array.buffer);
 
 function writeTupleInternal<T extends TupleTypeDefinition>(
   array: Uint8Array,
@@ -75,16 +94,23 @@ function writeTupleInternal<T extends TupleTypeDefinition>(
         bytesWritten = writeCompressedUint32(array, offset, values[i] as number);
         offset += bytesWritten;
         break;
+      case "uint32raw":
+        scratchDataView.setUint32(0, values[i] as number);
+        array.set(scratchUint8Array, offset);
+        bytesWritten = 4;
+        offset += bytesWritten;
+        break;
       case "string":
+      case "array":
         extraArray = true;
-        const encodedString = lengthsOrArrays[lengthsOrArraysIndex + 1];
-        if (!(encodedString instanceof Uint8Array)) {
+        const uint8Array = lengthsOrArrays[lengthsOrArraysIndex + 1];
+        if (!(uint8Array instanceof Uint8Array)) {
           throw new Error("unexpected");
         }
-        bytesWritten = writeCompressedUint32(array, offset, encodedString.length);
+        bytesWritten = writeCompressedUint32(array, offset, uint8Array.length);
         offset += bytesWritten;
-        array.set(encodedString, offset);
-        offset += encodedString.length;
+        array.set(uint8Array, offset);
+        offset += uint8Array.length;
         break;
     }
     if (!bytesWritten || bytesWritten !== lengthsOrArrays[lengthsOrArraysIndex]) {
@@ -164,7 +190,7 @@ export function readTuple<T extends TupleTypeDefinition>(
   }
 
   let index = offset;
-  const result: (string | number)[] = [];
+  const result: (string | number | Uint8Array)[] = [];
   const length = tupleType.length;
   for (let i = 0; i < length; i++) {
     const typeName = tupleType[i];
@@ -183,13 +209,21 @@ export function readTuple<T extends TupleTypeDefinition>(
           index += readResult.length;
         }
         break;
+      case "uint32raw":
+        {
+          result.push(new DataView(array.buffer, array.byteOffset + index, 4).getUint32(0));
+          index += 4;
+        }
+        break;
       case "string":
+      case "array":
         {
           const readResult = readCompressedUint32(array, index);
-          const stringBytesLength = readResult.uint32;
+          const bytesLength = readResult.uint32;
           index += readResult.length;
-          result.push(textDecoder.decode(array.subarray(index, index + stringBytesLength)));
-          index += stringBytesLength;
+          const subArray = array.subarray(index, index + bytesLength);
+          result.push(typeName === "string" ? textDecoder.decode(subArray) : subArray);
+          index += bytesLength;
         }
         break;
     }
