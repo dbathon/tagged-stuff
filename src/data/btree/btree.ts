@@ -13,6 +13,7 @@ import {
   scanPageEntriesReverse,
 } from "../page-entries/pageEntries";
 import { PageProvider, PageProviderForWrite } from "./pageProvider";
+import { isPrefixOfUint8Array } from "../uint8-array/isPrefixOfUint8Array";
 
 /**
  * The functions in this file allow treating "pages" (Uint8Arrays) as nodes of a B+-tree.
@@ -204,6 +205,95 @@ export function scanBtreeEntriesReverse(
 ): boolean {
   const result = scan(pageProvider, rootPageNumber, startEntry, false, callback);
   return result !== MISSING_PAGE;
+}
+
+/**
+ * @returns the entries or false if there is a missing page
+ */
+export function findAllBtreeEntriesWithPrefix(
+  pageProvider: PageProvider,
+  rootPageNumber: number,
+  prefix: Uint8Array
+): Uint8Array[] | false {
+  const result: Uint8Array[] = [];
+  const scanResult = scanBtreeEntries(pageProvider, rootPageNumber, prefix, (entry) => {
+    const isPrefix = isPrefixOfUint8Array(entry, prefix);
+    if (isPrefix) {
+      result.push(entry);
+    }
+    return isPrefix;
+  });
+  return scanResult && result;
+}
+
+/**
+ * @returns the entry or undefined if there is no such entry or false if there is a missing page
+ */
+export function findFirstBtreeEntryWithPrefix(
+  pageProvider: PageProvider,
+  rootPageNumber: number,
+  prefix: Uint8Array
+): Uint8Array | undefined | false {
+  const pageArray = pageProvider(rootPageNumber);
+  if (!pageArray) {
+    return false;
+  }
+  const pageType = getPageType(pageArray);
+  const entriesPageArray = getEntriesPageArray(pageArray, pageType);
+  if (pageType === PAGE_TYPE_LEAF) {
+    let result: Uint8Array | undefined = undefined;
+    scanPageEntries(entriesPageArray, prefix, (entry) => {
+      if (isPrefixOfUint8Array(entry, prefix)) {
+        result = entry;
+      }
+      return false;
+    });
+    return result;
+  } else {
+    const childIndex = findChildIndex(entriesPageArray, prefix);
+    const childPageNumbers = getChildPageNumbers(pageArray);
+    return findFirstBtreeEntryWithPrefix(pageProvider, childPageNumbers.getUint32(childIndex << 2), prefix);
+  }
+}
+
+/**
+ * @returns the entry or undefined if there are no entries or false if there is a missing page
+ */
+export function findFirstBtreeEntry(
+  pageProvider: PageProvider,
+  rootPageNumber: number
+): Uint8Array | undefined | false {
+  const pageArray = pageProvider(rootPageNumber);
+  if (!pageArray) {
+    return false;
+  }
+  const pageType = getPageType(pageArray);
+  if (pageType === PAGE_TYPE_LEAF) {
+    const entriesPageArray = getEntriesPageArray(pageArray, pageType);
+    return readPageEntriesCount(entriesPageArray) > 0 ? readPageEntryByNumber(entriesPageArray, 0) : undefined;
+  } else {
+    const childPageNumbers = getChildPageNumbers(pageArray);
+    return findFirstBtreeEntry(pageProvider, childPageNumbers.getUint32(0));
+  }
+}
+
+/**
+ * @returns the entry or undefined if there are no entries or false if there is a missing page
+ */
+export function findLastBtreeEntry(pageProvider: PageProvider, rootPageNumber: number): Uint8Array | undefined | false {
+  const pageArray = pageProvider(rootPageNumber);
+  if (!pageArray) {
+    return false;
+  }
+  const pageType = getPageType(pageArray);
+  const entriesPageArray = getEntriesPageArray(pageArray, pageType);
+  const entriesCount = readPageEntriesCount(entriesPageArray);
+  if (pageType === PAGE_TYPE_LEAF) {
+    return entriesCount > 0 ? readPageEntryByNumber(entriesPageArray, entriesCount - 1) : undefined;
+  } else {
+    const childPageNumbers = getChildPageNumbers(pageArray);
+    return findLastBtreeEntry(pageProvider, childPageNumbers.getUint32(entriesCount << 2));
+  }
 }
 
 export interface EntriesRange {

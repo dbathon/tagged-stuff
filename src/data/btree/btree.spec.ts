@@ -6,6 +6,10 @@ import {
   checkBtreeIntegrity,
   countBtreeEntries,
   EntriesRange,
+  findAllBtreeEntriesWithPrefix,
+  findFirstBtreeEntry,
+  findFirstBtreeEntryWithPrefix,
+  findLastBtreeEntry,
   insertBtreeEntry,
   removeBtreeEntry,
   scanBtreeEntries,
@@ -492,5 +496,49 @@ describe("btree", () => {
         });
       }
     }
+  });
+
+  test("find functions", () => {
+    const pageProvider = createPageProviderForWrite(400);
+    const rootPageNumber = allocateAndInitBtreeRootPage(pageProvider);
+
+    expect(findFirstBtreeEntry(pageProvider.getPage, rootPageNumber)).toBe(undefined);
+    expect(findLastBtreeEntry(pageProvider.getPage, rootPageNumber)).toBe(undefined);
+    expect(findFirstBtreeEntryWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([1]))).toBe(undefined);
+    expect(findAllBtreeEntriesWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([1]))).toStrictEqual([]);
+
+    const entries: Uint8Array[] = [];
+    const countPerGroup = 100;
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < countPerGroup; j++) {
+        entries.push(Uint8Array.from([i, j, 1, 2, 3, 4, 5, 6, 7, 8]));
+      }
+    }
+    for (const entry of entries) {
+      expect(insertBtreeEntry(pageProvider, rootPageNumber, entry)).toBe(true);
+    }
+
+    expect(pageProvider.pages.length).toBeGreaterThan(1);
+
+    expect(findFirstBtreeEntry(pageProvider.getPage, rootPageNumber)).toStrictEqual(entries[0]);
+    expect(findLastBtreeEntry(pageProvider.getPage, rootPageNumber)).toStrictEqual(entries.at(-1));
+
+    const group1 = entries.filter((e) => e[0] === 1);
+    expect(findFirstBtreeEntryWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([1]))).toStrictEqual(
+      group1[0]
+    );
+    expect(findAllBtreeEntriesWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([1]))).toStrictEqual(
+      group1
+    );
+
+    expect(findFirstBtreeEntryWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([3]))).toBe(undefined);
+    expect(findAllBtreeEntriesWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([3]))).toStrictEqual([]);
+
+    const pagesMissingPageProvider: PageProvider = (pageNumber) => undefined;
+    expect(findFirstBtreeEntry(pagesMissingPageProvider, rootPageNumber)).toBe(false);
+    expect(findLastBtreeEntry(pagesMissingPageProvider, rootPageNumber)).toBe(false);
+
+    expect(findFirstBtreeEntryWithPrefix(pagesMissingPageProvider, rootPageNumber, Uint8Array.from([3]))).toBe(false);
+    expect(findAllBtreeEntriesWithPrefix(pagesMissingPageProvider, rootPageNumber, Uint8Array.from([3]))).toBe(false);
   });
 });
