@@ -55,9 +55,12 @@ const NEW_ELEMENT_REQUIRED_IF_OBJECT = 2;
 
 type ProduceEventsResult = typeof NEW_ELEMENT_REQUIRED_IF_ARRAY | typeof NEW_ELEMENT_REQUIRED_IF_OBJECT | false;
 
+type AttributeFilter = (key: string, parentPath: JsonPath | undefined) => boolean;
+
 function produceEvents(
   jsonValue: Json,
   consumer: JsonEventConsumer,
+  filter: AttributeFilter | undefined,
   parentPath: JsonPath | undefined,
   previousArrayEntryResult?: ProduceEventsResult
 ): ProduceEventsResult {
@@ -78,14 +81,14 @@ function produceEvents(
         };
         let previousResult: ProduceEventsResult | undefined = undefined;
         for (let i = 0; i < length; i++) {
-          previousResult = produceEvents(jsonValue[i], consumer, path, previousResult);
+          previousResult = produceEvents(jsonValue[i], consumer, filter, path, previousResult);
         }
         return NEW_ELEMENT_REQUIRED_IF_ARRAY;
       }
     } else {
       let entrySeen = false;
       for (const [key, value] of Object.entries(jsonValue)) {
-        if (value !== undefined) {
+        if (value !== undefined && (!filter || filter(key, parentPath))) {
           if (!entrySeen) {
             if (previousArrayEntryResult === NEW_ELEMENT_REQUIRED_IF_OBJECT) {
               consumer(JSON_ARRAY_NEW_ELEMENT, parentPath);
@@ -96,7 +99,7 @@ function produceEvents(
             parent: parentPath,
             key,
           };
-          produceEvents(value, consumer, path);
+          produceEvents(value, consumer, filter, path);
         }
       }
       if (!entrySeen) {
@@ -119,8 +122,8 @@ function produceEvents(
   return false;
 }
 
-export function produceJsonEvents(jsonValue: Json, consumer: JsonEventConsumer): void {
-  produceEvents(jsonValue, consumer, undefined);
+export function produceJsonEvents(jsonValue: Json, consumer: JsonEventConsumer, filter?: AttributeFilter): void {
+  produceEvents(jsonValue, consumer, filter, undefined);
 }
 
 function pathsEqual(a: JsonPath | undefined, b: JsonPath | undefined): boolean {
