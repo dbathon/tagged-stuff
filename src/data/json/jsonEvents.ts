@@ -1,3 +1,5 @@
+import { assert } from "../misc/assert";
+
 /**
  * The functions in this file allow producing an "event stream" from a JSON value and then in reverse also allow
  * reconstructing the JSON value from the events.
@@ -117,7 +119,7 @@ function produceEvents(
   } else if (typeof jsonValue === "string") {
     consumer(JSON_STRING, parentPath, jsonValue);
   } else {
-    throw new Error("unexpected JSON value: " + jsonValue);
+    assert(false, "unexpected JSON value");
   }
   return false;
 }
@@ -156,29 +158,23 @@ function getSimpleValue(event: JsonEvent): Json {
     case JSON_FALSE:
       return false;
     case JSON_NUMBER:
-      if (!(typeof event.value === "number")) {
-        throw new Error("value missing for NUMBER event");
-      }
+      assert(typeof event.value === "number", "value missing for NUMBER event");
       return event.value;
     case JSON_STRING:
-      if (!(typeof event.value === "string")) {
-        throw new Error("value missing for NUMBER event");
-      }
+      assert(typeof event.value === "string", "value missing for STRING event");
       return event.value;
     case JSON_EMPTY_ARRAY:
       return [];
     case JSON_EMPTY_OBJECT:
       return {};
     case JSON_ARRAY_NEW_ELEMENT:
-      throw new Error("unexpected NEW_ELEMENT");
+      assert(false, "unexpected NEW_ELEMENT");
   }
 }
 
 function buildJson(events: JsonEvent[], index: number, path: JsonPath | undefined): { value: Json; newIndex: number } {
   const length = events.length;
-  if (index >= length) {
-    throw new Error("no remaining events");
-  }
+  assert(index < length, "no remaining events");
   let event = events[index];
   if (pathsEqual(event.path, path)) {
     return {
@@ -239,7 +235,7 @@ function buildJson(events: JsonEvent[], index: number, path: JsonPath | undefine
     }
   }
 
-  throw new Error("invalid events");
+  assert(false, "invalid events");
 }
 
 export function buildJsonFromEvents(events: JsonEvent[]): Json {

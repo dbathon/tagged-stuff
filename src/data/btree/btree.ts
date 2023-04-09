@@ -14,6 +14,7 @@ import {
 } from "../page-entries/pageEntries";
 import { PageProvider, PageProviderForWrite } from "./pageProvider";
 import { isPrefixOfUint8Array } from "../uint8-array/isPrefixOfUint8Array";
+import { assert } from "../misc/assert";
 
 /**
  * The functions in this file allow treating "pages" (Uint8Arrays) as nodes of a B+-tree.
@@ -59,10 +60,8 @@ function getPageType(pageArray: Uint8Array): PageType {
 function getMaxChildPageNumbers(pageArray: Uint8Array): number {
   // divide by 16 and floor (a quarter of the pages size and 4 bytes per page number)
   const result = pageArray.length >> 4;
-  if (result < 3) {
-    // a page with less than 3 children cannot be split properly if a new child is added
-    throw new Error("the page is too small: " + pageArray.length);
-  }
+  // a page with less than 3 children cannot be split properly if a new child is added
+  assert(result >= 3, "the page is too small: " + pageArray.length);
   return result;
 }
 
@@ -454,8 +453,11 @@ function checkIntegrity(
       const childResult = checkIntegrity(pageProvider, childPageNumbers.getUint32(i << 2));
       if (childDepth === undefined) {
         childDepth = childResult.depth;
-      } else if (childDepth !== childResult.depth) {
-        throw new Error("different depth in child trees: " + childDepth + ", " + childResult.depth);
+      } else {
+        assert(
+          childDepth === childResult.depth,
+          "different depth in child trees: " + childDepth + ", " + childResult.depth
+        );
       }
       const childEntriesCount = childEntriesCounts.getUint16(i << 1);
       if (childEntriesCount !== entriesCountToZeroIfTooLarge(childResult.entriesCount)) {
@@ -490,10 +492,7 @@ function checkIntegrity(
         }
       }
     }
-    if (childDepth === undefined) {
-      // this should never happen, since entriesCount is at least 0
-      throw new Error("unexpected");
-    }
+    assert(childDepth !== undefined);
     if (!firstEntry || !lastEntry) {
       throw new Error("no entries in tree of page " + pageNumber);
     }
@@ -534,7 +533,7 @@ export function allocateAndInitBtreeRootPage(pageProvider: PageProviderForWrite)
 function insertPageEntryWithThrow(pageArray: Uint8Array, entry: Uint8Array, tryRewrite = false): void {
   if (!insertPageEntry(pageArray, entry)) {
     if (!tryRewrite) {
-      throw new Error("entry insert failed unexpectedly");
+      assert(false, "entry insert failed unexpectedly");
     }
     // reset the page and insert all entries again (including the new entry) to remove potential "fragmentation"
     const oldEntries = readAllPageEntries(pageArray).map((entry) => Uint8Array.from(entry));
@@ -548,9 +547,7 @@ function insertPageEntryWithThrow(pageArray: Uint8Array, entry: Uint8Array, tryR
 
 function findSplitIndex(entries: Uint8Array[]): number {
   const totalCount = entries.length;
-  if (totalCount < 2) {
-    throw new Error("cannot split a page with less than 2 entries");
-  }
+  assert(totalCount >= 2, "cannot split a page with less than 2 entries");
   const halfTotalBytes = entries.reduce((sum, entry) => sum + entry.length, 0) >> 1;
   let rightStartIndex = 1;
   let leftBytes = entries[0].length;
@@ -619,9 +616,7 @@ function splitLeafPageAndInsert(
   // sanity check
   const leftCount = readPageEntriesCount(leftEntriesPageArrayForUpdate);
   const rightCount = readPageEntriesCount(rightEntriesPageArrayForUpdate);
-  if (leftCount < 1 || rightCount < 1 || leftCount + rightCount !== totalCount) {
-    throw new Error("unexpected counts: " + leftCount + ", " + rightCount + ", " + totalCount);
-  }
+  assert(leftCount >= 1 && rightCount >= 1 && leftCount + rightCount === totalCount);
 
   // determine the lowerBound
   const left = allEntries[rightStartIndex - 1];
@@ -630,9 +625,7 @@ function splitLeafPageAndInsert(
     const leftByte = left[i];
     const rightByte = right[i];
     if (leftByte !== rightByte) {
-      if (rightByte === undefined) {
-        throw new Error("unexpected undefined byte");
-      }
+      assert(rightByte !== undefined);
       return {
         lowerBound: right.slice(0, i + 1),
         childPageNumber: rightPageNumber,
@@ -657,9 +650,7 @@ function splitInnerPageAndInsert(
 
   // totalCount is also the old child count
   const totalCount = allEntries.length;
-  if (totalCount < 3) {
-    throw new Error("cannot split inner page with less then 3 entries");
-  }
+  assert(totalCount >= 3, "cannot split inner page with less then 3 entries");
   const allChildPageNumbers: number[] = [];
   const allChildEntriesCounts: number[] = [];
   const leftChildPageNumbers = getChildPageNumbers(leftPageArrayForUpdate);
@@ -720,9 +711,7 @@ function splitInnerPageAndInsert(
   // sanity check
   const leftCount = readPageEntriesCount(leftEntriesPageArrayForUpdate);
   const rightCount = readPageEntriesCount(rightEntriesPageArrayForUpdate);
-  if (leftCount < 1 || rightCount < 1 || leftCount + rightCount !== totalCount - 1) {
-    throw new Error("unexpected counts: " + leftCount + ", " + rightCount + ", " + totalCount);
-  }
+  assert(leftCount >= 1 && rightCount >= 1 && leftCount + rightCount === totalCount - 1);
 
   return {
     lowerBound: allEntries[middleIndex],
@@ -775,9 +764,7 @@ function removeChildEntriesCount(childEntriesCounts: DataView, index: number, co
 }
 
 function copyDataView(from: DataView, to: DataView, bytesToCopy: number) {
-  if (bytesToCopy > from.byteLength || bytesToCopy > to.byteLength) {
-    throw new Error("DataViews are too small");
-  }
+  assert(bytesToCopy <= from.byteLength && bytesToCopy <= to.byteLength, "DataViews are too small");
   // create Uint8Arrays to be able to use set
   const fromArray = new Uint8Array(from.buffer, from.byteOffset, bytesToCopy);
   const toArray = new Uint8Array(to.buffer, to.byteOffset, bytesToCopy);
@@ -896,14 +883,8 @@ function insert(
       const insertSuccess =
         moreChildrenPossible && insertPageEntry(entriesPageArrayForUpdate, childInsertResult.lowerBound);
       if (insertSuccess) {
-        // sanity checks
-        if (countBefore + 1 !== readPageEntriesCount(entriesPageArrayForUpdate)) {
-          throw new Error("lowerBound already existed");
-        }
         const insertedAtIndex = getEntryNumberOfPageEntry(entriesPageArrayForUpdate, childInsertResult.lowerBound);
-        if (insertedAtIndex !== childIndex) {
-          throw new Error("unexpected insertedAtIndex: " + insertedAtIndex + ", " + childIndex);
-        }
+        assert(insertedAtIndex === childIndex);
         writeChildPageNumber(
           getChildPageNumbers(pageArrayForUpdate),
           childInsertResult.childPageNumber,
@@ -921,11 +902,10 @@ function insert(
         return sumEntriesCounts(pageArrayForUpdate);
       } else {
         // we need to split the page
-        if (countBefore < 2) {
-          // this should not happen, but potentially could because of page entry fragmentation?...
-          // TODO: we could potentially rewrite the pages or even split anyway and have a page that just has a child pointer...
-          throw new Error("cannot split page with less than two entries");
-        }
+
+        // countBefore < 2 should not happen, but potentially could because of page entry fragmentation?...
+        // TODO: we could potentially rewrite the pages or even split anyway and have a page that just has a child pointer...
+        assert(countBefore >= 2, "cannot split page with less than two entries");
 
         let rootPageArrayBefore: Uint8Array | undefined = undefined;
         if (isRootPage) {
@@ -957,9 +937,7 @@ export function insertBtreeEntry(
   entry: Uint8Array
 ): boolean {
   const insertResult = insert(pageProvider, rootPageNumber, entry, true, true);
-  if (insertResult !== undefined && typeof insertResult !== "number") {
-    throw new Error("insert on root page returned unexpected result");
-  }
+  assert(insertResult === undefined || typeof insertResult === "number");
   return insertResult !== undefined;
 }
 
@@ -1016,9 +994,7 @@ function maybeMergeIntoLeftSibling(
 
   const leftSiblingPageNumber = getChildPageNumbers(parentPageArray).getUint32((parentChildIndex - 1) << 2);
   const leftSiblingPageArray = pageProvider.getPage(leftSiblingPageNumber);
-  if (getPageType(leftSiblingPageArray) !== pageType) {
-    throw new Error("left sibling page type does not match " + pageType);
-  }
+  assert(getPageType(leftSiblingPageArray) === pageType, "left sibling page type does not match " + pageType);
 
   let parentLowerBoundEntry: Uint8Array | undefined = undefined;
   if (pageType === PAGE_TYPE_INNER) {
@@ -1038,9 +1014,7 @@ function maybeMergeIntoLeftSibling(
     return undefined;
   }
   let entryNumberToRemove = getEntryNumberOfPageEntry(entriesPageArray, entryToRemove);
-  if (entryNumberToRemove === undefined) {
-    throw new Error("sourceEntriesPageArray does not contain entryToRemove");
-  }
+  assert(entryNumberToRemove !== undefined, "entriesPageArray does not contain entryToRemove");
 
   const leftSiblingPageArrayForUpdate = pageProvider.getPageForUpdate(leftSiblingPageNumber);
   const leftSiblingEntriesPageArrayForUpdate = getEntriesPageArray(leftSiblingPageArrayForUpdate, pageType);
@@ -1057,9 +1031,7 @@ function maybeMergeIntoLeftSibling(
   });
 
   if (pageType === PAGE_TYPE_INNER) {
-    if (childIndexToRemove === undefined) {
-      throw new Error("childIndexToRemove is required for inner pages");
-    }
+    assert(childIndexToRemove !== undefined, "childIndexToRemove is required for inner pages");
     // handle the children
     const childPageNumbers = getChildPageNumbers(pageArray);
     const childEntriesCounts = getChildEntriesCounts(pageArray);
@@ -1145,9 +1117,7 @@ function remove(
     }
 
     const entriesPageArrayForUpdate = getEntriesPageArray(pageProvider.getPageForUpdate(pageNumber), pageType);
-    if (!removePageEntry(entriesPageArrayForUpdate, entry)) {
-      throw new Error("removePageEntry() failed");
-    }
+    assert(removePageEntry(entriesPageArrayForUpdate, entry));
     return {
       entriesCount: readPageEntriesCount(entriesPageArrayForUpdate),
     };
@@ -1160,9 +1130,7 @@ function remove(
     if (childRemoveResult === undefined) {
       return undefined;
     } else if (childRemoveResult.entriesCount !== undefined) {
-      if (childRemoveResult.leftSiblingEntriesCount !== undefined) {
-        throw new Error("invalid RemoveResult");
-      }
+      assert(childRemoveResult.leftSiblingEntriesCount === undefined);
       const pageArrayForUpdate = pageProvider.getPageForUpdate(pageNumber);
       const childEntriesCounts = getChildEntriesCounts(pageArrayForUpdate);
       childEntriesCounts.setUint16(childIndex << 1, childRemoveResult.entriesCount);
@@ -1239,8 +1207,6 @@ export function removeBtreeEntry(
   entry: Uint8Array
 ): boolean {
   const removeResult = remove(pageProvider, rootPageNumber, entry, undefined, undefined);
-  if (removeResult && removeResult.entriesCount === undefined) {
-    throw new Error("remove on root page returned unexpected result");
-  }
+  assert(!removeResult || removeResult.entriesCount !== undefined);
   return removeResult !== undefined;
 }

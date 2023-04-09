@@ -1,3 +1,4 @@
+import { assert } from "../misc/assert";
 import { getCompressedFloat64ByteLength, readCompressedFloat64, writeCompressedFloat64 } from "./compressedFloat64";
 import { getCompressedUint32ByteLength, readCompressedUint32, writeCompressedUint32 } from "./compressedUint32";
 
@@ -104,29 +105,21 @@ function writeTupleInternal<T extends TupleTypeDefinition>(
       case "array":
         extraArray = true;
         const uint8Array = lengthsOrArrays[lengthsOrArraysIndex + 1];
-        if (!(uint8Array instanceof Uint8Array)) {
-          throw new Error("unexpected");
-        }
+        assert(uint8Array instanceof Uint8Array);
         bytesWritten = writeCompressedUint32(array, offset, uint8Array.length);
         offset += bytesWritten;
         array.set(uint8Array, offset);
         offset += uint8Array.length;
         break;
     }
-    if (!bytesWritten || bytesWritten !== lengthsOrArrays[lengthsOrArraysIndex]) {
-      throw new Error("unexpected");
-    }
+    assert(bytesWritten && bytesWritten === lengthsOrArrays[lengthsOrArraysIndex]);
     lengthsOrArraysIndex++;
     if (extraArray) {
-      if (!(lengthsOrArrays[lengthsOrArraysIndex] instanceof Uint8Array)) {
-        throw new Error("unexpected");
-      }
+      assert(lengthsOrArrays[lengthsOrArraysIndex] instanceof Uint8Array);
       lengthsOrArraysIndex++;
     }
   }
-  if (lengthsOrArraysIndex !== lengthsOrArrays.length) {
-    throw new Error("unexpected");
-  }
+  assert(lengthsOrArraysIndex === lengthsOrArrays.length);
 }
 
 /**

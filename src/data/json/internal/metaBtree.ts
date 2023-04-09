@@ -5,6 +5,7 @@ import {
   insertBtreeEntry,
 } from "../../btree/btree";
 import { PageProvider, PageProviderForWrite } from "../../btree/pageProvider";
+import { assert } from "../../misc/assert";
 import { murmurHash3_x86_32 } from "../../misc/murmurHash3";
 import { isPrefixOfUint8Array } from "../../uint8-array/isPrefixOfUint8Array";
 import { readTuple, tupleToUint8Array } from "../../uint8-array/tuple";
@@ -34,9 +35,7 @@ function buildBytesForPath(parentPathNumber: number, key: string | null): Uint8A
 
 function parseBytesForPath(bytes: Uint8Array): { parentPathNumber: number; key: string | null } {
   const [parentPathNumberAndExtra, key] = readTuple(bytes, UINT32_STRING_TUPLE).values;
-  if ((parentPathNumberAndExtra & 1) !== 0) {
-    throw new Error("not a path entry");
-  }
+  assert((parentPathNumberAndExtra & 1) === 0, "not a path entry");
   const isNull = (parentPathNumberAndExtra & 0b10) !== 0;
   const parentPathNumber = parentPathNumberAndExtra >>> 2;
   return {
@@ -51,9 +50,7 @@ function buildBytesForType(pathNumber: number, type: JsonEventType): Uint8Array 
 
 function parseBytesForType(bytes: Uint8Array): { pathNumber: number; type: JsonEventType } {
   const [pathNumberAndExtra, type] = readTuple(bytes, UINT32_UINT32_TUPLE).values;
-  if ((pathNumberAndExtra & 1) !== 1) {
-    throw new Error("not a type entry");
-  }
+  assert((pathNumberAndExtra & 1) === 1, "not a type entry");
   const pathNumber = pathNumberAndExtra >>> 1;
   return {
     pathNumber,
@@ -62,9 +59,7 @@ function parseBytesForType(bytes: Uint8Array): { pathNumber: number; type: JsonE
 }
 
 function notFalse<T>(value: T | false): T {
-  if (value === false) {
-    throw new Error("unexpected");
-  }
+  assert(value !== false);
   return value;
 }
 
@@ -75,9 +70,7 @@ function readBytesForNumber(
 ): Uint8Array | false {
   const entryPrefix = tupleToUint8Array(UINT32_UINT32_TUPLE, [ENTRY_PREFIX, number]);
   const findResult = findFirstBtreeEntryWithPrefix(pageProvider, metaRootPageNumber, entryPrefix);
-  if (findResult === undefined) {
-    throw new Error("no entry found for " + number);
-  }
+  assert(findResult !== undefined, "no entry found for " + number);
   return findResult && readTuple(findResult, ARRAY_TUPLE, entryPrefix.length).values[0];
 }
 
@@ -102,18 +95,14 @@ function findOrCreateNumberForBytes(
   let nextNumber = 1;
   if (lastEntry) {
     const values = readTuple(lastEntry, UINT32_UINT32_TUPLE).values;
-    if (values[0] !== ENTRY_PREFIX) {
-      throw new Error("unexpected");
-    }
+    assert(values[0] === ENTRY_PREFIX);
     nextNumber = values[1] + 1;
   }
   const newLookup = tupleToUint8Array(UINT32_UINT32RAW_UINT32_TUPLE, [LOOKUP_PREFIX, hash, nextNumber]);
   const newEntry = tupleToUint8Array(UINT32_UINT32_ARRAY_TUPLE, [ENTRY_PREFIX, nextNumber, bytes]);
   const lookupSuccess = insertBtreeEntry(pageProvider, metaRootPageNumber, newLookup);
   const entrySuccess = insertBtreeEntry(pageProvider, metaRootPageNumber, newEntry);
-  if (!lookupSuccess || !entrySuccess) {
-    throw new Error("unexpected");
-  }
+  assert(lookupSuccess && entrySuccess);
   return nextNumber;
 }
 

@@ -9,6 +9,7 @@ import {
   scanBtreeEntries,
 } from "../btree/btree";
 import { PageProviderForWrite } from "../btree/pageProvider";
+import { assert } from "../misc/assert";
 import { PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
 import { PageData } from "../page-store/PageData";
 import { getTupleByteLength, readTuple, tupleToUint8Array, writeTuple } from "../uint8-array/tuple";
@@ -58,9 +59,7 @@ type PageAccessNotUndefined = (pageNumber: number) => PageData;
 type PageProviderNotUndefined = (pageNumber: number) => Uint8Array;
 
 function notFalse<T>(value: T | false): T {
-  if (value === false) {
-    throw new Error("unexpected");
-  }
+  assert(value !== false);
   return value;
 }
 
@@ -295,7 +294,7 @@ function initializeIfNecessary(pageAccess: PageAccessDuringTransaction): void {
       getPageForUpdate: (pageNumber: number) => pageAccess.getForUpdate(pageNumber).array,
       allocateNewPage: () => ++maxAllocated,
       releasePage: (pageNumber: number) => {
-        throw new Error("unexpected");
+        assert(false);
       },
     };
 
@@ -336,11 +335,8 @@ export function deleteJson(pageAccess: PageAccessDuringTransaction, tableName: s
     }
     return true;
   } catch (e) {
-    if (e === MISSING_PAGE) {
-      throw new Error("unexpected");
-    } else {
-      throw e;
-    }
+    assert(e !== MISSING_PAGE);
+    throw e;
   }
 }
 
@@ -414,10 +410,7 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
       (json as HasId).id = id;
     }
   } catch (e) {
-    if (e === MISSING_PAGE) {
-      throw new Error("unexpected");
-    } else {
-      throw e;
-    }
+    assert(e !== MISSING_PAGE);
+    throw e;
   }
 }
