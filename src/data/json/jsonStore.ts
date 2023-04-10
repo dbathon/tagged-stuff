@@ -13,7 +13,12 @@ import { assert } from "../misc/assert";
 import { PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
 import { PageData } from "../page-store/PageData";
 import { getTupleByteLength, readTuple, tupleToUint8Array, writeTuple } from "../uint8-array/tuple";
-import { jsonPathAndTypeToNumber, numberToJsonPathAndType } from "./internal/metaBtree";
+import {
+  jsonPathAndTypeToNumber,
+  JsonPathAndTypeToNumberCache,
+  numberToJsonPathAndType,
+  NumberToJsonPathAndTypeCache,
+} from "./internal/metaBtree";
 import {
   buildJsonFromEvents,
   JsonEvent,
@@ -231,6 +236,7 @@ export function queryJson<T extends object | unknown = unknown>(
       }
     );
 
+    const cache: NumberToJsonPathAndTypeCache = new Map();
     return entries.map((entry) => {
       const idResult = readTuple(entry, UINT32_TUPLE, 0);
       const id = idResult.values[0];
@@ -250,7 +256,7 @@ export function queryJson<T extends object | unknown = unknown>(
       while (entryOffset < entry.length) {
         const eventResult = readTuple(entry, UINT32_TUPLE, entryOffset);
         const eventNumber = eventResult.values[0];
-        const { type, path } = notFalse(numberToJsonPathAndType(pageProvider, tableInfo.metaRoot, eventNumber));
+        const { type, path } = notFalse(numberToJsonPathAndType(pageProvider, tableInfo.metaRoot, eventNumber, cache));
         let value: string | number | undefined = undefined;
         if (type === JSON_STRING || type === JSON_NUMBER) {
           const attributeValueArray = attributeEntries.get(eventIndex);
@@ -374,12 +380,13 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
       }
     }
 
+    const cache: JsonPathAndTypeToNumberCache = new Map();
     let entryLength = getTupleByteLength(UINT32_TUPLE, [id]);
     const eventNumbers: number[] = [];
     produceJsonEvents(
       json,
       (type: JsonEventType, path: JsonPath | undefined, value?: string | number) => {
-        const eventNumber = jsonPathAndTypeToNumber(pageProvider, tableInfo.metaRoot, path, type);
+        const eventNumber = jsonPathAndTypeToNumber(pageProvider, tableInfo.metaRoot, path, type, cache);
         if (value !== undefined) {
           const attributeIndex = eventNumbers.length;
           let attributeEntry: Uint8Array;

@@ -2,7 +2,12 @@ import { expect, test } from "vitest";
 import { allocateAndInitBtreeRootPage } from "../../btree/btree";
 import { PageProviderForWrite } from "../../btree/pageProvider";
 import { JsonEventType, JsonPath, JSON_FALSE, JSON_NULL, JSON_STRING } from "../jsonEvents";
-import { jsonPathAndTypeToNumber, numberToJsonPathAndType } from "./metaBtree";
+import {
+  jsonPathAndTypeToNumber,
+  JsonPathAndTypeToNumberCache,
+  numberToJsonPathAndType,
+  NumberToJsonPathAndTypeCache,
+} from "./metaBtree";
 
 function createPageProviderForWrite(pageSize: number): PageProviderForWrite {
   const pages: Uint8Array[] = [];
@@ -51,16 +56,31 @@ test("metaBtree", () => {
 
   expect(() => numberToJsonPathAndType(pageProvider.getPage, metaRootPageNumber, 1)).toThrow();
 
+  const toNumberCache: JsonPathAndTypeToNumberCache = new Map();
   for (const pathAndType of pathAndTypes) {
-    numbers.push(jsonPathAndTypeToNumber(pageProvider, metaRootPageNumber, pathAndType.path, pathAndType.type));
+    const params = [pageProvider, metaRootPageNumber, pathAndType.path, pathAndType.type] as const;
+    const number = jsonPathAndTypeToNumber(...params);
+    numbers.push(number);
+    expect(jsonPathAndTypeToNumber(...params)).toBe(number);
+    expect(jsonPathAndTypeToNumber(...params, toNumberCache)).toBe(number);
+    expect(jsonPathAndTypeToNumber(...params, toNumberCache)).toBe(number);
   }
 
+  const fromNumberCache: NumberToJsonPathAndTypeCache = new Map();
   for (let i = 0; i < pathAndTypes.length; i++) {
     const pathAndType = pathAndTypes[i];
     const number = numbers[i];
     expect(jsonPathAndTypeToNumber(pageProvider, metaRootPageNumber, pathAndType.path, pathAndType.type)).toBe(number);
-    expect(jsonPathAndTypeToNumber(pageProvider, metaRootPageNumber, pathAndType.path, pathAndType.type)).toBe(number);
+    expect(
+      jsonPathAndTypeToNumber(pageProvider, metaRootPageNumber, pathAndType.path, pathAndType.type, toNumberCache)
+    ).toBe(number);
 
     expect(numberToJsonPathAndType(pageProvider.getPage, metaRootPageNumber, number)).toEqual(pathAndType);
+
+    const cachedResult = numberToJsonPathAndType(pageProvider.getPage, metaRootPageNumber, number, fromNumberCache);
+    expect(cachedResult).toEqual(pathAndType);
+    expect(numberToJsonPathAndType(pageProvider.getPage, metaRootPageNumber, number, fromNumberCache)).toBe(
+      cachedResult
+    );
   }
 });

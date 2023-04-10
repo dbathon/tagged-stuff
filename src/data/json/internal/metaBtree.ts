@@ -106,71 +106,112 @@ function findOrCreateNumberForBytes(
   return nextNumber;
 }
 
+export type JsonPathAndTypeToNumberCache = Map<JsonPath | undefined, number[]>;
+
 function jsonPathToNumber(
   pageProvider: PageProviderForWrite,
   metaRootPageNumber: number,
-  path?: JsonPath,
-  type?: JsonEventType
+  path: JsonPath | undefined,
+  type: JsonEventType | undefined,
+  cache?: JsonPathAndTypeToNumberCache
 ): number {
+  const cacheIndex = type === undefined ? 0 : type + 1;
+  const cachedResult = cache?.get(path)?.[cacheIndex];
+  if (cachedResult !== undefined) {
+    return cachedResult;
+  }
+
+  let result: number;
   if (type === undefined) {
     // just a path
     if (path === undefined) {
       // this is just 0
       return 0;
     }
-    const parentPathNumber = jsonPathToNumber(pageProvider, metaRootPageNumber, path.parent);
-    return findOrCreateNumberForBytes(pageProvider, metaRootPageNumber, buildBytesForPath(parentPathNumber, path.key));
+    const parentPathNumber = jsonPathToNumber(pageProvider, metaRootPageNumber, path.parent, undefined);
+    result = findOrCreateNumberForBytes(
+      pageProvider,
+      metaRootPageNumber,
+      buildBytesForPath(parentPathNumber, path.key)
+    );
   } else {
-    const pathNumber = jsonPathToNumber(pageProvider, metaRootPageNumber, path);
-    return findOrCreateNumberForBytes(pageProvider, metaRootPageNumber, buildBytesForType(pathNumber, type));
+    const pathNumber = jsonPathToNumber(pageProvider, metaRootPageNumber, path, undefined);
+    result = findOrCreateNumberForBytes(pageProvider, metaRootPageNumber, buildBytesForType(pathNumber, type));
   }
+
+  if (cache) {
+    let cacheArray = cache.get(path);
+    if (!cacheArray) {
+      cache.set(path, (cacheArray = []));
+    }
+    cacheArray[cacheIndex] = result;
+  }
+  return result;
 }
 
 export function jsonPathAndTypeToNumber(
   pageProvider: PageProviderForWrite,
   metaRootPageNumber: number,
   path: JsonPath | undefined,
-  type: JsonEventType
+  type: JsonEventType,
+  cache?: JsonPathAndTypeToNumberCache
 ): number {
-  return jsonPathToNumber(pageProvider, metaRootPageNumber, path, type);
+  return jsonPathToNumber(pageProvider, metaRootPageNumber, path, type, cache);
 }
+
+export type NumberToJsonPathAndTypeCache = Map<number, any>;
 
 function numberToJsonPath(
   pageProvider: PageProvider,
   metaRootPageNumber: number,
-  number: number
+  number: number,
+  cache?: NumberToJsonPathAndTypeCache
 ): JsonPath | undefined | false {
   if (number === 0) {
     return undefined;
+  }
+  const cachedResult = cache?.get(number);
+  if (cachedResult !== undefined) {
+    return cachedResult;
   }
   const bytes = readBytesForNumber(pageProvider, metaRootPageNumber, number);
   if (bytes === false) {
     return false;
   }
   const { parentPathNumber, key } = parseBytesForPath(bytes);
-  const parentPath = numberToJsonPath(pageProvider, metaRootPageNumber, parentPathNumber);
+  const parentPath = numberToJsonPath(pageProvider, metaRootPageNumber, parentPathNumber, cache);
   if (parentPath === false) {
     return false;
   }
-  return {
+  const result = {
     parent: parentPath,
     key,
   };
+  cache?.set(number, result);
+  return result;
 }
 
 export function numberToJsonPathAndType(
   pageProvider: PageProvider,
   metaRootPageNumber: number,
-  number: number
+  number: number,
+  cache?: NumberToJsonPathAndTypeCache
 ): { readonly path?: JsonPath; readonly type: JsonEventType } | false {
+  const cachedResult = cache?.get(number);
+  if (cachedResult !== undefined) {
+    return cachedResult;
+  }
   const bytes = readBytesForNumber(pageProvider, metaRootPageNumber, number);
   if (bytes === false) {
     return false;
   }
   const { pathNumber, type } = parseBytesForType(bytes);
-  const path = numberToJsonPath(pageProvider, metaRootPageNumber, pathNumber);
+  const path = numberToJsonPath(pageProvider, metaRootPageNumber, pathNumber, cache);
   if (path === false) {
     return false;
   }
-  return { path, type };
+
+  const result = { path, type };
+  cache?.set(number, result);
+  return result;
 }
