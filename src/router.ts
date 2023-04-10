@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import Entries from "./pages/Entries.vue";
+import JsonStoreTest from "./pages/JsonStoreTest.vue";
 import BTreeTest from "./pages/BTreeTest.vue";
 import CryptoTest from "./pages/CryptoTest.vue";
 import Settings from "./pages/Settings.vue";
@@ -20,6 +21,11 @@ export const router = createRouter({
         }
         next();
       },
+    },
+    {
+      path: "/tagged-stuff/json-store-test",
+      name: "JsonStoreTest",
+      component: JsonStoreTest,
     },
     {
       path: "/tagged-stuff/b-tree-test",

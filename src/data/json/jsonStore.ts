@@ -195,7 +195,7 @@ interface HasId {
 /**
  * Work in progress...
  */
-interface QueryParameters {
+export interface QueryParameters {
   minId?: number;
   maxResults?: number;
 }
