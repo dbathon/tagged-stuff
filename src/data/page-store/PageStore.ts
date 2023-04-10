@@ -1,4 +1,4 @@
-import { shallowReadonly, shallowRef, ShallowRef } from "vue";
+import { shallowReadonly, shallowRef, ShallowRef, triggerRef } from "vue";
 import { IndexPage } from "./internal/IndexPage";
 import { PageGroupPage, pageNumberToPageGroupNumber } from "./internal/PageGroupPage";
 import { Patch } from "./internal/Patch";
@@ -609,7 +609,15 @@ export class PageStore {
             break;
           }
         } finally {
-          if (!result.committed) {
+          if (result.committed) {
+            // trigger the refs for the changed page entries, since we don't actually set them to new instances
+            for (const pageNumber of dirtyPageNumberToOldData.keys()) {
+              const pageEntry = this.pageEntries.get(pageNumber);
+              if (pageEntry) {
+                triggerRef(pageEntry.dataRef);
+              }
+            }
+          } else {
             // reset the modified pages
             dirtyPageNumberToOldData.forEach((pageData, pageNumber) => {
               this.pageEntries.get(pageNumber)?.forceSetData(pageData);
