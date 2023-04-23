@@ -1,5 +1,6 @@
 import {
   allocateAndInitBtreeRootPage,
+  findAllBtreeEntriesWithPrefix,
   findFirstBtreeEntry,
   findFirstBtreeEntryWithPrefix,
   findLastBtreeEntry,
@@ -38,6 +39,7 @@ const MAGIC_NUMBER_OFFSET = 0 << 2;
 const MAX_ALLOCATED_OFFSET = 1 << 2;
 
 const UINT32_TUPLE = ["uint32"] as const;
+const UINT32_UINT32_TUPLE = ["uint32", "uint32"] as const;
 const UINT32_UINT32_UINT32_TUPLE = ["uint32", "uint32", "uint32"] as const;
 const STRING_UINT32_TUPLE = ["string", "uint32"] as const;
 const STRING_UINT32_UINT32_UINT32_UINT32_TUPLE = ["string", "uint32", "uint32", "uint32", "uint32"] as const;
@@ -226,11 +228,32 @@ export function queryJson<T extends object | unknown = unknown>(
 
     const cache: NumberToJsonPathAndTypeCache = new Map();
     return entries.map((entry) => {
-      const idResult = readTuple(entry, UINT32_TUPLE, 0);
-      const id = idResult.values[0];
-      const entryOffset = idResult.length;
+      const idAndZeroOrLengthResult = readTuple(entry, UINT32_UINT32_TUPLE, 0);
+      const [id, zeroOrLength] = idAndZeroOrLengthResult.values;
 
-      const jsonEventsArray = entry.subarray(entryOffset);
+      let jsonEventsArray = entry.subarray(idAndZeroOrLengthResult.length);
+      if (zeroOrLength > 0) {
+        // there is overflow
+        const parts = [jsonEventsArray];
+        let totalLength = jsonEventsArray.length;
+        const overFlowPrefix = tupleToUint8Array(UINT32_TUPLE, [id]);
+        for (const overflowEntry of notFalse(
+          findAllBtreeEntriesWithPrefix(pageProvider, tableInfo.overflowRoot, overFlowPrefix)
+        )) {
+          const part = overflowEntry.subarray(readTuple(overflowEntry, UINT32_UINT32_TUPLE).length);
+          parts.push(part);
+          totalLength += part.length;
+        }
+
+        // concatenate all the parts
+        jsonEventsArray = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const part of parts) {
+          jsonEventsArray.set(part, offset);
+          offset += part.length;
+        }
+      }
+
       const events = deserializeJsonEvents(jsonEventsArray, (eventNumber) =>
         notFalse(numberToJsonPathAndType(pageProvider, tableInfo.metaRoot, eventNumber, cache))
       );
@@ -293,7 +316,15 @@ export function deleteJson(pageAccess: PageAccessDuringTransaction, tableName: s
     }
     notFalse(removeBtreeEntry(pageProvider, tableInfo.mainRoot, mainEntry));
 
-    // TODO: also delete entries in overflowRoot
+    const zeroOrLength = readTuple(mainEntry, UINT32_UINT32_TUPLE).values[1];
+    if (zeroOrLength > 0) {
+      // also delete entries in overflowRoot
+      for (const overflowEntry of notFalse(
+        findAllBtreeEntriesWithPrefix(pageProvider.getPage, tableInfo.overflowRoot, prefix)
+      )) {
+        notFalse(removeBtreeEntry(pageProvider, tableInfo.overflowRoot, overflowEntry));
+      }
+    }
 
     return true;
   } catch (e) {
@@ -308,6 +339,12 @@ function filterId(key: string, parentPath: JsonPath | undefined): boolean {
   }
   return true;
 }
+
+/**
+ * It is unclear what the best value for this would be, but since it is only used for writing, we can just use some
+ * value for now and potentially find a better one later (or even determine the best one dynamically)...
+ */
+const MAX_SINGLE_PAGE_JSON_EVENTS_ARRAY_LENGTH = 1000;
 
 // modifies the given json by adding an id if it does not have one already...
 export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: string, json: object): void {
@@ -350,10 +387,39 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
       jsonPathAndTypeToNumber(pageProvider, tableInfo.metaRoot, path, type, cache)
     );
 
-    let entryLength = getTupleByteLength(UINT32_TUPLE, [id]) + jsonEventsArray.length;
+    let zeroOrLength: number;
+    let firstJsonEventsArrayPart: Uint8Array;
+    if (jsonEventsArray.length <= MAX_SINGLE_PAGE_JSON_EVENTS_ARRAY_LENGTH) {
+      // in this case always use 0, which then just means "no overflow"
+      zeroOrLength = 0;
+      firstJsonEventsArrayPart = jsonEventsArray;
+    } else {
+      // split the array and write the other parts into the overflow
+      zeroOrLength = jsonEventsArray.length;
+      firstJsonEventsArrayPart = jsonEventsArray.subarray(0, MAX_SINGLE_PAGE_JSON_EVENTS_ARRAY_LENGTH);
+      for (
+        let offset = MAX_SINGLE_PAGE_JSON_EVENTS_ARRAY_LENGTH, i = 0;
+        offset < zeroOrLength;
+        offset += MAX_SINGLE_PAGE_JSON_EVENTS_ARRAY_LENGTH, i++
+      ) {
+        const overflowArray = jsonEventsArray.subarray(
+          offset,
+          Math.min(offset + MAX_SINGLE_PAGE_JSON_EVENTS_ARRAY_LENGTH, zeroOrLength)
+        );
+        const idAndIndex = [id, i] as const;
+        const overflowEntryLength = getTupleByteLength(UINT32_UINT32_TUPLE, idAndIndex) + overflowArray.length;
+        const overflowEntry = new Uint8Array(overflowEntryLength);
+        const overflowArrayOffset = writeTuple(overflowEntry, 0, UINT32_UINT32_TUPLE, idAndIndex);
+        overflowEntry.set(overflowArray, overflowArrayOffset);
+        assert(insertBtreeEntry(pageProvider, tableInfo.overflowRoot, overflowEntry));
+      }
+    }
+
+    const idAndZeroOrLength = [id, zeroOrLength] as const;
+    const entryLength = getTupleByteLength(UINT32_UINT32_TUPLE, idAndZeroOrLength) + firstJsonEventsArrayPart.length;
     const entry = new Uint8Array(entryLength);
-    let entryOffset = writeTuple(entry, 0, UINT32_TUPLE, [id]);
-    entry.set(jsonEventsArray, entryOffset);
+    const entryOffset = writeTuple(entry, 0, UINT32_UINT32_TUPLE, idAndZeroOrLength);
+    entry.set(firstJsonEventsArrayPart, entryOffset);
 
     assert(insertBtreeEntry(pageProvider, tableInfo.mainRoot, entry));
 

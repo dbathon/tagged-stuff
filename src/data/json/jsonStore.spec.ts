@@ -35,8 +35,14 @@ interface Bar extends WithId {
   barFlags: boolean[];
 }
 
+interface Large extends WithId {
+  large: string;
+  a?: number;
+  b?: string;
+}
+
 test("jsonStore", () => {
-  const pageAccess = createPageAccess(400);
+  const pageAccess = createPageAccess(4096);
 
   expect(queryJson<Foo>(pageAccess.get, "foo")).toEqual([]);
   expect(queryJson<Bar>(pageAccess.get, "bar")).toEqual([]);
@@ -83,4 +89,27 @@ test("jsonStore", () => {
   saveJson(pageAccess, "bar", bar0);
   expect(bar0.id).toBe(0);
   expect(queryJson<Bar>(pageAccess.get, "bar")).toEqual([bar0]);
+
+  const large0: Large = {
+    large: "x".repeat(5000),
+  };
+  saveJson(pageAccess, "large", large0);
+  expect(large0.id).toBe(0);
+  expect(queryJson<Large>(pageAccess.get, "large")).toEqual([large0]);
+
+  // test update of large entry
+  large0.large = "x".repeat(5000) + "y";
+  large0.a = 123;
+  large0.b = "foo";
+  saveJson(pageAccess, "large", large0);
+  expect(large0.id).toBe(0);
+  expect(queryJson<Large>(pageAccess.get, "large")).toEqual([large0]);
+
+  const large1: Large = {
+    large: "y".repeat(6000),
+    a: 1234.5465656,
+  };
+  saveJson(pageAccess, "large", large1);
+  expect(large1.id).toBe(1);
+  expect(queryJson<Large>(pageAccess.get, "large")).toEqual([large0, large1]);
 });
