@@ -15,7 +15,6 @@ export class Patch {
     if (bytes.length > MAX_LENGTH) {
       throw new RangeError("too many bytes: " + bytes.length);
     }
-    const a: ArrayLike<number> = bytes;
   }
 
   /**

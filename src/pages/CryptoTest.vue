@@ -32,9 +32,6 @@ async function test() {
     await Promise.all(promises);
   }
 
-  const encryptedChanged = new Int8Array(encrypted);
-  //encryptedChanged[0] -= 1;
-
   console.log([...new Int8Array(encrypted)]);
 
   const decrypted = await subtleCrypto.decrypt(params, key, encrypted);

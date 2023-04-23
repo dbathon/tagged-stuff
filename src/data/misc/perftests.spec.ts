@@ -15,6 +15,7 @@ function t2_single(): number {
 }
 
 function t2() {
+  // @ts-ignore
   let sum = 0;
   for (let i = 0; i < n; i++) {
     const v = t2_single();
@@ -27,6 +28,7 @@ function t3_array(): [number, number] {
 }
 
 function t3() {
+  // @ts-ignore
   let sum = 0;
   for (let i = 0; i < n; i++) {
     const v = t3_array();
@@ -35,6 +37,7 @@ function t3() {
 }
 
 function t3_at() {
+  // @ts-ignore
   let sum = 0;
   for (let i = 0; i < n; i++) {
     const v = t3_array();
@@ -43,6 +46,7 @@ function t3_at() {
 }
 
 function t3_destructure() {
+  // @ts-ignore
   let sum = 0;
   for (let i = 0; i < n; i++) {
     const [a, b] = t3_array();
@@ -55,6 +59,7 @@ function t4_object(): { a: number; b: number } {
 }
 
 function t4() {
+  // @ts-ignore
   let sum = 0;
   for (let i = 0; i < n; i++) {
     const v = t4_object();
@@ -63,6 +68,7 @@ function t4() {
 }
 
 function t4_destructure() {
+  // @ts-ignore
   let sum = 0;
   for (let i = 0; i < n; i++) {
     const { a, b } = t4_object();
@@ -71,7 +77,7 @@ function t4_destructure() {
 }
 
 function testFn(fn: () => unknown) {
-  const start = Date.now();
+  // const start = Date.now();
   fn();
   // console.log(fn.name + " took " + (Date.now() - start) + " ms");
 }

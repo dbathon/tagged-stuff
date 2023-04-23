@@ -647,7 +647,6 @@ export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
     // we need to read all the free chunk infos, since we want to merge them if possible
     const freeChunkInfos = readFreeChunkInfos(pageArray);
 
-    let result: Uint8Array;
     while (chunkPointer !== undefined) {
       const [length, _, nextHeaderPointer] = readLengthBytesStartAndNextHeaderPointer(pageArray, chunkPointer);
       const isPrefixChunk = readUsePrefix(pageArray, chunkPointer);

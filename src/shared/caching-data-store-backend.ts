@@ -76,7 +76,6 @@ export class CachingDataStoreBackend implements DataStoreBackend {
       const store = transaction.objectStore("data-document");
       for (const dataDocumentId of uncachedIds) {
         const document = backendResult[dataDocumentId];
-        const cacheEntry = await store.get(dataDocumentId);
         if (document) {
           await store.put({ document }, dataDocumentId);
         }

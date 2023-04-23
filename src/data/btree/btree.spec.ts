@@ -212,11 +212,8 @@ describe("btree", () => {
 
   test("root page with just one child", () => {
     // this should not happen, but is allowed
-    const possibleMiddles = [[1, 0], [1, 1], [2], [2, 1], [3]];
-    for (const possibleMiddle of possibleMiddles) {
-      const pageProvider = createPageProvider([innerPage([], [1], [2], 400), leafPage([[1], [3]], 400)]);
-      testScanForOneAndThreeEntries(pageProvider);
-    }
+    const pageProvider = createPageProvider([innerPage([], [1], [2], 400), leafPage([[1], [3]], 400)]);
+    testScanForOneAndThreeEntries(pageProvider);
   });
 
   test("allocate and init", () => {
