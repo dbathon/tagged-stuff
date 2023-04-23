@@ -1,5 +1,10 @@
 export function compareUint8Arrays(array1: Uint8Array, array2: Uint8Array): -1 | 0 | 1 {
-  if (array1 === array2) {
+  if (
+    array1 === array2 ||
+    (array1.buffer === array2.buffer &&
+      array1.byteOffset === array2.byteOffset &&
+      array1.byteLength === array2.byteLength)
+  ) {
     return 0;
   }
   const length = Math.min(array1.length, array2.length);
