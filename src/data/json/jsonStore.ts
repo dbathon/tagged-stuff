@@ -1,6 +1,5 @@
 import {
   allocateAndInitBtreeRootPage,
-  findAllBtreeEntriesWithPrefix,
   findFirstBtreeEntry,
   findFirstBtreeEntryWithPrefix,
   findLastBtreeEntry,
@@ -19,15 +18,8 @@ import {
   numberToJsonPathAndType,
   NumberToJsonPathAndTypeCache,
 } from "./internal/metaBtree";
-import {
-  buildJsonFromEvents,
-  JsonEvent,
-  JsonEventType,
-  JsonPath,
-  JSON_NUMBER,
-  JSON_STRING,
-  produceJsonEvents,
-} from "./jsonEvents";
+import { deserializeJsonEvents, serializeJsonEvents } from "./internal/serializeJsonEvents";
+import { buildJsonFromEvents, JsonEvent, JsonPath, produceJsonEvents } from "./jsonEvents";
 
 /** Some magic number to mark a page store as a json store. */
 const MAGIC_NUMBER = 1983760274;
@@ -49,10 +41,6 @@ const UINT32_TUPLE = ["uint32"] as const;
 const UINT32_UINT32_UINT32_TUPLE = ["uint32", "uint32", "uint32"] as const;
 const STRING_UINT32_TUPLE = ["string", "uint32"] as const;
 const STRING_UINT32_UINT32_UINT32_UINT32_TUPLE = ["string", "uint32", "uint32", "uint32", "uint32"] as const;
-const UINT32_UINT32_STRING_TUPLE = ["uint32", "uint32", "string"] as const;
-const UINT32_UINT32_NUMBER_TUPLE = ["uint32", "uint32", "number"] as const;
-const STRING_TUPLE = ["string"] as const;
-const NUMBER_TUPLE = ["number"] as const;
 
 /** Internal "exception object" indicating missing pages, all exported functions must catch and handle it. */
 const MISSING_PAGE = {};
@@ -153,8 +141,8 @@ interface TableInfo {
   mainRoot: number;
   /** Contains the used json paths/types. */
   metaRoot: number;
-  /** Contains the string and number values of the entries. */
-  attributeRoot: number;
+  /** Contains overflow entries for entries, that cannot be stored in one entry. */
+  overflowRoot: number;
   // TODO indexRoot
 }
 
@@ -169,8 +157,8 @@ function getTableInfo(pageProvider: PageProviderNotUndefined, tableName: string)
   if (!tableEntry) {
     return undefined;
   }
-  const [mainRoot, metaRoot, attributeRoot] = readTuple(tableEntry, UINT32_UINT32_UINT32_TUPLE, prefix.length).values;
-  return { mainRoot, metaRoot, attributeRoot };
+  const [mainRoot, metaRoot, overflowRoot] = readTuple(tableEntry, UINT32_UINT32_UINT32_TUPLE, prefix.length).values;
+  return { mainRoot, metaRoot, overflowRoot };
 }
 
 function getOrCreateTableInfo(pageProvider: PageProviderForWrite, tableName: string): TableInfo {
@@ -180,17 +168,17 @@ function getOrCreateTableInfo(pageProvider: PageProviderForWrite, tableName: str
   }
   const mainRoot = allocateAndInitBtreeRootPage(pageProvider);
   const metaRoot = allocateAndInitBtreeRootPage(pageProvider);
-  const attributeRoot = allocateAndInitBtreeRootPage(pageProvider);
+  const overflowRoot = allocateAndInitBtreeRootPage(pageProvider);
 
   notFalse(
     insertBtreeEntry(
       pageProvider,
       TABLES_ROOT_PAGE_NUMBER,
-      tupleToUint8Array(STRING_UINT32_UINT32_UINT32_UINT32_TUPLE, [tableName, 0, mainRoot, metaRoot, attributeRoot])
+      tupleToUint8Array(STRING_UINT32_UINT32_UINT32_UINT32_TUPLE, [tableName, 0, mainRoot, metaRoot, overflowRoot])
     )
   );
 
-  return { mainRoot, metaRoot, attributeRoot };
+  return { mainRoot, metaRoot, overflowRoot };
 }
 
 interface HasId {
@@ -240,40 +228,12 @@ export function queryJson<T extends object | unknown = unknown>(
     return entries.map((entry) => {
       const idResult = readTuple(entry, UINT32_TUPLE, 0);
       const id = idResult.values[0];
-      let entryOffset = idResult.length;
+      const entryOffset = idResult.length;
 
-      const attributeEntries = new Map<number, Uint8Array>();
-      const attributePrefix = entry.subarray(0, idResult.length);
-      for (const attributeEntry of notFalse(
-        findAllBtreeEntriesWithPrefix(pageProvider, tableInfo.attributeRoot, attributePrefix)
-      )) {
-        const indexResult = readTuple(attributeEntry, UINT32_TUPLE, idResult.length);
-        attributeEntries.set(indexResult.values[0], attributeEntry.subarray(idResult.length + indexResult.length));
-      }
-
-      let eventIndex = 0;
-      const events: JsonEvent[] = [];
-      while (entryOffset < entry.length) {
-        const eventResult = readTuple(entry, UINT32_TUPLE, entryOffset);
-        const eventNumber = eventResult.values[0];
-        const { type, path } = notFalse(numberToJsonPathAndType(pageProvider, tableInfo.metaRoot, eventNumber, cache));
-        let value: string | number | undefined = undefined;
-        if (type === JSON_STRING || type === JSON_NUMBER) {
-          const attributeValueArray = attributeEntries.get(eventIndex);
-          if (!attributeValueArray) {
-            throw new Error("attribute entry missing");
-          }
-          if (type === JSON_STRING) {
-            value = readTuple(attributeValueArray, STRING_TUPLE).values[0];
-          } else {
-            value = readTuple(attributeValueArray, NUMBER_TUPLE).values[0];
-          }
-        }
-        events.push({ path, type, value });
-        entryOffset += eventResult.length;
-        eventIndex++;
-      }
-      notFalse(entryOffset === entry.length);
+      const jsonEventsArray = entry.subarray(entryOffset);
+      const events = deserializeJsonEvents(jsonEventsArray, (eventNumber) =>
+        notFalse(numberToJsonPathAndType(pageProvider, tableInfo.metaRoot, eventNumber, cache))
+      );
 
       const result = buildJsonFromEvents(events);
       (result as HasId).id = id;
@@ -333,12 +293,8 @@ export function deleteJson(pageAccess: PageAccessDuringTransaction, tableName: s
     }
     notFalse(removeBtreeEntry(pageProvider, tableInfo.mainRoot, mainEntry));
 
-    // also delete entries in attributeRoot
-    for (const attributeEntry of notFalse(
-      findAllBtreeEntriesWithPrefix(pageProvider.getPage, tableInfo.attributeRoot, prefix)
-    )) {
-      notFalse(removeBtreeEntry(pageProvider, tableInfo.attributeRoot, attributeEntry));
-    }
+    // TODO: also delete entries in overflowRoot
+
     return true;
   } catch (e) {
     assert(e !== MISSING_PAGE);
@@ -380,38 +336,26 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
       }
     }
 
-    const cache: JsonPathAndTypeToNumberCache = new Map();
-    let entryLength = getTupleByteLength(UINT32_TUPLE, [id]);
-    const eventNumbers: number[] = [];
+    const jsonEvents: JsonEvent[] = [];
     produceJsonEvents(
       json,
-      (type: JsonEventType, path: JsonPath | undefined, value?: string | number) => {
-        const eventNumber = jsonPathAndTypeToNumber(pageProvider, tableInfo.metaRoot, path, type, cache);
-        if (value !== undefined) {
-          const attributeIndex = eventNumbers.length;
-          let attributeEntry: Uint8Array;
-          if (typeof value === "string") {
-            // TODO: split longer strings into multiple entries?!
-            attributeEntry = tupleToUint8Array(UINT32_UINT32_STRING_TUPLE, [id!, attributeIndex, value]);
-          } else {
-            attributeEntry = tupleToUint8Array(UINT32_UINT32_NUMBER_TUPLE, [id!, attributeIndex, value]);
-          }
-          notFalse(insertBtreeEntry(pageProvider, tableInfo.attributeRoot, attributeEntry));
-        }
-        entryLength += getTupleByteLength(UINT32_TUPLE, [eventNumber]);
-        eventNumbers.push(eventNumber);
+      (type, path, value) => {
+        jsonEvents.push({ path, type, value });
       },
       filterId
     );
 
+    const cache: JsonPathAndTypeToNumberCache = new Map();
+    const jsonEventsArray = serializeJsonEvents(jsonEvents, (path, type) =>
+      jsonPathAndTypeToNumber(pageProvider, tableInfo.metaRoot, path, type, cache)
+    );
+
+    let entryLength = getTupleByteLength(UINT32_TUPLE, [id]) + jsonEventsArray.length;
     const entry = new Uint8Array(entryLength);
     let entryOffset = writeTuple(entry, 0, UINT32_TUPLE, [id]);
-    for (const eventNumber of eventNumbers) {
-      entryOffset += writeTuple(entry, entryOffset, UINT32_TUPLE, [eventNumber]);
-    }
-    notFalse(entryOffset === entry.length);
+    entry.set(jsonEventsArray, entryOffset);
 
-    notFalse(insertBtreeEntry(pageProvider, tableInfo.mainRoot, entry));
+    assert(insertBtreeEntry(pageProvider, tableInfo.mainRoot, entry));
 
     if (newEntry) {
       (json as HasId).id = id;
