@@ -84,29 +84,31 @@ function toPageProviderForWrite(pageAccess: PageAccessDuringTransaction): PagePr
       return pageAccess.getForUpdate(pageNumber).array;
     },
     allocateNewPage() {
-      const freePageEntry = findFirstBtreeEntry(provider.getPage, FREE_LIST_ROOT_PAGE_NUMBER);
       // if we are in releasePage, then don't try to allocate from the free list
-      if (!inReleasePage && freePageEntry) {
-        const freePageNumber = readTuple(freePageEntry, UINT32_TUPLE, 0).values[0];
-        const cleanupNeeded = !tempReleases;
-        if (!tempReleases) {
-          tempReleases = [];
-        }
-        notFalse(removeBtreeEntry(provider, FREE_LIST_ROOT_PAGE_NUMBER, freePageEntry));
-        if (cleanupNeeded) {
-          const pagesToRelease = tempReleases;
-          tempReleases = undefined;
-          for (const pageToRelease of pagesToRelease) {
-            provider.releasePage(pageToRelease);
+      if (!inReleasePage) {
+        const freePageEntry = findFirstBtreeEntry(provider.getPage, FREE_LIST_ROOT_PAGE_NUMBER);
+        if (freePageEntry) {
+          const freePageNumber = readTuple(freePageEntry, UINT32_TUPLE, 0).values[0];
+          const cleanupNeeded = !tempReleases;
+          if (!tempReleases) {
+            tempReleases = [];
           }
+          notFalse(removeBtreeEntry(provider, FREE_LIST_ROOT_PAGE_NUMBER, freePageEntry));
+          if (cleanupNeeded) {
+            const pagesToRelease = tempReleases;
+            tempReleases = undefined;
+            for (const pageToRelease of pagesToRelease) {
+              provider.releasePage(pageToRelease);
+            }
+          }
+          return freePageNumber;
         }
-        return freePageNumber;
-      } else {
-        const zeroPage = pageAccess.getForUpdate(0).dataView;
-        const nextPageNumber = zeroPage.getUint32(MAX_ALLOCATED_OFFSET) + 1;
-        zeroPage.setUint32(MAX_ALLOCATED_OFFSET, nextPageNumber);
-        return nextPageNumber;
       }
+
+      const zeroPage = pageAccess.getForUpdate(0).dataView;
+      const nextPageNumber = zeroPage.getUint32(MAX_ALLOCATED_OFFSET) + 1;
+      zeroPage.setUint32(MAX_ALLOCATED_OFFSET, nextPageNumber);
+      return nextPageNumber;
     },
     releasePage(pageNumber) {
       if (tempReleases) {
