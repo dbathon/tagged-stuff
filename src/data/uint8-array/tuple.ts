@@ -7,9 +7,9 @@ export type TupleElementTypeName = "number" | "uint32" | "uint32raw" | "string" 
 export type TupleTypeDefinition = readonly TupleElementTypeName[];
 
 export type TupleType<T extends TupleTypeDefinition> = T extends readonly []
-  ? []
+  ? readonly []
   : T extends readonly [infer TN, ...infer Rest extends TupleTypeDefinition]
-  ? [
+  ? readonly [
       TN extends "number" | "uint32" | "uint32raw"
         ? number
         : TN extends "string"
