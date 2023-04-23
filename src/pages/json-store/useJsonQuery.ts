@@ -9,7 +9,10 @@ export function useJsonQuery<T>(
 ): ComputedRef<T[] | false> {
   const pageAccess: PageAccess = (pageNumber) => pageStore.getPage(pageNumber).value;
   return computed(() => {
-    console.log("recompute", tableName);
-    return queryJson<T>(pageAccess, tableName, queryParameters);
+    const label = "recompute " + tableName;
+    console.time(label);
+    const result = queryJson<T>(pageAccess, tableName, queryParameters);
+    console.timeEnd(label);
+    return result;
   });
 }
