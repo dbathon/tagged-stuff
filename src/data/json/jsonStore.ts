@@ -321,9 +321,11 @@ export function deleteJson(pageAccess: PageAccessDuringTransaction, tableName: s
     const zeroOrLength = readTuple(mainEntry, UINT32_UINT32_TUPLE).values[1];
     if (zeroOrLength > 0) {
       // also delete entries in overflowRoot
-      for (const overflowEntry of notFalse(
-        findAllBtreeEntriesWithPrefix(pageProvider.getPage, tableInfo.overflowRoot, prefix)
-      )) {
+      while (true) {
+        const overflowEntry = findFirstBtreeEntryWithPrefix(pageProvider.getPage, tableInfo.overflowRoot, prefix);
+        if (!overflowEntry) {
+          break;
+        }
         notFalse(removeBtreeEntry(pageProvider, tableInfo.overflowRoot, overflowEntry));
       }
     }
