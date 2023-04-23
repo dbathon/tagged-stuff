@@ -86,7 +86,7 @@ export class Patch {
   }
 
   serialize(target: DataView, offset: number) {
-    if (offset + this.serializedLength >= target.byteLength) {
+    if (offset + this.serializedLength > target.byteLength) {
       throw new Error("not enough capacity in target");
     }
 
