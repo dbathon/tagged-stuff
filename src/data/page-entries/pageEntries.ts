@@ -18,13 +18,10 @@ import { compareUint8Arrays } from "../uint8-array/compareUint8Arrays";
  *
  * Entry pointers point to a header of the first (of potentially multiple) chunks of bytes. The header is two bytes (16 bit):
  *   bit f: 0: last chunk of entry, 1: there are more chunks (pointed to by the two bytes after the header)
- *   bit e: 0: use data of this chunk, 1: use prefix of entry before or after (see next bit)
- *   bit d: 0: use prefix of entry before, 1: use prefix of entry after,
- *   bit c and b: reserved
+ *   bit e to b: reserved
  *   bit a to 0: length
  *
  * TODO: the implementation is not optimized for now...
- * TODO: implement prefixes during writing
  */
 
 /**
@@ -52,8 +49,6 @@ const ENTRIES = 9;
 
 // entry header masks
 const HEADER_MORE_CHUNKS = 0b1000_0000_0000_0000;
-const HEADER_USE_PREFIX = 0b0100_0000_0000_0000;
-const HEADER_USE_PREFIX_AFTER = 0b0010_0000_0000_0000;
 const HEADER_LENGTH = 0b0000_0111_1111_1111;
 
 function getEntryPointerIndex(entryNumber: number): number {
@@ -129,17 +124,10 @@ function readLengthBytesStartAndNextHeaderPointer(
   return [length, bytesStart, nextHeaderPointer];
 }
 
-function readUsePrefix(pageArray: Uint8Array, headerPointer: number): boolean {
-  return (pageArray[headerPointer] & HEADER_USE_PREFIX) !== 0;
-}
-
 function readChunks(pageArray: Uint8Array, headerPointer: number): Uint8Array {
   let currentHeaderPointer = headerPointer;
   let result: Uint8Array | undefined = undefined;
   while (true) {
-    if (readUsePrefix(pageArray, currentHeaderPointer)) {
-      throw new Error("readChunks does not support prefixes");
-    }
     const [length, bytesStart, nextHeaderPointer] = readLengthBytesStartAndNextHeaderPointer(
       pageArray,
       currentHeaderPointer
@@ -174,23 +162,7 @@ function readEntry(
     // special case for empty array
     result = SHARED_EMPTY_ARRAY;
   } else {
-    if (readUsePrefix(pageArray, headerPointer)) {
-      const prefixAfter = (pageArray[headerPointer] & HEADER_USE_PREFIX_AFTER) !== 0;
-      const [length, _, nextHeaderPointer] = readLengthBytesStartAndNextHeaderPointer(pageArray, headerPointer);
-      // TODO: improve this by not reading full entries where possible
-      const otherEntry = readEntry(pageArray, entryCount, entryNumber + (prefixAfter ? 1 : -1), entryCache);
-      if (otherEntry.length < length) {
-        throw new Error("otherEntry is too short for prefix length: " + otherEntry.length + ", " + length);
-      }
-      const prefixChunk = otherEntry.subarray(0, length);
-      if (nextHeaderPointer !== undefined) {
-        result = concat(prefixChunk, readChunks(pageArray, nextHeaderPointer));
-      } else {
-        result = prefixChunk;
-      }
-    } else {
-      result = readChunks(pageArray, headerPointer);
-    }
+    result = readChunks(pageArray, headerPointer);
   }
   entryCache[entryNumber] = result;
   return result;
@@ -649,8 +621,7 @@ export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
 
     while (chunkPointer !== undefined) {
       const [length, _, nextHeaderPointer] = readLengthBytesStartAndNextHeaderPointer(pageArray, chunkPointer);
-      const isPrefixChunk = readUsePrefix(pageArray, chunkPointer);
-      const freeChunkLength = 2 + (nextHeaderPointer !== undefined ? 2 : 0) + (isPrefixChunk ? 0 : length);
+      const freeChunkLength = 2 + (nextHeaderPointer !== undefined ? 2 : 0) + length;
       freeChunkInfos.push(new FreeChunkInfo(chunkPointer, freeChunkLength));
 
       chunkPointer = nextHeaderPointer;
@@ -696,11 +667,7 @@ export function debugPageEntriesChunks(pageArray: Uint8Array): [number, number, 
         pageArray,
         headerPointer
       );
-      if (readUsePrefix(pageArray, headerPointer)) {
-        result.push([headerPointer, bytesStart, "entry chunk " + i + "-" + chunkIndex + " (prefix)"]);
-      } else {
-        result.push([headerPointer, bytesStart + length, "entry chunk " + i + "-" + chunkIndex]);
-      }
+      result.push([headerPointer, bytesStart + length, "entry chunk " + i + "-" + chunkIndex]);
       headerPointer = nextHeaderPointer;
       chunkIndex++;
     }
