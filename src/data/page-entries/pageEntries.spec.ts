@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest";
 import {
-  containsPageEntry,
   insertPageEntry,
   readAllPageEntries,
   readPageEntriesFreeSpace,
@@ -84,73 +83,6 @@ describe("pageEntries", () => {
       // removing again should return false
       expect(removePageEntry(pageArray, entries[i])).toBe(false);
     }
-
-    expect(readAllPageEntries(pageArray)).toEqual([]);
-    // no free chunks exist
-    expect(dataView.getUint16(FREE_CHUNKS_POINTER)).toBe(0);
-    expect(readPageEntriesFreeSpace(pageArray)).toBe(startFreeSpace);
-  });
-
-  test("multi chunk entries", () => {
-    const pageArray = new Uint8Array(800);
-    const dataView = new DataView(pageArray.buffer);
-
-    const startFreeSpace = readPageEntriesFreeSpace(pageArray);
-
-    function makeEntry(firstByte: number, length: number): Uint8Array {
-      const array = [firstByte];
-      while (array.length < length) {
-        array.push(length - array.length);
-      }
-      return Uint8Array.from(array);
-    }
-
-    const entries: Uint8Array[] = [];
-    const shortCount = 50;
-    const shortLength = 10;
-    for (let i = 0; i < shortCount; i++) {
-      const entry = makeEntry(i, shortLength);
-      expect(insertPageEntry(pageArray, entry)).toBe(true);
-      entries.push(entry);
-      expect(readPageEntriesFreeSpace(pageArray)).toBeLessThan(startFreeSpace);
-    }
-
-    expect(readAllPageEntries(pageArray)).toEqual(entries);
-    // no free chunks exist
-    expect(dataView.getUint16(FREE_CHUNKS_POINTER)).toBe(0);
-
-    // remove every second entry
-    entries.length = 0;
-    for (let i = 0; i < shortCount; i++) {
-      const entry = makeEntry(i, shortLength);
-      if (i % 2 === 0) {
-        // keep this entry
-        entries.push(entry);
-      } else {
-        expect(removePageEntry(pageArray, entry)).toBe(true);
-      }
-    }
-    expect(readPageEntriesFreeSpace(pageArray)).toBeLessThan(startFreeSpace);
-
-    expect(readAllPageEntries(pageArray)).toEqual(entries);
-    // free chunks exists
-    expect(dataView.getUint16(FREE_CHUNKS_POINTER)).not.toBe(0);
-
-    // insert longer entries that use multiple chunks
-    const longCount = 10;
-    const longLength = 28;
-    for (let i = 0; i < longCount; i++) {
-      const entry = makeEntry(shortCount + i, longLength);
-      expect(insertPageEntry(pageArray, entry)).toBe(true);
-      expect(containsPageEntry(pageArray, entry)).toBe(true);
-      entries.push(entry);
-    }
-    expect(readAllPageEntries(pageArray)).toEqual(entries);
-
-    // remove all entries
-    entries.forEach((entry) => {
-      expect(removePageEntry(pageArray, entry)).toBe(true);
-    });
 
     expect(readAllPageEntries(pageArray)).toEqual([]);
     // no free chunks exist
