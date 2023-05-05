@@ -42,10 +42,9 @@ const MAX_ENTRY_LENGTH = 2000;
 
 // "pointers"
 const FREE_SPACE_END_POINTER = 1;
-const FREE_CHUNKS_POINTER = 3;
-const FREE_CHUNKS_SIZE = 5;
-const ENTRY_COUNT = 7;
-const ENTRIES = 9;
+const FREE_CHUNKS_SIZE = 3;
+const ENTRY_COUNT = 5;
+const ENTRIES = 7;
 
 // entry header masks
 const HEADER_LENGTH = 0b0000_0111_1111_1111;
@@ -104,11 +103,9 @@ export function readPageEntriesFreeSpace(pageArray: Uint8Array): number {
   }
 }
 
-function readLengthAndBytesStart(pageArray: Uint8Array, headerPointer: number): [number, number] {
-  const header = readUint16(pageArray, headerPointer);
-  const length = header & HEADER_LENGTH;
-  const bytesStart = headerPointer + 2;
-  return [length, bytesStart];
+function readLength(pageArray: Uint8Array, entryPointer: number): number {
+  const header = readUint16(pageArray, entryPointer);
+  return header & HEADER_LENGTH;
 }
 
 const SHARED_EMPTY_ARRAY = new Uint8Array(0);
@@ -122,7 +119,8 @@ function readEntry(pageArray: Uint8Array, entryCount: number, entryNumber: numbe
     // special case for empty array
     return SHARED_EMPTY_ARRAY;
   } else {
-    const [length, bytesStart] = readLengthAndBytesStart(pageArray, headerPointer);
+    const length = readLength(pageArray, headerPointer);
+    const bytesStart = headerPointer + 2;
     return pageArray.subarray(bytesStart, bytesStart + length);
   }
 }
@@ -246,59 +244,61 @@ function initIfNecessary(pageArray: Uint8Array): void {
   if (pageArray[0] === 0) {
     pageArray[0] = 1;
     writeUint16(pageArray, FREE_SPACE_END_POINTER, pageArray.length);
-    writeUint16(pageArray, FREE_CHUNKS_POINTER, 0);
     writeUint16(pageArray, FREE_CHUNKS_SIZE, 0);
     writeUint16(pageArray, ENTRY_COUNT, 0);
   }
 }
 
-const FREE_CHUNK_MIN_LENGTH = 3;
-const FREE_CHUNK_MAX_LENGTH = 0b0111_1111_1111_1111;
-const FREE_CHUNK_MAX_LENGTH_ONE_BYTE_MASK = 0b1000_0000;
-const FREE_CHUNK_MAX_LENGTH_ONE_BYTE = 0b0111_1111;
+function getSortedEntryPointers(pageArray: Uint8Array, entryCount: number): number[] {
+  const result: number[] = [];
 
-function writeFreeChunkLengthAndNext(
-  pageArray: Uint8Array,
-  chunkPointer: number,
-  length: number,
-  nextChunkPointer: number
-): void {
-  if (length < FREE_CHUNK_MIN_LENGTH) {
-    throw new Error("chunk too small: " + length);
+  for (let i = 0; i < entryCount; i++) {
+    const entryPointer = readUint16(pageArray, getEntryPointerIndex(i));
+    if (entryPointer > 0) {
+      result.push(entryPointer);
+    }
   }
-  if (length > FREE_CHUNK_MAX_LENGTH) {
-    // chain the chunks
-    const chainedChunkPointer = chunkPointer + FREE_CHUNK_MAX_LENGTH;
-    writeFreeChunkLengthAndNext(pageArray, chunkPointer, FREE_CHUNK_MAX_LENGTH, chainedChunkPointer);
-    writeFreeChunkLengthAndNext(pageArray, chainedChunkPointer, length - FREE_CHUNK_MAX_LENGTH, nextChunkPointer);
-  } else if (length <= FREE_CHUNK_MAX_LENGTH_ONE_BYTE) {
-    pageArray[chunkPointer] = length | FREE_CHUNK_MAX_LENGTH_ONE_BYTE_MASK;
-    writeUint16(pageArray, chunkPointer + 1, nextChunkPointer);
-  } else {
-    writeUint16(pageArray, chunkPointer, length);
-    writeUint16(pageArray, chunkPointer + 2, nextChunkPointer);
+
+  if (entryCount >= 2) {
+    // we need to sort
+    result.sort((a, b) => a - b);
   }
+  return result;
 }
 
-function isOneByteHeaderFreeChunk(freeChunkByte1: number) {
-  return (freeChunkByte1 & FREE_CHUNK_MAX_LENGTH_ONE_BYTE_MASK) !== 0;
+function findFreeChunk(pageArray: Uint8Array, entryCount: number, requiredLength: number): number | undefined {
+  const sortedEntryPointers = getSortedEntryPointers(pageArray, entryCount);
+  const pointersLength = sortedEntryPointers.length;
+
+  let candidatePointer: number | undefined = undefined;
+  let candidateLength: number | undefined = undefined;
+
+  for (let i = 0; i < pointersLength; i++) {
+    const entryPointer = sortedEntryPointers[i];
+    const entryLength = readLength(pageArray, entryPointer);
+    const entryEnd = entryPointer + 2 + entryLength;
+    let nextEntryPointer: number;
+    if (i + 1 < pointersLength) {
+      nextEntryPointer = sortedEntryPointers[i + 1];
+    } else {
+      // there might be a gap after the last entry
+      nextEntryPointer = pageArray.length;
+    }
+    const freeChunkLength = nextEntryPointer - entryEnd;
+    if (freeChunkLength === requiredLength) {
+      // exact match, just return
+      return entryEnd;
+    }
+    if (freeChunkLength > requiredLength && (candidateLength === undefined || freeChunkLength < candidateLength)) {
+      candidateLength = freeChunkLength;
+      candidatePointer = entryEnd;
+    }
+  }
+
+  return candidatePointer;
 }
 
-function readFreeChunkLengthAndNext(pageArray: Uint8Array, chunkPointer: number): [number, number] {
-  const byte1 = pageArray[chunkPointer];
-  const oneByteLength = isOneByteHeaderFreeChunk(byte1);
-  const length = oneByteLength ? byte1 & FREE_CHUNK_MAX_LENGTH_ONE_BYTE : readUint16(pageArray, chunkPointer);
-  const nextChunkPointer: number = readUint16(pageArray, chunkPointer + (oneByteLength ? 1 : 2));
-  return [length, nextChunkPointer];
-}
-
-// TODO: improve this to handle all cases in one go and remove the onlyOneExactFreeChunkAllowed parameter
-function tryWriteEntry(
-  pageArray: Uint8Array,
-  entryCount: number,
-  entry: Uint8Array,
-  onlyOneExactFreeChunkAllowed: boolean
-): number | undefined {
+function tryWriteEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Array): number | undefined {
   // allow one extra space for the new entry entry
   const freeSpaceStart = getEntryPointerIndex(entryCount + 1);
   const freeSpaceEnd = readUint16(pageArray, FREE_SPACE_END_POINTER);
@@ -310,62 +310,32 @@ function tryWriteEntry(
   const entryLength = entry.length;
   const usedBytes = entryLength + 2;
 
-  let previousNextFreeChunkPointerIndex = FREE_CHUNKS_POINTER;
-  let currentChunkPointer = readUint16(pageArray, FREE_CHUNKS_POINTER);
-  while (currentChunkPointer > 0) {
-    const [freeChunkLength, nextFreeChunkPointer] = readFreeChunkLengthAndNext(pageArray, currentChunkPointer);
-    const remainingChunkLength = freeChunkLength - usedBytes;
-    if (
-      remainingChunkLength === 0 ||
-      (!onlyOneExactFreeChunkAllowed && remainingChunkLength >= FREE_CHUNK_MIN_LENGTH)
-    ) {
-      writeUint16(pageArray, currentChunkPointer, entryLength);
-      pageArray.set(entry, currentChunkPointer + 2);
+  const freeChunksSize = readUint16(pageArray, FREE_CHUNKS_SIZE);
 
-      const oldFreeChunksSize = readUint16(pageArray, FREE_CHUNKS_SIZE);
-      assert(usedBytes <= oldFreeChunksSize);
-      writeUint16(pageArray, FREE_CHUNKS_SIZE, oldFreeChunksSize - usedBytes);
+  let newEntryPointer: number | undefined = undefined;
 
-      if (remainingChunkLength > 0) {
-        // create a new chunk with the remaining bytes
-        const newChunkPointer = currentChunkPointer + usedBytes;
-        writeFreeChunkLengthAndNext(pageArray, newChunkPointer, remainingChunkLength, nextFreeChunkPointer);
-        writeUint16(pageArray, previousNextFreeChunkPointerIndex, newChunkPointer);
-      } else {
-        writeUint16(pageArray, previousNextFreeChunkPointerIndex, nextFreeChunkPointer);
-      }
-
-      return currentChunkPointer;
-    }
-
-    // this chunk cannot be used in this case
-    previousNextFreeChunkPointerIndex =
-      currentChunkPointer + (isOneByteHeaderFreeChunk(pageArray[currentChunkPointer]) ? 1 : 2);
-
-    currentChunkPointer = nextFreeChunkPointer;
+  if (freeChunksSize >= usedBytes) {
+    newEntryPointer = findFreeChunk(pageArray, entryCount, usedBytes);
   }
 
-  // free chunks were not sufficient, so use the free space if possible
-  currentChunkPointer = freeSpaceEnd - usedBytes;
-  if (currentChunkPointer < freeSpaceStart) {
-    // not enough space
-    return undefined;
-  }
-  if (onlyOneExactFreeChunkAllowed) {
-    // only use a chunk from the free space in this case if there is more free space than free chunks
-    // this avoids unnecessarily removing space for further entries in the entries array
-    if (readUint16(pageArray, FREE_CHUNKS_SIZE) > freeSpaceEnd - freeSpaceStart) {
+  if (newEntryPointer !== undefined) {
+    // we use a free chunk
+    writeUint16(pageArray, FREE_CHUNKS_SIZE, freeChunksSize - usedBytes);
+  } else {
+    // free chunks were not sufficient, so use the free space if possible
+    newEntryPointer = freeSpaceEnd - usedBytes;
+    if (newEntryPointer < freeSpaceStart) {
+      // not enough space
       return undefined;
     }
+    writeUint16(pageArray, FREE_SPACE_END_POINTER, newEntryPointer);
   }
 
-  writeUint16(pageArray, currentChunkPointer, entryLength);
-  pageArray.set(entry, currentChunkPointer + 2);
-
-  writeUint16(pageArray, previousNextFreeChunkPointerIndex, 0);
-  writeUint16(pageArray, FREE_SPACE_END_POINTER, currentChunkPointer);
-
-  return currentChunkPointer;
+  if (newEntryPointer !== undefined) {
+    writeUint16(pageArray, newEntryPointer, entryLength);
+    pageArray.set(entry, newEntryPointer + 2);
+  }
+  return newEntryPointer;
 }
 
 /**
@@ -391,12 +361,7 @@ export function insertPageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
     // just use 0 as header pointer
     headerPointer = 0;
   } else {
-    // first try to write it in one chunk (either one free chunk or in the free space)
-    let writeResult = tryWriteEntry(pageArray, entryCount, entry, true);
-    if (writeResult === undefined) {
-      // if one chunk is not possible, then try with multiple or partial chunks
-      writeResult = tryWriteEntry(pageArray, entryCount, entry, false);
-    }
+    let writeResult = tryWriteEntry(pageArray, entryCount, entry);
     if (writeResult === undefined) {
       // could not write
       return false;
@@ -417,71 +382,6 @@ export function insertPageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
   return true;
 }
 
-class FreeChunkInfo {
-  obsolete?: boolean;
-
-  constructor(readonly startIndex: number, public length: number) {}
-
-  get endIndex(): number {
-    return this.startIndex + this.length;
-  }
-}
-
-function readFreeChunkInfos(pageArray: Uint8Array): FreeChunkInfo[] {
-  const result: FreeChunkInfo[] = [];
-  let currentChunkPointer = readUint16(pageArray, FREE_CHUNKS_POINTER);
-  while (currentChunkPointer > 0) {
-    const [length, nextChunkPointer] = readFreeChunkLengthAndNext(pageArray, currentChunkPointer);
-    result.push(new FreeChunkInfo(currentChunkPointer, length));
-    currentChunkPointer = nextChunkPointer;
-  }
-  return result;
-}
-
-function mergeFreeChunkInfos(freeChunkInfos: FreeChunkInfo[]): void {
-  const sortedInfos = [...freeChunkInfos].sort((a, b) => a.startIndex - b.startIndex);
-  let previous: FreeChunkInfo | undefined = undefined;
-  for (const freeChunkInfo of sortedInfos) {
-    if (previous && previous.endIndex === freeChunkInfo.startIndex) {
-      // merge the two free chunks
-      previous.length += freeChunkInfo.length;
-      freeChunkInfo.obsolete = true;
-    } else {
-      previous = freeChunkInfo;
-    }
-  }
-}
-
-function writeFreeChunkInfos(pageArray: Uint8Array, freeChunkInfos: FreeChunkInfo[]): void {
-  let previous: FreeChunkInfo | undefined = undefined;
-  let freeChunksSize = 0;
-  for (const freeChunkInfo of freeChunkInfos) {
-    if (freeChunkInfo.obsolete) {
-      // do not write obsolete ones
-      continue;
-    }
-    freeChunksSize += freeChunkInfo.length;
-    if (!previous) {
-      // first iteration
-      writeUint16(pageArray, FREE_CHUNKS_POINTER, freeChunkInfo.startIndex);
-    } else {
-      // write previous
-      writeFreeChunkLengthAndNext(pageArray, previous.startIndex, previous.length, freeChunkInfo.startIndex);
-    }
-    previous = freeChunkInfo;
-  }
-
-  if (!previous) {
-    // freeChunkInfos was empty
-    writeUint16(pageArray, FREE_CHUNKS_POINTER, 0);
-  } else {
-    // write the last chunk
-    writeFreeChunkLengthAndNext(pageArray, previous.startIndex, previous.length, 0);
-  }
-
-  writeUint16(pageArray, FREE_CHUNKS_SIZE, freeChunksSize);
-}
-
 /**
  * @returns whether the entry existed
  */
@@ -496,7 +396,7 @@ export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
     return false;
   }
 
-  const chunkPointer = readUint16(pageArray, getEntryPointerIndex(entryNumber));
+  const entryPointer = readUint16(pageArray, getEntryPointerIndex(entryNumber));
   // shift all the following entries backwards in the array
   for (let i = entryNumber + 1; i < entryCount; i++) {
     const base = getEntryPointerIndex(i);
@@ -506,31 +406,28 @@ export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
   // and decrease the count
   writeUint16(pageArray, ENTRY_COUNT, entryCount - 1);
 
-  if (chunkPointer) {
-    // add the new free chunks to the free chunk list
+  if (entryPointer) {
+    // we potentially need to update the free space end pointer and free chunks size
+    const oldFreeSpaceEnd = readUint16(pageArray, FREE_SPACE_END_POINTER);
+    const oldFreeChunksSize = readUint16(pageArray, FREE_CHUNKS_SIZE);
+    const entryTotalLength = readLength(pageArray, entryPointer) + 2;
 
-    // we need to read all the free chunk infos, since we want to merge them if possible
-    const freeChunkInfos = readFreeChunkInfos(pageArray);
-
-    const [length, _] = readLengthAndBytesStart(pageArray, chunkPointer);
-    const freeChunkLength = 2 + length;
-    freeChunkInfos.push(new FreeChunkInfo(chunkPointer, freeChunkLength));
-
-    mergeFreeChunkInfos(freeChunkInfos);
-
-    // check if we can merge one of the chunks with the free space end pointer
-    const freeSpaceEnd = readUint16(pageArray, FREE_SPACE_END_POINTER);
-    for (const freeChunkInfo of freeChunkInfos) {
-      if (!freeChunkInfo.obsolete && freeChunkInfo.startIndex === freeSpaceEnd) {
-        freeChunkInfo.obsolete = true;
-        writeUint16(pageArray, FREE_SPACE_END_POINTER, freeSpaceEnd + freeChunkInfo.length);
-        // there can be no other chunks, since we already merged them
-        break;
+    if (oldFreeSpaceEnd === entryPointer) {
+      const firstEntryPointer = getSortedEntryPointers(pageArray, entryCount - 1)[0];
+      const newFreeSpaceEnd = firstEntryPointer ?? pageArray.length;
+      writeUint16(pageArray, FREE_SPACE_END_POINTER, newFreeSpaceEnd);
+      const removedFreeChunksSize = newFreeSpaceEnd - oldFreeSpaceEnd - entryTotalLength;
+      if (removedFreeChunksSize > 0) {
+        const newFreeChunksSize = oldFreeChunksSize - removedFreeChunksSize;
+        assert(newFreeChunksSize >= 0);
+        writeUint16(pageArray, FREE_CHUNKS_SIZE, newFreeChunksSize);
+      } else {
+        assert(removedFreeChunksSize === 0);
       }
+    } else {
+      const newFreeChunksSize = oldFreeChunksSize + entryTotalLength;
+      writeUint16(pageArray, FREE_CHUNKS_SIZE, newFreeChunksSize);
     }
-
-    // write all of them again for simplicity, for chunks that did not change nothing will change in the array
-    writeFreeChunkInfos(pageArray, freeChunkInfos);
   }
 
   return true;
@@ -545,12 +442,11 @@ export function debugPageEntries(pageArray: Uint8Array): [number, number, string
   const freeSpaceStart = getEntryPointerIndex(entryCount);
   const freeSpaceEnd = readUint16(pageArray, FREE_SPACE_END_POINTER);
   result.push([freeSpaceStart, freeSpaceEnd, "free space"]);
-  readFreeChunkInfos(pageArray).forEach((info, index) =>
-    result.push([info.startIndex, info.endIndex, "free chunk " + index])
-  );
+
   for (let i = 0; i < entryCount; i++) {
     const headerPointer = readUint16(pageArray, getEntryPointerIndex(i));
-    const [length, bytesStart] = readLengthAndBytesStart(pageArray, headerPointer);
+    const length = readLength(pageArray, headerPointer);
+    const bytesStart = headerPointer + 2;
     result.push([headerPointer, bytesStart + length, "entry chunk " + i]);
   }
 

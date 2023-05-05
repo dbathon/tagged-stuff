@@ -9,7 +9,7 @@ import {
 } from "./pageEntries";
 
 // some copied constants
-const FREE_CHUNKS_POINTER = 3;
+const FREE_CHUNKS_SIZE = 3;
 
 describe("pageEntries", () => {
   test("blank page has zero entries", () => {
@@ -44,7 +44,7 @@ describe("pageEntries", () => {
       expect(entries).toEqual(testEntries);
 
       // no free chunks exist
-      expect(dataView.getUint16(FREE_CHUNKS_POINTER)).toBe(0);
+      expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBe(0);
     }
   });
 
@@ -66,7 +66,7 @@ describe("pageEntries", () => {
 
     expect(readAllPageEntries(pageArray)).toEqual(entries);
     // no free chunks exist
-    expect(dataView.getUint16(FREE_CHUNKS_POINTER)).toBe(0);
+    expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBe(0);
 
     // remove the first entry
     expect(removePageEntry(pageArray, entries[0])).toBe(true);
@@ -75,7 +75,7 @@ describe("pageEntries", () => {
 
     expect(readAllPageEntries(pageArray)).toEqual(entries.slice(1));
     // free chunks exists
-    expect(dataView.getUint16(FREE_CHUNKS_POINTER)).not.toBe(0);
+    expect(dataView.getUint16(FREE_CHUNKS_SIZE)).not.toBe(0);
 
     // remove the other entries
     for (let i = 1; i < count; i++) {
@@ -86,7 +86,7 @@ describe("pageEntries", () => {
 
     expect(readAllPageEntries(pageArray)).toEqual([]);
     // no free chunks exist
-    expect(dataView.getUint16(FREE_CHUNKS_POINTER)).toBe(0);
+    expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBe(0);
     expect(readPageEntriesFreeSpace(pageArray)).toBe(startFreeSpace);
   });
 
