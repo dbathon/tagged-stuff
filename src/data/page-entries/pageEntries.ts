@@ -113,57 +113,38 @@ function readLengthAndBytesStart(pageArray: Uint8Array, headerPointer: number): 
 
 const SHARED_EMPTY_ARRAY = new Uint8Array(0);
 
-function readEntry(
-  pageArray: Uint8Array,
-  entryCount: number,
-  entryNumber: number,
-  entryCache: Uint8Array[]
-): Uint8Array {
+function readEntry(pageArray: Uint8Array, entryCount: number, entryNumber: number): Uint8Array {
   if (entryNumber < 0 || entryNumber >= entryCount) {
     throw new Error("invalid entryNumber: " + entryNumber);
   }
-  const cachedResult = entryCache[entryNumber];
-  if (cachedResult) {
-    return cachedResult;
-  }
   const headerPointer = readUint16(pageArray, getEntryPointerIndex(entryNumber));
-  let result: Uint8Array;
   if (headerPointer === 0) {
     // special case for empty array
-    result = SHARED_EMPTY_ARRAY;
+    return SHARED_EMPTY_ARRAY;
   } else {
     const [length, bytesStart] = readLengthAndBytesStart(pageArray, headerPointer);
-    result = pageArray.subarray(bytesStart, bytesStart + length);
+    return pageArray.subarray(bytesStart, bytesStart + length);
   }
-  entryCache[entryNumber] = result;
-  return result;
 }
 
 export function readAllPageEntries(pageArray: Uint8Array): Uint8Array[] {
   const result: Uint8Array[] = [];
   const entryCount = readPageEntriesCount(pageArray);
-  const entryCache: Uint8Array[] = [];
   for (let i = 0; i < entryCount; i++) {
-    result.push(readEntry(pageArray, entryCount, i, entryCache));
+    result.push(readEntry(pageArray, entryCount, i));
   }
   return result;
 }
 
 export function readPageEntryByNumber(pageArray: Uint8Array, entryNumber: number): Uint8Array {
   const entryCount = readPageEntriesCount(pageArray);
-  const entryCache: Uint8Array[] = [];
-  return readEntry(pageArray, entryCount, entryNumber, entryCache);
+  return readEntry(pageArray, entryCount, entryNumber);
 }
 
 /**
  * @returns an array containing the entryNumber where the entry either exists or would be inserted and whether it exists
  */
-function findEntryNumber(
-  pageArray: Uint8Array,
-  entryCount: number,
-  entry: Uint8Array,
-  entryCache: Uint8Array[]
-): [number, boolean] {
+function findEntryNumber(pageArray: Uint8Array, entryCount: number, entry: Uint8Array): [number, boolean] {
   if (entryCount <= 0) {
     return [0, false];
   }
@@ -173,7 +154,7 @@ function findEntryNumber(
 
   while (right >= left) {
     const currentEntryNumber = (left + right) >> 1;
-    const currentEntry = readEntry(pageArray, entryCount, currentEntryNumber, entryCache);
+    const currentEntry = readEntry(pageArray, entryCount, currentEntryNumber);
     const compareResult = compareUint8Arrays(entry, currentEntry);
     if (compareResult === 0) {
       // found the entry
@@ -199,8 +180,7 @@ function findEntryNumber(
 
 export function getEntryNumberOfPageEntry(pageArray: Uint8Array, entry: Uint8Array): number | undefined {
   const entryCount = readPageEntriesCount(pageArray);
-  const entryCache: Uint8Array[] = [];
-  const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, entry, entryCache);
+  const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, entry);
   return exists ? entryNumber : undefined;
 }
 
@@ -211,13 +191,12 @@ export function containsPageEntry(pageArray: Uint8Array, entry: Uint8Array): boo
 function scan(
   pageArray: Uint8Array,
   entryCount: number,
-  entryCache: Uint8Array[],
   startEntryNumber: number,
   direction: -1 | 1,
   callback: (entry: Uint8Array, entryNumber: number) => boolean
 ): void {
   for (let entryNumber = startEntryNumber; entryNumber >= 0 && entryNumber < entryCount; entryNumber += direction) {
-    const entry = readEntry(pageArray, entryCount, entryNumber, entryCache);
+    const entry = readEntry(pageArray, entryCount, entryNumber);
     if (!callback(entry, entryNumber)) {
       break;
     }
@@ -230,19 +209,18 @@ export function scanPageEntries(
   callback: (entry: Uint8Array, entryNumber: number) => boolean
 ): void {
   const entryCount = readPageEntriesCount(pageArray);
-  const entryCache: Uint8Array[] = [];
   let startEntryNumber: number;
   if (startEntryOrEntryNumber === undefined) {
     startEntryNumber = 0;
   } else if (typeof startEntryOrEntryNumber === "number") {
     startEntryNumber = startEntryOrEntryNumber;
   } else {
-    const [entryNumber, _] = findEntryNumber(pageArray, entryCount, startEntryOrEntryNumber, entryCache);
+    const [entryNumber, _] = findEntryNumber(pageArray, entryCount, startEntryOrEntryNumber);
     // in the forward scan case the returned entryNumber is always the right one
     startEntryNumber = entryNumber;
   }
 
-  scan(pageArray, entryCount, entryCache, startEntryNumber, 1, callback);
+  scan(pageArray, entryCount, startEntryNumber, 1, callback);
 }
 
 export function scanPageEntriesReverse(
@@ -251,18 +229,17 @@ export function scanPageEntriesReverse(
   callback: (entry: Uint8Array, entryNumber: number) => boolean
 ): void {
   const entryCount = readPageEntriesCount(pageArray);
-  const entryCache: Uint8Array[] = [];
   let startEntryNumber: number;
   if (startEntryOrEntryNumber === undefined) {
     startEntryNumber = entryCount - 1;
   } else if (typeof startEntryOrEntryNumber === "number") {
     startEntryNumber = startEntryOrEntryNumber;
   } else {
-    const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, startEntryOrEntryNumber, entryCache);
+    const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, startEntryOrEntryNumber);
     startEntryNumber = exists ? entryNumber : entryNumber - 1;
   }
 
-  scan(pageArray, entryCount, entryCache, startEntryNumber, -1, callback);
+  scan(pageArray, entryCount, startEntryNumber, -1, callback);
 }
 
 function initIfNecessary(pageArray: Uint8Array): void {
@@ -400,8 +377,7 @@ export function insertPageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
     throw new Error("entry is too long");
   }
   const entryCount = readPageEntriesCount(pageArray);
-  const entryCache: Uint8Array[] = [];
-  const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, entry, entryCache);
+  const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, entry);
   if (exists) {
     // entry already exists
     return true;
@@ -514,8 +490,7 @@ export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
     throw new Error("entry is too long");
   }
   const entryCount = readPageEntriesCount(pageArray);
-  const entryCache: Uint8Array[] = [];
-  const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, entry, entryCache);
+  const [entryNumber, exists] = findEntryNumber(pageArray, entryCount, entry);
   if (!exists) {
     // entry does not exist
     return false;
