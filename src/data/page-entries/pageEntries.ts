@@ -266,14 +266,23 @@ function getSortedEntryPointers(pageArray: Uint8Array, entryCount: number): numb
   return result;
 }
 
-function findFreeChunk(pageArray: Uint8Array, entryCount: number, requiredLength: number): number | undefined {
+function findFreeChunk(
+  pageArray: Uint8Array,
+  entryCount: number,
+  freeChunksSize: number,
+  requiredLength: number
+): number | undefined {
+  if (freeChunksSize < requiredLength) {
+    return undefined;
+  }
   const sortedEntryPointers = getSortedEntryPointers(pageArray, entryCount);
   const pointersLength = sortedEntryPointers.length;
 
+  let remainingFreeChunksSize = freeChunksSize;
   let candidatePointer: number | undefined = undefined;
   let candidateLength: number | undefined = undefined;
 
-  for (let i = 0; i < pointersLength; i++) {
+  for (let i = 0; i < pointersLength && remainingFreeChunksSize >= requiredLength; i++) {
     const entryPointer = sortedEntryPointers[i];
     const entryLength = readLength(pageArray, entryPointer);
     const entryEnd = entryPointer + 2 + entryLength;
@@ -289,10 +298,12 @@ function findFreeChunk(pageArray: Uint8Array, entryCount: number, requiredLength
       // exact match, just return
       return entryEnd;
     }
-    if (freeChunkLength > requiredLength && (candidateLength === undefined || freeChunkLength < candidateLength)) {
+    // use "<=" to prefer later free chunks to fill those first, making the search for future calls potentially faster
+    if (freeChunkLength > requiredLength && (candidateLength === undefined || freeChunkLength <= candidateLength)) {
       candidateLength = freeChunkLength;
       candidatePointer = entryEnd;
     }
+    remainingFreeChunksSize -= freeChunkLength;
   }
 
   return candidatePointer;
@@ -312,11 +323,7 @@ function tryWriteEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Ar
 
   const freeChunksSize = readUint16(pageArray, FREE_CHUNKS_SIZE);
 
-  let newEntryPointer: number | undefined = undefined;
-
-  if (freeChunksSize >= usedBytes) {
-    newEntryPointer = findFreeChunk(pageArray, entryCount, usedBytes);
-  }
+  let newEntryPointer = findFreeChunk(pageArray, entryCount, freeChunksSize, usedBytes);
 
   if (newEntryPointer !== undefined) {
     // we use a free chunk
