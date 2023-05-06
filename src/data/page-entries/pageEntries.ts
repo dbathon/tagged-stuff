@@ -404,7 +404,8 @@ export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
     pageArray[base - 1] = pageArray[base + 1];
   }
   // and decrease the count
-  writeUint16(pageArray, ENTRY_COUNT, entryCount - 1);
+  const newEntryCount = entryCount - 1;
+  writeUint16(pageArray, ENTRY_COUNT, newEntryCount);
 
   if (entryPointer) {
     // we potentially need to update the free space end pointer and free chunks size
@@ -413,8 +414,17 @@ export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
     const entryTotalLength = readLength(pageArray, entryPointer) + 2;
 
     if (oldFreeSpaceEnd === entryPointer) {
-      const firstEntryPointer = getSortedEntryPointers(pageArray, entryCount - 1)[0];
-      const newFreeSpaceEnd = firstEntryPointer ?? pageArray.length;
+      const minNewFreeSpaceEnd = oldFreeSpaceEnd + entryTotalLength;
+      let newFreeSpaceEnd = pageArray.length;
+
+      for (let i = 0; i < newEntryCount && minNewFreeSpaceEnd < newFreeSpaceEnd; i++) {
+        const entryPointer = readUint16(pageArray, getEntryPointerIndex(i));
+        if (entryPointer > 0 && entryPointer < newFreeSpaceEnd) {
+          newFreeSpaceEnd = entryPointer;
+        }
+      }
+      assert(newFreeSpaceEnd >= minNewFreeSpaceEnd);
+
       writeUint16(pageArray, FREE_SPACE_END_POINTER, newFreeSpaceEnd);
       const removedFreeChunksSize = newFreeSpaceEnd - oldFreeSpaceEnd - entryTotalLength;
       if (removedFreeChunksSize > 0) {
