@@ -46,9 +46,6 @@ const FREE_CHUNKS_SIZE = 3;
 const ENTRY_COUNT = 5;
 const ENTRIES = 7;
 
-// entry header masks
-const HEADER_LENGTH = 0b0000_0111_1111_1111;
-
 function getEntryPointerIndex(entryNumber: number): number {
   return ENTRIES + entryNumber * 2;
 }
@@ -103,9 +100,17 @@ export function readPageEntriesFreeSpace(pageArray: Uint8Array): number {
   }
 }
 
-function readLength(pageArray: Uint8Array, entryPointer: number): number {
-  const header = readUint16(pageArray, entryPointer);
-  return header & HEADER_LENGTH;
+function readEntryLength(pageArray: Uint8Array, entryPointer: number): number {
+  const byte0 = pageArray[entryPointer];
+  if (byte0 <= 0x7f) {
+    return byte0;
+  } else {
+    return ((byte0 & 0x7f) << 8) | pageArray[entryPointer + 1];
+  }
+}
+
+function getByteCountForEntryLength(entryLength: number): number {
+  return entryLength <= 0x7f ? 1 : 2;
 }
 
 const SHARED_EMPTY_ARRAY = new Uint8Array(0);
@@ -119,9 +124,9 @@ function readEntry(pageArray: Uint8Array, entryCount: number, entryNumber: numbe
     // special case for empty array
     return SHARED_EMPTY_ARRAY;
   } else {
-    const length = readLength(pageArray, headerPointer);
-    const bytesStart = headerPointer + 2;
-    return pageArray.subarray(bytesStart, bytesStart + length);
+    const entryLength = readEntryLength(pageArray, headerPointer);
+    const bytesStart = headerPointer + getByteCountForEntryLength(entryLength);
+    return pageArray.subarray(bytesStart, bytesStart + entryLength);
   }
 }
 
@@ -284,8 +289,8 @@ function findFreeChunk(
 
   for (let i = 0; i < pointersLength && remainingFreeChunksSize >= requiredLength; i++) {
     const entryPointer = sortedEntryPointers[i];
-    const entryLength = readLength(pageArray, entryPointer);
-    const entryEnd = entryPointer + 2 + entryLength;
+    const entryLength = readEntryLength(pageArray, entryPointer);
+    const entryEnd = entryPointer + getByteCountForEntryLength(entryLength) + entryLength;
     let nextEntryPointer: number;
     if (i + 1 < pointersLength) {
       nextEntryPointer = sortedEntryPointers[i + 1];
@@ -319,7 +324,8 @@ function tryWriteEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Ar
   }
 
   const entryLength = entry.length;
-  const usedBytes = entryLength + 2;
+  const byteCountForEntryLength = getByteCountForEntryLength(entryLength);
+  const usedBytes = entryLength + byteCountForEntryLength;
 
   const freeChunksSize = readUint16(pageArray, FREE_CHUNKS_SIZE);
 
@@ -339,8 +345,13 @@ function tryWriteEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Ar
   }
 
   if (newEntryPointer !== undefined) {
-    writeUint16(pageArray, newEntryPointer, entryLength);
-    pageArray.set(entry, newEntryPointer + 2);
+    if (byteCountForEntryLength === 1) {
+      pageArray[newEntryPointer] = entryLength;
+    } else {
+      pageArray[newEntryPointer] = 0x80 | (entryLength >>> 8);
+      pageArray[newEntryPointer + 1] = entryLength & 0xff;
+    }
+    pageArray.set(entry, newEntryPointer + byteCountForEntryLength);
   }
   return newEntryPointer;
 }
@@ -418,7 +429,8 @@ export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
     // we potentially need to update the free space end pointer and free chunks size
     const oldFreeSpaceEnd = readUint16(pageArray, FREE_SPACE_END_POINTER);
     const oldFreeChunksSize = readUint16(pageArray, FREE_CHUNKS_SIZE);
-    const entryTotalLength = readLength(pageArray, entryPointer) + 2;
+    const entryLength = readEntryLength(pageArray, entryPointer);
+    const entryTotalLength = entryLength + getByteCountForEntryLength(entryLength);
 
     if (oldFreeSpaceEnd === entryPointer) {
       const minNewFreeSpaceEnd = oldFreeSpaceEnd + entryTotalLength;
@@ -462,9 +474,9 @@ export function debugPageEntries(pageArray: Uint8Array): [number, number, string
 
   for (let i = 0; i < entryCount; i++) {
     const headerPointer = readUint16(pageArray, getEntryPointerIndex(i));
-    const length = readLength(pageArray, headerPointer);
-    const bytesStart = headerPointer + 2;
-    result.push([headerPointer, bytesStart + length, "entry chunk " + i]);
+    const entryLength = readEntryLength(pageArray, headerPointer);
+    const bytesStart = headerPointer + getByteCountForEntryLength(entryLength);
+    result.push([headerPointer, bytesStart + entryLength, "entry chunk " + i]);
   }
 
   result.sort((a, b) => a[0] - b[0]);
