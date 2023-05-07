@@ -7,8 +7,8 @@ import {
 import { PageProvider, PageProviderForWrite } from "../../btree/pageProvider";
 import { assert } from "../../misc/assert";
 import { murmurHash3_x86_32 } from "../../misc/murmurHash3";
-import { isPrefixOfUint8Array } from "../../uint8-array/isPrefixOfUint8Array";
 import { readTuple, tupleToUint8Array } from "../../uint8-array/tuple";
+import { uint8ArraysEqual } from "../../uint8-array/uint8ArraysEqual";
 import { JsonEventType, JsonPath } from "../jsonEvents";
 
 /**
@@ -85,7 +85,7 @@ function findOrCreateNumberForBytes(
     const number = readTuple(entry, UINT32_TUPLE, lookupPrefix.length).values[0];
     const entryBytes = notFalse(readBytesForNumber(pageProvider.getPage, metaRootPageNumber, number));
     // check that the entry actually matches
-    if (entryBytes.length === bytes.length && isPrefixOfUint8Array(entryBytes, bytes)) {
+    if (uint8ArraysEqual(entryBytes, bytes)) {
       return number;
     }
   }
