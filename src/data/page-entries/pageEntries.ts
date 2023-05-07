@@ -2,24 +2,26 @@ import { assert } from "../misc/assert";
 import { compareUint8Arrays } from "../uint8-array/compareUint8Arrays";
 
 /**
- * The functions in this file allow treating "page data" (Uint8Array) like a sorted set of byte arrays (of up to 2000 bytes)...
+ * The functions in this file allow treating "page data" (Uint8Array) like a sorted set of byte arrays (of up to 2000
+ * bytes)...
+ *
  * The slightly complicated layout of the entries is to allow small diffs (bytes change "as little as possible").
  * The returned entries often share the underlying ArrayBuffer with the passed pageArray (to avoid unnecessary copies).
  * So the returned entries can change if pageArray is modified, if necessary the caller should copy the returned
  * entries.
  *
  * Page layout:
- * If the first byte is 0, then the page is just considered empty. Otherwise it is the "layout version" (currently always 1).
- * End of free space pointer (2 bytes): a pointer to the end (exclusive) of the free space between the entries array and the data
- * Free chunks pointer (2 bytes): a pointer to the first chunk of free space (may be 0)
- * Free chunks size (2 bytes): the sum of bytes available via the free chunks pointer
+ * If the first byte is 0, then the page is just considered empty. Otherwise it is the "layout version" (currently
+ * always 1).
+ * Free space end pointer (2 bytes): a pointer to the end (exclusive) of the free space between the entries array and
+ * the data.
+ * Free chunks size (2 bytes): the sum of bytes available between existing entries (does not include the "free space"
+ * ending at free space end pointer).
  * Entry count (2 bytes).
  * Entry pointers sorted by entry (2 bytes each)
- * Gap pointers (2 bytes each): pointers to the start of a gap between entries, the first two bytes of the gap denote its length (including those two bytes)
  *
- * Entry pointers point to a header of the entry. The header is two bytes (16 bit):
- *   bit f to b: reserved
- *   bit a to 0: length
+ * Entry pointers point to the start of the entry. The first one or two bytes specify the length of the entry, after
+ * the length the entry bytes follow. The entry pointer 0 is a special cases that denotes the empty entry.
  *
  * TODO: the implementation is not optimized for now...
  */
@@ -36,7 +38,7 @@ const MAX_PAGE_SIZE = 0xffff;
 
 /**
  * The maximum length of an entry. This is an arbitrary restrictions to avoid entries that take too much space of a
- * page..., but also helps with not requiring too many bits for the length in the chunk headers.
+ * page..., but also helps with not requiring too many bits for the length before the entry bytes.
  */
 const MAX_ENTRY_LENGTH = 2000;
 
@@ -119,13 +121,13 @@ function readEntry(pageArray: Uint8Array, entryCount: number, entryNumber: numbe
   if (entryNumber < 0 || entryNumber >= entryCount) {
     throw new Error("invalid entryNumber: " + entryNumber);
   }
-  const headerPointer = readUint16(pageArray, getEntryPointerIndex(entryNumber));
-  if (headerPointer === 0) {
+  const entryPointer = readUint16(pageArray, getEntryPointerIndex(entryNumber));
+  if (entryPointer === 0) {
     // special case for empty array
     return SHARED_EMPTY_ARRAY;
   } else {
-    const entryLength = readEntryLength(pageArray, headerPointer);
-    const bytesStart = headerPointer + getByteCountForEntryLength(entryLength);
+    const entryLength = readEntryLength(pageArray, entryPointer);
+    const bytesStart = entryPointer + getByteCountForEntryLength(entryLength);
     return pageArray.subarray(bytesStart, bytesStart + entryLength);
   }
 }
@@ -374,10 +376,10 @@ export function insertPageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
   if (entryCount === 0) {
     initIfNecessary(pageArray);
   }
-  let headerPointer: number;
+  let entryPointer: number;
   if (entry.length === 0) {
-    // just use 0 as header pointer
-    headerPointer = 0;
+    // special case: use 0 as entry pointer
+    entryPointer = 0;
   } else {
     let writeResult = tryWriteEntry(pageArray, entryCount, entry);
     if (writeResult === undefined) {
@@ -385,7 +387,7 @@ export function insertPageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
       return false;
     }
 
-    headerPointer = writeResult;
+    entryPointer = writeResult;
   }
   // shift entries before inserting
   for (let i = entryCount; i > entryNumber; i--) {
@@ -393,8 +395,8 @@ export function insertPageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
     pageArray[base] = pageArray[base - 2];
     pageArray[base + 1] = pageArray[base - 1];
   }
-  // write the headerPointer
-  writeUint16(pageArray, getEntryPointerIndex(entryNumber), headerPointer);
+  // write the entryPointer
+  writeUint16(pageArray, getEntryPointerIndex(entryNumber), entryPointer);
   // and increase the count
   writeUint16(pageArray, ENTRY_COUNT, entryCount + 1);
   return true;
@@ -473,10 +475,10 @@ export function debugPageEntries(pageArray: Uint8Array): [number, number, string
   result.push([freeSpaceStart, freeSpaceEnd, "free space"]);
 
   for (let i = 0; i < entryCount; i++) {
-    const headerPointer = readUint16(pageArray, getEntryPointerIndex(i));
-    const entryLength = readEntryLength(pageArray, headerPointer);
-    const bytesStart = headerPointer + getByteCountForEntryLength(entryLength);
-    result.push([headerPointer, bytesStart + entryLength, "entry chunk " + i]);
+    const entryPointer = readUint16(pageArray, getEntryPointerIndex(i));
+    const entryLength = readEntryLength(pageArray, entryPointer);
+    const bytesStart = entryPointer + getByteCountForEntryLength(entryLength);
+    result.push([entryPointer, bytesStart + entryLength, "entry " + i]);
   }
 
   result.sort((a, b) => a[0] - b[0]);
