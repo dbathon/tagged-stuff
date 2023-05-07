@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
+  containsPageEntry,
   insertPageEntry,
   readAllPageEntries,
+  readPageEntriesCount,
   readPageEntriesFreeSpace,
   removePageEntry,
   scanPageEntries,
@@ -172,5 +174,134 @@ describe("pageEntries", () => {
       scanPageEntriesReverse(pageArray, startEntryOrEntryNumber, collectCallback);
       expect(getAndClearCollected()).toEqual(expected.slice(0, 1));
     });
+  });
+
+  test("max entry size", () => {
+    const pageArray = new Uint8Array(0xffff);
+
+    const maxSizeEntry = new Uint8Array(2000);
+    expect(insertPageEntry(pageArray, maxSizeEntry)).toBe(true);
+
+    const tooLargeEntry = new Uint8Array(2001);
+    expect(() => insertPageEntry(pageArray, tooLargeEntry)).toThrow();
+  });
+
+  function xorShift32(x: number): number {
+    /* Algorithm "xor" from p. 4 of Marsaglia, "Xorshift RNGs" */
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    return x >>> 0;
+  }
+
+  function newRandom(seed: number): () => number {
+    let state = seed;
+    return () => {
+      const result = state;
+      state = xorShift32(state);
+      return result;
+    };
+  }
+
+  test("random inserts and removes", () => {
+    const pageArray = new Uint8Array(0xffff);
+    const dataView = new DataView(pageArray.buffer);
+
+    const random = newRandom(1);
+    const entries: Uint8Array[] = [];
+
+    const freeSpaceAtStart = readPageEntriesFreeSpace(pageArray);
+
+    // add random entries
+    while (true) {
+      const entry = new Uint8Array(random() % 2001);
+      for (let i = 0; i < entry.length; i++) {
+        entry[i] = random() % 256;
+      }
+
+      expect(containsPageEntry(pageArray, entry)).toBe(false);
+
+      const insertSuccess = insertPageEntry(pageArray, entry);
+      if (!insertSuccess) {
+        // pageArray is "full"
+        break;
+      }
+
+      entries.push(entry);
+    }
+
+    expect(entries.length).toBeGreaterThan(0);
+    expect(readPageEntriesCount(pageArray)).toBe(entries.length);
+    expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBe(0);
+
+    entries.forEach((entry) => {
+      expect(containsPageEntry(pageArray, entry)).toBe(true);
+    });
+
+    // remove each one and immediately insert it again and check that the free chunk is reused
+    entries.forEach((entry) => {
+      const freeSpaceBefore = readPageEntriesFreeSpace(pageArray);
+      expect(removePageEntry(pageArray, entry)).toBe(true);
+      expect(removePageEntry(pageArray, entry)).toBe(false);
+      expect(readPageEntriesFreeSpace(pageArray)).toBeGreaterThan(freeSpaceBefore);
+
+      expect(insertPageEntry(pageArray, entry)).toBe(true);
+      expect(readPageEntriesFreeSpace(pageArray)).toBe(freeSpaceBefore);
+      expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBe(0);
+    });
+
+    // remove half of them
+    const removed: Uint8Array[] = [];
+    while (removed.length < entries.length) {
+      const index = random() % entries.length;
+      const entry = entries[index];
+      expect(removePageEntry(pageArray, entry)).toBe(true);
+      entries.splice(index, 1);
+      removed.push(entry);
+    }
+
+    expect(readPageEntriesCount(pageArray)).toBe(entries.length);
+    expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBeGreaterThan(0);
+
+    entries.forEach((entry) => {
+      expect(containsPageEntry(pageArray, entry)).toBe(true);
+    });
+
+    removed.forEach((entry) => {
+      expect(containsPageEntry(pageArray, entry)).toBe(false);
+    });
+
+    // try re-adding the entries (not all might work because of fragmentation)
+    let reinsertCount = 0;
+    while (removed.length) {
+      const index = random() % removed.length;
+      const entry = removed[index];
+      expect(containsPageEntry(pageArray, entry)).toBe(false);
+      if (insertPageEntry(pageArray, entry)) {
+        removed.splice(index, 1);
+        entries.push(entry);
+        ++reinsertCount;
+      } else {
+        break;
+      }
+    }
+    expect(reinsertCount).toBeGreaterThan(0);
+
+    entries.forEach((entry) => {
+      expect(containsPageEntry(pageArray, entry)).toBe(true);
+    });
+
+    removed.forEach((entry) => {
+      expect(containsPageEntry(pageArray, entry)).toBe(false);
+    });
+
+    // remove all entries again
+    entries.forEach((entry) => {
+      expect(removePageEntry(pageArray, entry)).toBe(true);
+    });
+
+    expect(readPageEntriesCount(pageArray)).toBe(0);
+    expect(readPageEntriesFreeSpace(pageArray)).toBe(freeSpaceAtStart);
+    expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBe(0);
   });
 });
