@@ -8,19 +8,14 @@ import {
   removeBtreeEntry,
   scanBtreeEntries,
 } from "../btree/btree";
-import { PageProviderForWrite } from "../btree/pageProvider";
+import { PageProvider, PageProviderForWrite } from "../btree/pageProvider";
 import { assert } from "../misc/assert";
 import { PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
 import { PageData } from "../page-store/PageData";
 import { getTupleByteLength, readTuple, tupleToUint8Array, writeTuple } from "../uint8-array/tuple";
-import {
-  jsonPathAndTypeToNumber,
-  JsonPathAndTypeToNumberCache,
-  numberToJsonPathAndType,
-  NumberToJsonPathAndTypeCache,
-} from "./internal/metaBtree";
+import { JsonPathToNumberCache, NumberToJsonPathCache, jsonPathToNumber, numberToJsonPath } from "./internal/metaBtree";
 import { deserializeJsonEvents, serializeJsonEvents } from "./internal/serializeJsonEvents";
-import { buildJsonFromEvents, JsonEvent, JsonPath, produceJsonEvents } from "./jsonEvents";
+import { buildJsonFromEvents, JsonEvent, JsonEventType, JsonPath, produceJsonEvents } from "./jsonEvents";
 
 /** Some magic number to mark a page store as a json store. */
 const MAGIC_NUMBER_V1 = 1983760274;
@@ -209,6 +204,44 @@ function getOrCreateTableInfo(pageProvider: PageProviderForWrite, tableName: str
   return { version, mainRoot, metaRoot, overflowRoot };
 }
 
+// JsonEventType is in the range of 0 to 7
+const TYPE_BITS = 3;
+const TYPE_MASK = (1 << TYPE_BITS) - 1;
+const MAX_PATH_NUMBER = -1 >>> TYPE_BITS;
+
+/**
+ * Encode the type as the last 3 bits of the number and use all other bits for the path.
+ */
+function jsonPathAndTypeToNumber(
+  pageProvider: PageProviderForWrite,
+  metaRootPageNumber: number,
+  path: JsonPath,
+  type: JsonEventType,
+  cache: JsonPathToNumberCache
+): number {
+  assert((type & TYPE_MASK) === type, "unexpected JsonEventType");
+  const pathNumber = jsonPathToNumber(pageProvider, metaRootPageNumber, path, cache);
+  assert(pathNumber <= MAX_PATH_NUMBER, "too many paths in table");
+  return ((pathNumber << TYPE_BITS) | type) >>> 0;
+}
+
+/**
+ * See jsonPathAndTypeToNumber().
+ */
+function numberToJsonPathAndType(
+  pageProvider: PageProvider,
+  metaRootPageNumber: number,
+  number: number,
+  cache: NumberToJsonPathCache
+): { path: JsonPath; type: JsonEventType } | false {
+  const pathNumber = number >>> TYPE_BITS;
+  const type = (number & TYPE_MASK) as JsonEventType;
+
+  const path = numberToJsonPath(pageProvider, metaRootPageNumber, pathNumber, cache);
+
+  return path && { path, type };
+}
+
 interface HasId {
   id?: number;
 }
@@ -252,7 +285,7 @@ export function queryJson<T extends object | unknown = unknown>(
       }
     );
 
-    const cache: NumberToJsonPathAndTypeCache = new Map();
+    const cache: NumberToJsonPathCache = new Map();
     return entries.map((entry) => {
       const idAndZeroOrLengthResult = readTuple(entry, UINT32_UINT32_TUPLE, 0);
       const [id, zeroOrLength] = idAndZeroOrLengthResult.values;
@@ -410,10 +443,12 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
       filterId
     );
 
-    const cache: JsonPathAndTypeToNumberCache = new Map();
-    const jsonEventsArray = serializeJsonEvents(jsonEvents, (path, type) =>
-      jsonPathAndTypeToNumber(pageProvider, tableInfo.metaRoot, path, type, cache)
-    );
+    const cache: JsonPathToNumberCache = new Map();
+    const jsonEventsArray = serializeJsonEvents(jsonEvents, (path, type) => {
+      // json is an object so path can never be undefined
+      assert(path !== undefined);
+      return jsonPathAndTypeToNumber(pageProvider, tableInfo.metaRoot, path, type, cache);
+    });
 
     let zeroOrLength: number;
     let firstJsonEventsArrayPart: Uint8Array;
