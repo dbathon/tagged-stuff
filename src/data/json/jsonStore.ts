@@ -23,7 +23,7 @@ import { deserializeJsonEvents, serializeJsonEvents } from "./internal/serialize
 import { buildJsonFromEvents, JsonEvent, JsonPath, produceJsonEvents } from "./jsonEvents";
 
 /** Some magic number to mark a page store as a json store. */
-const MAGIC_NUMBER = 1983760274;
+const MAGIC_NUMBER_V1 = 1983760274;
 
 const FREE_LIST_ROOT_PAGE_NUMBER = 1;
 const TABLES_ROOT_PAGE_NUMBER = 2;
@@ -40,9 +40,16 @@ const MAX_ALLOCATED_OFFSET = 1 << 2;
 
 const UINT32_TUPLE = ["uint32"] as const;
 const UINT32_UINT32_TUPLE = ["uint32", "uint32"] as const;
-const UINT32_UINT32_UINT32_TUPLE = ["uint32", "uint32", "uint32"] as const;
+const UINT32_UINT32_UINT32_UINT32_TUPLE = ["uint32", "uint32", "uint32", "uint32"] as const;
 const STRING_UINT32_TUPLE = ["string", "uint32"] as const;
-const STRING_UINT32_UINT32_UINT32_UINT32_TUPLE = ["string", "uint32", "uint32", "uint32", "uint32"] as const;
+const STRING_UINT32_UINT32_UINT32_UINT32_UINT32_TUPLE = [
+  "string",
+  "uint32",
+  "uint32",
+  "uint32",
+  "uint32",
+  "uint32",
+] as const;
 
 /** Internal "exception object" indicating missing pages, all exported functions must catch and handle it. */
 const MISSING_PAGE = {};
@@ -134,13 +141,17 @@ function isInitialized(pageAccess: PageAccessNotUndefined): boolean {
     // TODO: maybe check that the whole page is 0
     return false;
   }
-  if (magic !== MAGIC_NUMBER) {
+  if (magic !== MAGIC_NUMBER_V1) {
     throw new Error("page store is not a json store");
   }
   return true;
 }
 
+const TABLE_INFO_VERSION = 1;
+
 interface TableInfo {
+  /** TableInfo version number (currently always 1, see TABLE_INFO_VERSION) */
+  version: number;
   /** Contains the entries. */
   mainRoot: number;
   /** Contains the used json paths/types. */
@@ -161,8 +172,13 @@ function getTableInfo(pageProvider: PageProviderNotUndefined, tableName: string)
   if (!tableEntry) {
     return undefined;
   }
-  const [mainRoot, metaRoot, overflowRoot] = readTuple(tableEntry, UINT32_UINT32_UINT32_TUPLE, prefix.length).values;
-  return { mainRoot, metaRoot, overflowRoot };
+  const [version, mainRoot, metaRoot, overflowRoot] = readTuple(
+    tableEntry,
+    UINT32_UINT32_UINT32_UINT32_TUPLE,
+    prefix.length
+  ).values;
+  assert(version === TABLE_INFO_VERSION, "unexpected TableInfo version");
+  return { version, mainRoot, metaRoot, overflowRoot };
 }
 
 function getOrCreateTableInfo(pageProvider: PageProviderForWrite, tableName: string): TableInfo {
@@ -170,6 +186,7 @@ function getOrCreateTableInfo(pageProvider: PageProviderForWrite, tableName: str
   if (existingTableInfo) {
     return existingTableInfo;
   }
+  const version = TABLE_INFO_VERSION;
   const mainRoot = allocateAndInitBtreeRootPage(pageProvider);
   const metaRoot = allocateAndInitBtreeRootPage(pageProvider);
   const overflowRoot = allocateAndInitBtreeRootPage(pageProvider);
@@ -178,11 +195,18 @@ function getOrCreateTableInfo(pageProvider: PageProviderForWrite, tableName: str
     insertBtreeEntry(
       pageProvider,
       TABLES_ROOT_PAGE_NUMBER,
-      tupleToUint8Array(STRING_UINT32_UINT32_UINT32_UINT32_TUPLE, [tableName, 0, mainRoot, metaRoot, overflowRoot])
+      tupleToUint8Array(STRING_UINT32_UINT32_UINT32_UINT32_UINT32_TUPLE, [
+        tableName,
+        0,
+        version,
+        mainRoot,
+        metaRoot,
+        overflowRoot,
+      ])
     )
   );
 
-  return { mainRoot, metaRoot, overflowRoot };
+  return { version, mainRoot, metaRoot, overflowRoot };
 }
 
 interface HasId {
@@ -277,7 +301,7 @@ export function queryJson<T extends object | unknown = unknown>(
 function initializeIfNecessary(pageAccess: PageAccessDuringTransaction): void {
   if (!isInitialized(pageAccess.get)) {
     const zeroPage = pageAccess.getForUpdate(0).dataView;
-    zeroPage.setUint32(MAGIC_NUMBER_OFFSET, MAGIC_NUMBER);
+    zeroPage.setUint32(MAGIC_NUMBER_OFFSET, MAGIC_NUMBER_V1);
 
     let maxAllocated = 0;
     const initPageProvider: PageProviderForWrite = {
