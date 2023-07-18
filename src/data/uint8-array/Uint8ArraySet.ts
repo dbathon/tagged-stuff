@@ -5,7 +5,7 @@ import { uint8ArraysEqual } from "./uint8ArraysEqual";
  * Assumes that added arrays don't change (they are not copied)...
  */
 export class Uint8ArraySet {
-  private entriesByHash = new Map<number, Uint8Array[]>();
+  private readonly entriesByHash = new Map<number, Uint8Array[]>();
   private _size = 0;
 
   get size(): number {
@@ -74,5 +74,15 @@ export class Uint8ArraySet {
         callbackFn(entry, hash);
       }
     });
+  }
+
+  copy(): Uint8ArraySet {
+    const copy = new Uint8ArraySet();
+    copy._size = this._size;
+    const copyEntries = copy.entriesByHash;
+    this.entriesByHash.forEach((entries, hash) => {
+      copyEntries.set(hash, [...entries]);
+    });
+    return copy;
   }
 }
