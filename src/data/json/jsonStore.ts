@@ -12,7 +12,9 @@ import { PageProviderForWrite } from "../btree/pageProvider";
 import { assert } from "../misc/assert";
 import { PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
 import { PageData } from "../page-store/PageData";
+import { Uint8ArraySet } from "../uint8-array/Uint8ArraySet";
 import { getTupleByteLength, readTuple, tupleToUint8Array, writeTuple } from "../uint8-array/tuple";
+import { buildIndexEntries, updateIndexForJson } from "./internal/indexing";
 import { JsonPathToNumberCache, NumberToJsonPathCache, jsonPathToNumber, numberToJsonPath } from "./internal/metaBtree";
 import { deserializeJsonEvents, serializeJsonEvents } from "./internal/serializeJsonEvents";
 import { buildJsonFromEvents, FullJsonEvent, JsonPath, produceJsonEvents } from "./jsonEvents";
@@ -35,10 +37,11 @@ const MAX_ALLOCATED_OFFSET = 1 << 2;
 
 const UINT32_TUPLE = ["uint32"] as const;
 const UINT32_UINT32_TUPLE = ["uint32", "uint32"] as const;
-const UINT32_UINT32_UINT32_UINT32_TUPLE = ["uint32", "uint32", "uint32", "uint32"] as const;
+const UINT32_UINT32_UINT32_UINT32_UINT32_TUPLE = ["uint32", "uint32", "uint32", "uint32", "uint32"] as const;
 const STRING_UINT32_TUPLE = ["string", "uint32"] as const;
-const STRING_UINT32_UINT32_UINT32_UINT32_UINT32_TUPLE = [
+const STRING_UINT32_UINT32_UINT32_UINT32_UINT32_UINT32_TUPLE = [
   "string",
+  "uint32",
   "uint32",
   "uint32",
   "uint32",
@@ -153,7 +156,8 @@ interface TableInfo {
   metaRoot: number;
   /** Contains overflow entries for entries, that cannot be stored in one entry. */
   overflowRoot: number;
-  // TODO indexRoot
+  /** Contains the index entries. */
+  indexRoot: number;
 }
 
 /** Assumes that it is an initialized page store. */
@@ -167,13 +171,13 @@ function getTableInfo(pageProvider: PageProviderNotUndefined, tableName: string)
   if (!tableEntry) {
     return undefined;
   }
-  const [version, mainRoot, metaRoot, overflowRoot] = readTuple(
+  const [version, mainRoot, metaRoot, overflowRoot, indexRoot] = readTuple(
     tableEntry,
-    UINT32_UINT32_UINT32_UINT32_TUPLE,
+    UINT32_UINT32_UINT32_UINT32_UINT32_TUPLE,
     prefix.length
   ).values;
   assert(version === TABLE_INFO_VERSION, "unexpected TableInfo version");
-  return { version, mainRoot, metaRoot, overflowRoot };
+  return { version, mainRoot, metaRoot, overflowRoot, indexRoot };
 }
 
 function getOrCreateTableInfo(pageProvider: PageProviderForWrite, tableName: string): TableInfo {
@@ -185,23 +189,25 @@ function getOrCreateTableInfo(pageProvider: PageProviderForWrite, tableName: str
   const mainRoot = allocateAndInitBtreeRootPage(pageProvider);
   const metaRoot = allocateAndInitBtreeRootPage(pageProvider);
   const overflowRoot = allocateAndInitBtreeRootPage(pageProvider);
+  const indexRoot = allocateAndInitBtreeRootPage(pageProvider);
 
   notFalse(
     insertBtreeEntry(
       pageProvider,
       TABLES_ROOT_PAGE_NUMBER,
-      tupleToUint8Array(STRING_UINT32_UINT32_UINT32_UINT32_UINT32_TUPLE, [
+      tupleToUint8Array(STRING_UINT32_UINT32_UINT32_UINT32_UINT32_UINT32_TUPLE, [
         tableName,
         0,
         version,
         mainRoot,
         metaRoot,
         overflowRoot,
+        indexRoot,
       ])
     )
   );
 
-  return { version, mainRoot, metaRoot, overflowRoot };
+  return { version, mainRoot, metaRoot, overflowRoot, indexRoot };
 }
 
 function readEntryIdAndJsonEvents(
@@ -348,21 +354,38 @@ function initializeIfNecessary(pageAccess: PageAccessDuringTransaction): void {
 }
 
 export function deleteJson(pageAccess: PageAccessDuringTransaction, tableName: string, id: number): boolean {
+  if (!isInitialized(pageAccess.get)) {
+    // nothing to delete
+    return false;
+  }
+
+  const pageProvider = toPageProviderForWrite(pageAccess);
+  const tableInfo = getOrCreateTableInfo(pageProvider, tableName);
+
+  return deleteJsonInternal(pageProvider, tableInfo, id);
+}
+
+function deleteJsonInternal(
+  pageProvider: PageProviderForWrite,
+  tableInfo: TableInfo,
+  id: number,
+  newIndexEntries?: Uint8ArraySet
+): boolean {
   try {
-    if (!isInitialized(pageAccess.get)) {
-      // nothing to delete
-      return false;
-    }
-
-    const pageProvider = toPageProviderForWrite(pageAccess);
-    const tableInfo = getOrCreateTableInfo(pageProvider, tableName);
-
     const prefix = tupleToUint8Array(UINT32_TUPLE, [id]);
     const mainEntry = findFirstBtreeEntryWithPrefix(pageProvider.getPage, tableInfo.mainRoot, prefix);
     if (!mainEntry) {
       // does not exist
       return false;
     }
+
+    // remove index entries or potentially update them to newIndexEntries (if given)
+    const pathNumberToPath = createPathNumberToPath(tableInfo, pageProvider.getPage);
+    const { events } = readEntryIdAndJsonEvents(mainEntry, tableInfo, pathNumberToPath, pageProvider.getPage);
+    const indexEntries = buildIndexEntries(events);
+    updateIndexForJson(id, indexEntries, newIndexEntries, tableInfo.indexRoot, pageProvider);
+
+    // remove the entry
     notFalse(removeBtreeEntry(pageProvider, tableInfo.mainRoot, mainEntry));
 
     const zeroOrLength = readTuple(mainEntry, UINT32_UINT32_TUPLE).values[1];
@@ -417,11 +440,6 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
       if (!(typeof id === "number")) {
         throw new Error("id is not a number");
       }
-      // for now just delete everything and insert again...
-      // TODO: optimize this to only do necessary changes
-      if (!deleteJson(pageAccess, tableName, id)) {
-        throw new Error("json with id does not exist");
-      }
     }
 
     const jsonEvents: FullJsonEvent[] = [];
@@ -436,6 +454,18 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
       },
       filterId
     );
+
+    const newIndexEntries = buildIndexEntries(jsonEvents);
+    if (newEntry) {
+      // just write the new index entries
+      updateIndexForJson(id, undefined, newIndexEntries, tableInfo.indexRoot, pageProvider);
+    } else {
+      // combine the index update with the delete to only do necessary changes on the index entries
+      // TODO: maybe optimize this somehow to only do necessary changes
+      if (!deleteJsonInternal(pageProvider, tableInfo, id, newIndexEntries)) {
+        throw new Error("json with id does not exist");
+      }
+    }
 
     const jsonEventsArray = serializeJsonEvents(jsonEvents, (event) => event.pathNumber);
 
