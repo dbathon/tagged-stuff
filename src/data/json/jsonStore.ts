@@ -8,14 +8,14 @@ import {
   removeBtreeEntry,
   scanBtreeEntries,
 } from "../btree/btree";
-import { PageProvider, PageProviderForWrite } from "../btree/pageProvider";
+import { PageProviderForWrite } from "../btree/pageProvider";
 import { assert } from "../misc/assert";
 import { PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
 import { PageData } from "../page-store/PageData";
 import { getTupleByteLength, readTuple, tupleToUint8Array, writeTuple } from "../uint8-array/tuple";
 import { JsonPathToNumberCache, NumberToJsonPathCache, jsonPathToNumber, numberToJsonPath } from "./internal/metaBtree";
 import { deserializeJsonEvents, serializeJsonEvents } from "./internal/serializeJsonEvents";
-import { buildJsonFromEvents, JsonEvent, JsonEventType, JsonPath, produceJsonEvents } from "./jsonEvents";
+import { buildJsonFromEvents, FullJsonEvent, JsonPath, produceJsonEvents } from "./jsonEvents";
 
 /** Some magic number to mark a page store as a json store. */
 const MAGIC_NUMBER_V1 = 1983760274;
@@ -204,42 +204,60 @@ function getOrCreateTableInfo(pageProvider: PageProviderForWrite, tableName: str
   return { version, mainRoot, metaRoot, overflowRoot };
 }
 
-// JsonEventType is in the range of 0 to 7
-const TYPE_BITS = 3;
-const TYPE_MASK = (1 << TYPE_BITS) - 1;
-const MAX_PATH_NUMBER = -1 >>> TYPE_BITS;
+function readEntryIdAndJsonEvents(
+  entry: Uint8Array,
+  tableInfo: TableInfo,
+  pathNumberToPath: (pathNumber: number | undefined) => JsonPath | undefined,
+  pageProvider: PageProviderNotUndefined
+): { id: number; events: FullJsonEvent[] } {
+  const idAndZeroOrLengthResult = readTuple(entry, UINT32_UINT32_TUPLE, 0);
+  const [id, zeroOrLength] = idAndZeroOrLengthResult.values;
 
-/**
- * Encode the type as the last 3 bits of the number and use all other bits for the path.
- */
-function jsonPathAndTypeToNumber(
-  pageProvider: PageProviderForWrite,
-  metaRootPageNumber: number,
-  path: JsonPath,
-  type: JsonEventType,
-  cache: JsonPathToNumberCache
-): number {
-  assert((type & TYPE_MASK) === type, "unexpected JsonEventType");
-  const pathNumber = jsonPathToNumber(pageProvider, metaRootPageNumber, path, cache);
-  assert(pathNumber <= MAX_PATH_NUMBER, "too many paths in table");
-  return ((pathNumber << TYPE_BITS) | type) >>> 0;
+  let jsonEventsArray = entry.subarray(idAndZeroOrLengthResult.length);
+  if (zeroOrLength > 0) {
+    // there is overflow
+    const parts = [jsonEventsArray];
+    let totalLength = jsonEventsArray.length;
+    const overFlowPrefix = tupleToUint8Array(UINT32_TUPLE, [id]);
+    for (const overflowEntry of notFalse(
+      findAllBtreeEntriesWithPrefix(pageProvider, tableInfo.overflowRoot, overFlowPrefix)
+    )) {
+      const part = overflowEntry.subarray(readTuple(overflowEntry, UINT32_UINT32_TUPLE).length);
+      parts.push(part);
+      totalLength += part.length;
+    }
+
+    // concatenate all the parts
+    jsonEventsArray = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const part of parts) {
+      jsonEventsArray.set(part, offset);
+      offset += part.length;
+    }
+  }
+
+  return {
+    id,
+    events: deserializeJsonEvents(jsonEventsArray, (pathNumber, type, value) => ({
+      pathNumber,
+      path: pathNumberToPath(pathNumber),
+      type,
+      value,
+    })),
+  };
 }
 
-/**
- * See jsonPathAndTypeToNumber().
- */
-function numberToJsonPathAndType(
-  pageProvider: PageProvider,
-  metaRootPageNumber: number,
-  number: number,
-  cache: NumberToJsonPathCache
-): { path: JsonPath; type: JsonEventType } | false {
-  const pathNumber = number >>> TYPE_BITS;
-  const type = (number & TYPE_MASK) as JsonEventType;
-
-  const path = numberToJsonPath(pageProvider, metaRootPageNumber, pathNumber, cache);
-
-  return path && { path, type };
+function createPathNumberToPath(
+  tableInfo: TableInfo,
+  pageProvider: PageProviderNotUndefined
+): (pathNumber: number | undefined) => JsonPath | undefined {
+  const cache: NumberToJsonPathCache = new Map();
+  return (pathNumber) => {
+    if (pathNumber === undefined) {
+      return undefined;
+    }
+    return notFalse(numberToJsonPath(pageProvider, tableInfo.metaRoot, pathNumber, cache));
+  };
 }
 
 interface HasId {
@@ -285,37 +303,9 @@ export function queryJson<T extends object | unknown = unknown>(
       }
     );
 
-    const cache: NumberToJsonPathCache = new Map();
+    const pathNumberToPath = createPathNumberToPath(tableInfo, pageProvider);
     return entries.map((entry) => {
-      const idAndZeroOrLengthResult = readTuple(entry, UINT32_UINT32_TUPLE, 0);
-      const [id, zeroOrLength] = idAndZeroOrLengthResult.values;
-
-      let jsonEventsArray = entry.subarray(idAndZeroOrLengthResult.length);
-      if (zeroOrLength > 0) {
-        // there is overflow
-        const parts = [jsonEventsArray];
-        let totalLength = jsonEventsArray.length;
-        const overFlowPrefix = tupleToUint8Array(UINT32_TUPLE, [id]);
-        for (const overflowEntry of notFalse(
-          findAllBtreeEntriesWithPrefix(pageProvider, tableInfo.overflowRoot, overFlowPrefix)
-        )) {
-          const part = overflowEntry.subarray(readTuple(overflowEntry, UINT32_UINT32_TUPLE).length);
-          parts.push(part);
-          totalLength += part.length;
-        }
-
-        // concatenate all the parts
-        jsonEventsArray = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const part of parts) {
-          jsonEventsArray.set(part, offset);
-          offset += part.length;
-        }
-      }
-
-      const events = deserializeJsonEvents(jsonEventsArray, (eventNumber) =>
-        notFalse(numberToJsonPathAndType(pageProvider, tableInfo.metaRoot, eventNumber, cache))
-      );
+      const { id, events } = readEntryIdAndJsonEvents(entry, tableInfo, pathNumberToPath, pageProvider);
 
       const result = buildJsonFromEvents(events);
       (result as HasId).id = id;
@@ -434,21 +424,20 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
       }
     }
 
-    const jsonEvents: JsonEvent[] = [];
+    const jsonEvents: FullJsonEvent[] = [];
+    const cache: JsonPathToNumberCache = new Map();
     produceJsonEvents(
       json,
       (type, path, value) => {
-        jsonEvents.push({ path, type, value });
+        // json is an object so path can never be undefined
+        assert(path !== undefined);
+        const pathNumber = jsonPathToNumber(pageProvider, tableInfo.metaRoot, path, cache);
+        jsonEvents.push({ path, pathNumber, type, value });
       },
       filterId
     );
 
-    const cache: JsonPathToNumberCache = new Map();
-    const jsonEventsArray = serializeJsonEvents(jsonEvents, (path, type) => {
-      // json is an object so path can never be undefined
-      assert(path !== undefined);
-      return jsonPathAndTypeToNumber(pageProvider, tableInfo.metaRoot, path, type, cache);
-    });
+    const jsonEventsArray = serializeJsonEvents(jsonEvents, (event) => event.pathNumber);
 
     let zeroOrLength: number;
     let firstJsonEventsArrayPart: Uint8Array;

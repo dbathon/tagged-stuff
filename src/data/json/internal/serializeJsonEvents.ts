@@ -7,7 +7,14 @@ import {
 import { readCompressedUint32 } from "../../uint8-array/compressedUint32";
 import { writeCompressedUint32 } from "../../uint8-array/compressedUint32";
 import { getCompressedUint32ByteLength } from "../../uint8-array/compressedUint32";
-import { JSON_NUMBER, JSON_STRING, JsonEvent, JsonEventType, JsonPath } from "../jsonEvents";
+import {
+  BaseJsonEvent,
+  JSON_NUMBER,
+  JSON_STRING,
+  JsonEventType,
+  getJsonPathAndTypeNumber,
+  getJsonPathNumberAndTypeFromPathAndTypeNumber,
+} from "../jsonEvents";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -22,14 +29,13 @@ const MAX_EVENTS_SIZE = (1 << 28) - 1;
  * "random access" without parsing everything.
  *
  * @param jsonEvents
- * @param pathAndTypeToNumber
  * @returns the resulting array
  */
-export function serializeJsonEvents(
-  jsonEvents: JsonEvent[],
-  pathAndTypeToNumber: (path: JsonPath | undefined, type: JsonEventType) => number
+export function serializeJsonEvents<E extends BaseJsonEvent>(
+  jsonEvents: E[],
+  getPathNumber: (jsonEvent: E) => number | undefined
 ): Uint8Array {
-  const eventNumbers: number[] = [];
+  const pathAndTypeNumbers: number[] = [];
   let eventsSize = 0;
 
   const numbers: number[] = [];
@@ -41,9 +47,9 @@ export function serializeJsonEvents(
 
   // first loop over all events to collect the values and determine the required sizes
   for (const jsonEvent of jsonEvents) {
-    const eventNumber = pathAndTypeToNumber(jsonEvent.path, jsonEvent.type);
-    eventNumbers.push(eventNumber);
-    eventsSize += getCompressedUint32ByteLength(eventNumber);
+    const pathAndTypeNumber = getJsonPathAndTypeNumber(getPathNumber(jsonEvent), jsonEvent.type);
+    pathAndTypeNumbers.push(pathAndTypeNumber);
+    eventsSize += getCompressedUint32ByteLength(pathAndTypeNumber);
 
     const value = jsonEvent.value;
     switch (jsonEvent.type) {
@@ -88,8 +94,8 @@ export function serializeJsonEvents(
   }
   assert(offset === headerSize);
 
-  for (const eventNumber of eventNumbers) {
-    offset += writeCompressedUint32(result, offset, eventNumber);
+  for (const pathAndTypeNumber of pathAndTypeNumbers) {
+    offset += writeCompressedUint32(result, offset, pathAndTypeNumber);
   }
   assert(offset === headerSize + eventsSize);
 
@@ -150,10 +156,10 @@ function readHeader(array: Uint8Array): {
 }
 
 // TODO implement variations of this method that can read partial data without deserializing everything...
-export function deserializeJsonEvents(
+export function deserializeJsonEvents<E>(
   array: Uint8Array,
-  numberToPathAndType: (eventNumber: number) => { path?: JsonPath; type: JsonEventType }
-): JsonEvent[] {
+  eventFactory: (pathNumber: number | undefined, type: JsonEventType, value: string | number | undefined) => E
+): E[] {
   const { headerSize, eventsSize, numbersSize, stringLengthsSize, totalSize } = readHeader(array);
   assert(array.length === totalSize);
 
@@ -181,12 +187,12 @@ export function deserializeJsonEvents(
 
   let numbersIndex = 0;
   let stringsIndex = 0;
-  const result: JsonEvent[] = [];
+  const result: E[] = [];
   for (let offset = headerSize; offset < eventsEnd; ) {
-    const { uint32: eventNumber, length } = readCompressedUint32(array, offset);
+    const { uint32: pathAndTypeNumber, length } = readCompressedUint32(array, offset);
     offset += length;
 
-    const { path, type } = numberToPathAndType(eventNumber);
+    const { pathNumber, type } = getJsonPathNumberAndTypeFromPathAndTypeNumber(pathAndTypeNumber);
 
     let value: string | number | undefined = undefined;
     if (type === JSON_NUMBER) {
@@ -195,7 +201,7 @@ export function deserializeJsonEvents(
       value = strings[stringsIndex++];
     }
 
-    result.push({ path, type, value });
+    result.push(eventFactory(pathNumber, type, value));
   }
 
   assert(numbersIndex === numbers.length && stringsIndex === strings.length);

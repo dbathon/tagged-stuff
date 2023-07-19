@@ -41,10 +41,47 @@ export interface JsonPath {
   readonly key: string | null;
 }
 
-export interface JsonEvent {
-  readonly path?: JsonPath;
+export interface BaseJsonEvent {
   readonly type: JsonEventType;
   readonly value?: string | number;
+}
+
+export interface JsonEvent extends BaseJsonEvent {
+  readonly path?: JsonPath;
+}
+
+export interface NumericJsonEvent extends BaseJsonEvent {
+  readonly pathNumber?: number;
+}
+
+export interface FullJsonEvent extends JsonEvent, NumericJsonEvent {}
+
+// JsonEventType is in the range of 0 to 7
+const TYPE_BITS = 3;
+const TYPE_MASK = (1 << TYPE_BITS) - 1;
+const MAX_PATH_NUMBER = -1 >>> TYPE_BITS;
+
+/**
+ * Encode the type as the last 3 bits of the number and use all other bits for the path.
+ */
+export function getJsonPathAndTypeNumber(pathNumber: number | undefined, type: JsonEventType): number {
+  assert((type & TYPE_MASK) === type, "unexpected JsonEventType");
+  if (pathNumber !== undefined) {
+    assert(pathNumber > 0, "pathNumber must be undefined or larger than 0");
+    assert(pathNumber <= MAX_PATH_NUMBER, "pathNumber too large");
+  }
+  return (((pathNumber ?? 0) << TYPE_BITS) | type) >>> 0;
+}
+
+export function getJsonPathNumberAndTypeFromPathAndTypeNumber(pathAndTypeNumber: number): {
+  pathNumber: number | undefined;
+  type: JsonEventType;
+} {
+  const decodedPathNumber = pathAndTypeNumber >>> TYPE_BITS;
+  return {
+    pathNumber: decodedPathNumber === 0 ? undefined : decodedPathNumber,
+    type: (pathAndTypeNumber & TYPE_MASK) as JsonEventType,
+  };
 }
 
 export type JsonEventConsumer = (type: JsonEventType, path: JsonPath | undefined, value?: string | number) => unknown;
