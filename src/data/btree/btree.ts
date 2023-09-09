@@ -35,6 +35,8 @@ const PAGE_TYPE_LEAF = 1;
 const PAGE_TYPE_INNER = 2;
 type PageType = typeof PAGE_TYPE_LEAF | typeof PAGE_TYPE_INNER;
 
+const INNER_PAGE_CHILD_PAGE_NUMBERS_OFFSET = 2;
+
 function getPageType(pageArray: Uint8Array): PageType {
   // version and page type are stored in the first byte
   const versionAndType = pageArray[0];
@@ -47,6 +49,17 @@ function getPageType(pageArray: Uint8Array): PageType {
     throw new Error("unexpected page type: " + type);
   }
   return type;
+}
+
+function getPageHeight(pageArray: Uint8Array, pageType: PageType): number {
+  if (pageType === PAGE_TYPE_LEAF) {
+    return 0;
+  }
+  return pageArray[1];
+}
+
+function incrementHeight(oldHeight: number): number {
+  return oldHeight === 0xff ? 0xff : oldHeight + 1;
 }
 
 /**
@@ -63,13 +76,18 @@ function getMaxChildPageNumbers(pageArray: Uint8Array): number {
 }
 
 function getEntriesPageArray(pageArray: Uint8Array, pageType: PageType): Uint8Array {
-  const offset = pageType === PAGE_TYPE_LEAF ? 1 : 1 + (getMaxChildPageNumbers(pageArray) << 2);
-  return new Uint8Array(pageArray.buffer, pageArray.byteOffset + offset, pageArray.byteLength - offset);
+  const offset =
+    pageType === PAGE_TYPE_LEAF ? 1 : INNER_PAGE_CHILD_PAGE_NUMBERS_OFFSET + (getMaxChildPageNumbers(pageArray) << 2);
+  return pageArray.subarray(offset);
 }
 
 /** A DataView that contains the child page numbers as uint32. */
 function getChildPageNumbers(pageArray: Uint8Array): DataView {
-  return new DataView(pageArray.buffer, pageArray.byteOffset + 1, getMaxChildPageNumbers(pageArray) << 2);
+  return new DataView(
+    pageArray.buffer,
+    pageArray.byteOffset + INNER_PAGE_CHILD_PAGE_NUMBERS_OFFSET,
+    getMaxChildPageNumbers(pageArray) << 2
+  );
 }
 
 function findChildIndex(entriesPageArray: Uint8Array, entry: Uint8Array): number {
@@ -407,6 +425,11 @@ function checkIntegrity(
       const childResult = checkIntegrity(pageProvider, childPageNumbers.getUint32(i << 2));
       if (childDepth === undefined) {
         childDepth = childResult.depth;
+        const pageHeight = getPageHeight(pageArray, pageType);
+        assert(
+          childDepth === pageHeight || (childDepth > 0xff && pageHeight === 0xff),
+          "childDepth and pageHeight do not match: " + childDepth + ", " + pageHeight
+        );
       } else {
         assert(
           childDepth === childResult.depth,
@@ -454,19 +477,22 @@ export function checkBtreeIntegrity(pageProvider: PageProvider, rootPageNumber: 
   checkIntegrity(pageProvider, rootPageNumber);
 }
 
-function initPageArray(pageArray: Uint8Array, pageType: PageType): void {
+function initPageArray(pageArray: Uint8Array, pageType: PageType, pageHeight: number): void {
   pageArray[0] = (VERSION << 4) | pageType;
+  if (pageType === PAGE_TYPE_INNER) {
+    pageArray[1] = pageHeight;
+  }
   resetPageEntries(getEntriesPageArray(pageArray, pageType));
 }
 
-function allocateAndInitPage(pageProvider: PageProviderForWrite, pageType: PageType): number {
+function allocateAndInitPage(pageProvider: PageProviderForWrite, pageType: PageType, pageHeight: number): number {
   const pageNumber = pageProvider.allocateNewPage();
-  initPageArray(pageProvider.getPageForUpdate(pageNumber), pageType);
+  initPageArray(pageProvider.getPageForUpdate(pageNumber), pageType, pageHeight);
   return pageNumber;
 }
 
 export function allocateAndInitBtreeRootPage(pageProvider: PageProviderForWrite): number {
-  return allocateAndInitPage(pageProvider, PAGE_TYPE_LEAF);
+  return allocateAndInitPage(pageProvider, PAGE_TYPE_LEAF, 0);
 }
 
 function insertPageEntryWithThrow(pageArray: Uint8Array, entry: Uint8Array, tryRewrite = false): void {
@@ -531,7 +557,7 @@ function splitLeafPageAndInsert(
   const onlyNewEntryInNewPage = isRightMostSibling && newEntryIndex === totalCount - 1;
 
   const rightStartIndex = onlyNewEntryInNewPage ? newEntryIndex : findSplitIndex(allEntries);
-  const rightPageNumber = allocateAndInitPage(pageProvider, PAGE_TYPE_LEAF);
+  const rightPageNumber = allocateAndInitPage(pageProvider, PAGE_TYPE_LEAF, 0);
   const rightEntriesPageArrayForUpdate = getEntriesPageArray(
     pageProvider.getPageForUpdate(rightPageNumber),
     PAGE_TYPE_LEAF
@@ -602,7 +628,11 @@ function splitInnerPageAndInsert(
   const middleIndex = splitIndex > 1 ? splitIndex - 1 : splitIndex;
 
   const rightStartIndex = middleIndex + 1;
-  const rightPageNumber = allocateAndInitPage(pageProvider, PAGE_TYPE_INNER);
+  const rightPageNumber = allocateAndInitPage(
+    pageProvider,
+    PAGE_TYPE_INNER,
+    getPageHeight(leftPageArrayForUpdate, PAGE_TYPE_INNER)
+  );
   const rightPageArrayForUpdate = pageProvider.getPageForUpdate(rightPageNumber);
   const rightEntriesPageArrayForUpdate = getEntriesPageArray(rightPageArrayForUpdate, PAGE_TYPE_INNER);
 
@@ -662,7 +692,7 @@ function removeChildPageNumber(childPageNumbers: DataView, index: number, countB
   }
 }
 
-function copyPageContent(fromPageArray: Uint8Array, toPageArrayForUpdate: Uint8Array, pageType: PageType) {
+function copyPageContent(fromPageArray: Uint8Array, toPageArrayForUpdate: Uint8Array, pageType: PageType): void {
   const toEntriesPageArrayForUpdate = getEntriesPageArray(toPageArrayForUpdate, pageType);
   // copy the entries
   scanPageEntries(getEntriesPageArray(fromPageArray, pageType), undefined, (entryToCopy) => {
@@ -678,7 +708,10 @@ function copyPageContent(fromPageArray: Uint8Array, toPageArrayForUpdate: Uint8A
       throw new Error("unexpected number of child page numbers");
     }
     // create a Uint8Array view to be able to use set
-    toPageArrayForUpdate.set(new Uint8Array(childPageNumbers.buffer, childPageNumbers.byteOffset, bytesToCopy), 1);
+    toPageArrayForUpdate.set(
+      new Uint8Array(childPageNumbers.buffer, childPageNumbers.byteOffset, bytesToCopy),
+      INNER_PAGE_CHILD_PAGE_NUMBERS_OFFSET
+    );
   }
 }
 
@@ -690,14 +723,15 @@ function finishRootPageSplit(
 ): void {
   // we want to just keep the root page, so allocate a new page for the left child
   const pageType = getPageType(rootPageArrayForUpdate);
-  const leftChildPageNumber = allocateAndInitPage(pageProvider, pageType);
+  const oldRootPageHeight = getPageHeight(rootPageArrayForUpdate, pageType);
+  const leftChildPageNumber = allocateAndInitPage(pageProvider, pageType, oldRootPageHeight);
   const leftChildPageArrayForUpdate = pageProvider.getPageForUpdate(leftChildPageNumber);
 
   copyPageContent(rootPageArrayForUpdate, leftChildPageArrayForUpdate, pageType);
 
   // now reset the root page and convert it into an inner page with two children
   rootPageArrayForUpdate.set(rootPageArrayBefore);
-  initPageArray(rootPageArrayForUpdate, PAGE_TYPE_INNER);
+  initPageArray(rootPageArrayForUpdate, PAGE_TYPE_INNER, incrementHeight(oldRootPageHeight));
   insertPageEntryWithThrow(getEntriesPageArray(rootPageArrayForUpdate, PAGE_TYPE_INNER), splitResult.lowerBound);
   const childPageNumbers = getChildPageNumbers(rootPageArrayForUpdate);
   childPageNumbers.setUint32(0, leftChildPageNumber);
@@ -983,14 +1017,18 @@ function remove(
       if (isRootPage) {
         if (entriesCount === 0) {
           // should not happen, but we can still support it, the tree is now completely empty
-          initPageArray(pageProvider.getPageForUpdate(pageNumber), PAGE_TYPE_LEAF);
+          initPageArray(pageProvider.getPageForUpdate(pageNumber), PAGE_TYPE_LEAF, 0);
           return true;
         } else if (entriesCount === 1) {
           const pageArrayForUpdate = pageProvider.getPageForUpdate(pageNumber);
           const remainingChildPageNumber = childPageNumbers.getUint32(childIndex === 0 ? 4 : 0);
           const remainingChildPageArray = pageProvider.getPage(remainingChildPageNumber);
           const remainingChildPageType = getPageType(remainingChildPageArray);
-          initPageArray(pageArrayForUpdate, remainingChildPageType);
+          initPageArray(
+            pageArrayForUpdate,
+            remainingChildPageType,
+            getPageHeight(remainingChildPageArray, remainingChildPageType)
+          );
           copyPageContent(remainingChildPageArray, pageArrayForUpdate, remainingChildPageType);
           pageProvider.releasePage(remainingChildPageNumber);
           return true;
@@ -998,7 +1036,7 @@ function remove(
       } else {
         let removePage = false;
         if (entriesCount === 0) {
-          // the last child was removed, so this node also needs to be removed
+          // the last child was removed, so this page also needs to be removed
           removePage = true;
         } else if (
           /* do redundant checks here to avoid calling readPageEntryByNumber() if possible */

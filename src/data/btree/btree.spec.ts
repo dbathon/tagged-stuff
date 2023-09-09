@@ -27,15 +27,16 @@ function leafPage(entries: number[][], pageSize: number): Uint8Array {
   return pageArray;
 }
 
-function innerPage(entries: number[][], childPageNumbers: number[], pageSize: number): Uint8Array {
+function innerPage(entries: number[][], childPageNumbers: number[], pageHeight: number, pageSize: number): Uint8Array {
   const pageArray = new Uint8Array(pageSize);
   pageArray[0] = 0b10010;
+  pageArray[1] = pageHeight;
   const childPageNumbersCount = Math.floor(pageArray.length / 16);
-  const entriesPageArray = new Uint8Array(pageArray.buffer, 1 + childPageNumbersCount * 4);
+  const entriesPageArray = new Uint8Array(pageArray.buffer, 2 + childPageNumbersCount * 4);
   entries.forEach((entry) => {
     expect(insertPageEntry(entriesPageArray, Uint8Array.from(entry))).toBe(true);
   });
-  const childPageNumbersDataView = new DataView(pageArray.buffer, 1, childPageNumbersCount * 4);
+  const childPageNumbersDataView = new DataView(pageArray.buffer, 2, childPageNumbersCount * 4);
   childPageNumbers.forEach((childPageNumber, index) => {
     childPageNumbersDataView.setUint32(index * 4, childPageNumber);
   });
@@ -174,7 +175,7 @@ describe("btree", () => {
     const possibleMiddles = [[1, 0], [1, 1], [2], [2, 1], [3]];
     for (const possibleMiddle of possibleMiddles) {
       const pageProvider = createPageProvider([
-        innerPage([possibleMiddle], [1, 2], 400),
+        innerPage([possibleMiddle], [1, 2], 1, 400),
         leafPage([[1]], 400),
         leafPage([[3]], 400),
       ]);
@@ -187,9 +188,9 @@ describe("btree", () => {
     const possibleMiddles = [[1, 0], [1, 1], [2], [2, 1], [3]];
     for (const possibleMiddle of possibleMiddles) {
       const pageProvider = createPageProvider([
-        innerPage([possibleMiddle], [1, 2], 400),
-        innerPage([], [3], 400),
-        innerPage([], [4], 400),
+        innerPage([possibleMiddle], [1, 2], 2, 400),
+        innerPage([], [3], 1, 400),
+        innerPage([], [4], 1, 400),
         leafPage([[1]], 400),
         leafPage([[3]], 400),
       ]);
@@ -199,7 +200,7 @@ describe("btree", () => {
 
   test("root page with just one child", () => {
     // this should not happen, but is allowed
-    const pageProvider = createPageProvider([innerPage([], [1], 400), leafPage([[1], [3]], 400)]);
+    const pageProvider = createPageProvider([innerPage([], [1], 1, 400), leafPage([[1], [3]], 400)]);
     testScanForOneAndThreeEntries(pageProvider);
   });
 
@@ -275,7 +276,7 @@ describe("btree", () => {
       // check that the first two layers are inner pages
       const rootPage = pageProvider.getPage(rootPageNumber);
       expect(rootPage[0]).toBe(0b10010);
-      const childPage = pageProvider.getPage(new DataView(rootPage.buffer, rootPage.byteOffset + 1).getUint32(0));
+      const childPage = pageProvider.getPage(new DataView(rootPage.buffer, rootPage.byteOffset + 2).getUint32(0));
       expect(childPage[0]).toBe(0b10010);
 
       for (const removeOrder of orders) {
@@ -327,7 +328,7 @@ describe("btree", () => {
     const middle2 = 4;
     const pageProvider = createPageProviderForWrite(
       400,
-      innerPage([entries[middle1], entries[middle2]], [1, 2, 3], 400),
+      innerPage([entries[middle1], entries[middle2]], [1, 2, 3], 1, 400),
       leafPage(entries.slice(0, middle1), 400),
       leafPage(entries.slice(middle1, middle2), 400),
       leafPage(entries.slice(middle2), 400)
@@ -407,7 +408,7 @@ describe("btree", () => {
     const middle1 = 2;
     const middle2 = 4;
     const pageProvider = createPageProvider([
-      innerPage([entries[middle1], [4, 1]], [1, 2, 3], 400),
+      innerPage([entries[middle1], [4, 1]], [1, 2, 3], 1, 400),
       leafPage(entries.slice(0, middle1), 400),
       leafPage(entries.slice(middle1, middle2), 400),
       leafPage(entries.slice(middle2), 400),
