@@ -78,7 +78,47 @@ test("jsonStore", () => {
   expect(queryJson<Foo>(pageAccess.get, "foo", { maxResults: 1 })).toEqual([foo0]);
 
   expect(deleteJson(pageAccess, "foo", 0)).toBe(true);
+  expect(queryJson<Foo>(pageAccess.get, "foo", { maxResults: 1 })).toEqual([foo1]);
   expect(deleteJson(pageAccess, "foo", 0)).toBe(false);
+  expect(queryJson<Foo>(pageAccess.get, "foo", { maxResults: 1 })).toEqual([foo1]);
+
+  // "restore" foo0
+  saveJson(pageAccess, "foo", foo0);
+  expect(foo0.id).toBe(0);
+  expect(queryJson<Foo>(pageAccess.get, "foo", { maxResults: 1 })).toEqual([foo0]);
+
+  expect(queryJson<Foo>(pageAccess.get, "foo", { minId: 42 })).toEqual([]);
+
+  // save an entry with a given id
+  const foo42: Foo = {
+    id: 42,
+    active: false,
+    foo: "foo42",
+    count: 42,
+  };
+  saveJson(pageAccess, "foo", foo42);
+  expect(foo42.id).toBe(42);
+  expect(queryJson<Foo>(pageAccess.get, "foo", { minId: 42 })).toEqual([foo42]);
+
+  // next id should now be 43
+  const foo43: Foo = {
+    active: false,
+    foo: "foo43",
+    count: 43,
+  };
+  saveJson(pageAccess, "foo", foo43);
+  expect(foo43.id).toBe(43);
+  expect(queryJson<Foo>(pageAccess.get, "foo", { minId: 42 })).toEqual([foo42, foo43]);
+
+  expect(queryJson<Foo>(pageAccess.get, "foo")).toEqual([foo0, foo1, foo42, foo43]);
+
+  // some more deletes
+  expect(deleteJson(pageAccess, "foo", 1)).toBe(true);
+  expect(deleteJson(pageAccess, "foo", 1)).toBe(false);
+  expect(deleteJson(pageAccess, "foo", 2)).toBe(false);
+  expect(deleteJson(pageAccess, "foo", 42)).toBe(true);
+  expect(deleteJson(pageAccess, "foo", 1)).toBe(false);
+  expect(queryJson<Foo>(pageAccess.get, "foo")).toEqual([foo0, foo43]);
 
   const bar0: Bar = {
     barStrings: ["a", "b", "c"],

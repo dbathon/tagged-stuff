@@ -376,6 +376,10 @@ function deleteJsonInternal(
     const mainEntry = findFirstBtreeEntryWithPrefix(pageProvider.getPage, tableInfo.mainRoot, prefix);
     if (!mainEntry) {
       // does not exist
+      // still handle newIndexEntries if given
+      if (newIndexEntries) {
+        updateIndexForJson(id, undefined, newIndexEntries, tableInfo.indexRoot, pageProvider);
+      }
       return false;
     }
 
@@ -432,14 +436,17 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
     const tableInfo = getOrCreateTableInfo(pageProvider, tableName);
 
     let id = (json as HasId).id;
-    const newEntry = id === undefined;
-    if (newEntry) {
+    const definitelyNewEntry = id === undefined;
+    if (definitelyNewEntry) {
       const lastEntry = notFalse(findLastBtreeEntry(pageProvider.getPage, tableInfo.mainRoot));
       id = lastEntry ? readTuple(lastEntry, UINT32_TUPLE, 0).values[0] + 1 : 0;
     } else {
       if (!(typeof id === "number")) {
         throw new Error("id is not a number");
       }
+    }
+    if (id >>> 0 !== id) {
+      throw new TypeError("id is not a uint32: " + id);
     }
 
     const jsonEvents: FullJsonEvent[] = [];
@@ -456,15 +463,14 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
     );
 
     const newIndexEntries = buildIndexEntries(jsonEvents);
-    if (newEntry) {
+    if (definitelyNewEntry) {
       // just write the new index entries
       updateIndexForJson(id, undefined, newIndexEntries, tableInfo.indexRoot, pageProvider);
     } else {
       // combine the index update with the delete to only do necessary changes on the index entries
-      // TODO: maybe optimize this somehow to only do necessary changes
-      if (!deleteJsonInternal(pageProvider, tableInfo, id, newIndexEntries)) {
-        throw new Error("json with id does not exist");
-      }
+      // TODO: maybe optimize the whole update somehow by only doing necessary changes to the actual entry
+      // the delete can return true or false, both are fine
+      deleteJsonInternal(pageProvider, tableInfo, id, newIndexEntries);
     }
 
     const jsonEventsArray = serializeJsonEvents(jsonEvents, (event) => event.pathNumber);
@@ -505,7 +511,7 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
 
     assert(insertBtreeEntry(pageProvider, tableInfo.mainRoot, entry));
 
-    if (newEntry) {
+    if (definitelyNewEntry) {
       (json as HasId).id = id;
     }
   } catch (e) {
