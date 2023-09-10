@@ -35,10 +35,12 @@ export type JsonEventType =
   | typeof JSON_EMPTY_OBJECT
   | typeof JSON_ARRAY_NEW_ELEMENT;
 
+/** Key 0 means the current "object" is an array. */
+export type JsonPathKey = string | 0;
+
 export interface JsonPath {
   readonly parent?: JsonPath;
-  /** key null means the current "object" is an array. */
-  readonly key: string | null;
+  readonly key: JsonPathKey;
 }
 
 export interface BaseJsonEvent {
@@ -116,7 +118,7 @@ function produceEvents(
         }
         const path: JsonPath = {
           parent: parentPath,
-          key: null,
+          key: 0,
         };
         let previousResult: ProduceEventsResult | undefined = undefined;
         for (let i = 0; i < length; i++) {
@@ -221,7 +223,7 @@ function buildJson(events: JsonEvent[], index: number, path: JsonPath | undefine
   } else {
     let childPath = findDirectChildPath(path, event.path);
     if (childPath) {
-      if (childPath.key === null) {
+      if (childPath.key === 0) {
         // value is array
         const value: Json[] = [];
         while (true) {
@@ -238,7 +240,7 @@ function buildJson(events: JsonEvent[], index: number, path: JsonPath | undefine
           }
           event = events[index];
           childPath = findDirectChildPath(path, event.path);
-          if (!childPath || childPath.key !== null) {
+          if (!childPath || childPath.key !== 0) {
             break;
           }
         }

@@ -9,7 +9,7 @@ import { assert } from "../../misc/assert";
 import { murmurHash3_x86_32 } from "../../misc/murmurHash3";
 import { readTuple, tupleToUint8Array } from "../../uint8-array/tuple";
 import { uint8ArraysEqual } from "../../uint8-array/uint8ArraysEqual";
-import { JsonPath } from "../jsonEvents";
+import { JsonPath, JsonPathKey } from "../jsonEvents";
 
 /**
  * TODO
@@ -27,17 +27,17 @@ const UINT32_UINT32_ARRAY_TUPLE = ["uint32", "uint32", "array"] as const;
 const UINT32_UINT32RAW_TUPLE = ["uint32", "uint32raw"] as const;
 const UINT32_UINT32RAW_UINT32_TUPLE = ["uint32", "uint32raw", "uint32"] as const;
 
-function buildBytesForPath(parentPathNumber: number, key: string | null): Uint8Array {
-  return tupleToUint8Array(UINT32_STRING_TUPLE, [(parentPathNumber << 1) | (key === null ? 1 : 0), key || ""]);
+function buildBytesForPath(parentPathNumber: number, key: JsonPathKey): Uint8Array {
+  return tupleToUint8Array(UINT32_STRING_TUPLE, [(parentPathNumber << 1) | (key === 0 ? 1 : 0), key || ""]);
 }
 
-function parseBytesForPath(bytes: Uint8Array): { parentPathNumber: number; key: string | null } {
+function parseBytesForPath(bytes: Uint8Array): { parentPathNumber: number; key: JsonPathKey } {
   const [parentPathNumberAndExtra, key] = readTuple(bytes, UINT32_STRING_TUPLE).values;
-  const isNull = (parentPathNumberAndExtra & 1) !== 0;
+  const isArray = (parentPathNumberAndExtra & 1) !== 0;
   const parentPathNumber = parentPathNumberAndExtra >>> 1;
   return {
     parentPathNumber,
-    key: isNull ? null : key,
+    key: isArray ? 0 : key,
   };
 }
 

@@ -29,7 +29,7 @@ test("metaBtree", () => {
   const metaRootPageNumber = allocateAndInitBtreeRootPage(pageProvider);
 
   const path1: JsonPath = { key: "foo" };
-  const path2: JsonPath = { key: null, parent: path1 };
+  const path2: JsonPath = { key: 0, parent: path1 };
   const path3: JsonPath = { key: "bar", parent: path2 };
   const path4: JsonPath = { key: "baz" };
 
