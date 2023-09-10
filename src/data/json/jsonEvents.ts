@@ -13,12 +13,13 @@ import { assert } from "../misc/assert";
  * * toJSON() is not considered/used
  */
 
-// the following are the types of JSON events that can occur
-export const JSON_NULL = 0;
-export const JSON_TRUE = 1;
+// The following are the types of JSON events that can occur.
+// The order (at least of the first 5) is significant, because it influences the order of the index entries.
+export const JSON_NUMBER = 0;
+export const JSON_STRING = 1;
 export const JSON_FALSE = 2;
-export const JSON_NUMBER = 3;
-export const JSON_STRING = 4;
+export const JSON_TRUE = 3;
+export const JSON_NULL = 4;
 // empty array and empty object need to be handled specifically, because there are no children to infer them from
 export const JSON_EMPTY_ARRAY = 5;
 export const JSON_EMPTY_OBJECT = 6;
@@ -26,11 +27,11 @@ export const JSON_EMPTY_OBJECT = 6;
 export const JSON_ARRAY_NEW_ELEMENT = 7;
 
 export type JsonEventType =
-  | typeof JSON_NULL
-  | typeof JSON_TRUE
-  | typeof JSON_FALSE
   | typeof JSON_NUMBER
   | typeof JSON_STRING
+  | typeof JSON_FALSE
+  | typeof JSON_TRUE
+  | typeof JSON_NULL
   | typeof JSON_EMPTY_ARRAY
   | typeof JSON_EMPTY_OBJECT
   | typeof JSON_ARRAY_NEW_ELEMENT;
