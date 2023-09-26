@@ -11,7 +11,7 @@ interface TestEntry {
 
 const props = defineProps<{ tableName: string; pageStore: PageStore }>();
 
-const entries = useJsonQuery<TestEntry>(props.pageStore, props.tableName);
+const entries = useJsonQuery<TestEntry>(props.pageStore, () => ({ table: props.tableName }));
 
 const activeEntry = ref<TestEntry>();
 

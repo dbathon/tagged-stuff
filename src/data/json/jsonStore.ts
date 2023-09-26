@@ -14,10 +14,22 @@ import { PageAccessDuringTransaction } from "../page-store/PageAccessDuringTrans
 import { PageData } from "../page-store/PageData";
 import { Uint8ArraySet } from "../uint8-array/Uint8ArraySet";
 import { getTupleByteLength, readTuple, tupleToUint8Array, writeTuple } from "../uint8-array/tuple";
+import { compareJsonPrimitives } from "./internal/compareJsonPrimitives";
 import { buildIndexEntries, updateIndexForJson } from "./internal/indexing";
 import { JsonPathToNumberCache, NumberToJsonPathCache, jsonPathToNumber, numberToJsonPath } from "./internal/metaBtree";
 import { deserializeJsonEvents, serializeJsonEvents } from "./internal/serializeJsonEvents";
 import { buildJsonFromEvents, FullJsonEvent, JsonPath, produceJsonEvents } from "./jsonEvents";
+import {
+  CountParameters,
+  FilterCondition,
+  JsonPrimitive,
+  Operator,
+  Path,
+  PathArray,
+  ProjectionType,
+  QueryParameters,
+  QueryResult,
+} from "./queryTypes";
 
 /** Some magic number to mark a page store as a json store. */
 const MAGIC_NUMBER_V1 = 1983760274;
@@ -270,20 +282,7 @@ interface HasId {
   id?: number;
 }
 
-/**
- * Work in progress...
- */
-export interface QueryParameters {
-  minId?: number;
-  maxResults?: number;
-}
-
-// T can just be specified, it is not validated...
-export function queryJson<T extends object | unknown = unknown>(
-  pageAccess: PageAccess,
-  tableName: string,
-  queryParameters: QueryParameters = {}
-): T[] | false {
+function readAllEntries<T extends object | unknown = unknown>(pageAccess: PageAccess, tableName: string): T[] | false {
   try {
     const pageAccessNotUndefined = toPageAccessNotUndefined(pageAccess);
     if (!isInitialized(pageAccessNotUndefined)) {
@@ -298,16 +297,10 @@ export function queryJson<T extends object | unknown = unknown>(
     }
 
     const entries: Uint8Array[] = [];
-    const { maxResults } = queryParameters;
-    scanBtreeEntries(
-      pageProvider,
-      tableInfo.mainRoot,
-      queryParameters.minId ? tupleToUint8Array(UINT32_TUPLE, [queryParameters.minId]) : undefined,
-      (entry) => {
-        entries.push(entry);
-        return maxResults === undefined || entries.length < maxResults;
-      }
-    );
+    scanBtreeEntries(pageProvider, tableInfo.mainRoot, undefined, (entry) => {
+      entries.push(entry);
+      return true;
+    });
 
     const pathNumberToPath = createPathNumberToPath(tableInfo, pageProvider);
     return entries.map((entry) => {
@@ -325,6 +318,223 @@ export function queryJson<T extends object | unknown = unknown>(
       throw e;
     }
   }
+}
+
+function pathToPathArray(path: Path): PathArray {
+  if (typeof path === "string") {
+    const parts = path.split(".");
+    if (parts.length === 1 && !parts[0].endsWith("[]")) {
+      // fast path
+      return parts as PathArray;
+    }
+    const result: (string | 0)[] = [];
+    for (const part of parts) {
+      let propertyName = part;
+      let arrayAccessCount = 0;
+      while (propertyName.endsWith("[]")) {
+        ++arrayAccessCount;
+        propertyName = propertyName.substring(0, propertyName.length - 2);
+      }
+      result.push(propertyName);
+      for (let i = 0; i < arrayAccessCount; i++) {
+        result.push(0);
+      }
+    }
+    return result as PathArray;
+  }
+  return path;
+}
+
+function extractSingleValueOrUndefined(jsonValue: unknown, pathArray: PathArray): unknown {
+  let result = jsonValue;
+  for (const propertyName of pathArray) {
+    if (!result || typeof result !== "object" || Array.isArray(result)) {
+      return undefined;
+    }
+    assert(propertyName !== 0);
+    result = (result as Record<string, unknown>)[propertyName];
+  }
+  return result;
+}
+
+function isJsonPrimitive(jsonValue: unknown): jsonValue is JsonPrimitive {
+  const type = typeof jsonValue;
+  return type === "number" || type === "string" || type === "boolean" || jsonValue === null;
+}
+
+function anyValueMatchesAtPath(
+  jsonValue: unknown,
+  pathArray: PathArray,
+  predicate: (value: JsonPrimitive) => boolean,
+  pathIndex = 0
+): boolean {
+  if (pathIndex >= pathArray.length) {
+    return isJsonPrimitive(jsonValue) && predicate(jsonValue);
+  }
+
+  const propertyNameOrZero = pathArray[pathIndex];
+  if (propertyNameOrZero === 0) {
+    if (!Array.isArray(jsonValue)) {
+      return false;
+    }
+    return jsonValue.some((element) => anyValueMatchesAtPath(element, pathArray, predicate, pathIndex + 1));
+  }
+
+  if (!jsonValue || typeof jsonValue !== "object" || Array.isArray(jsonValue)) {
+    return false;
+  }
+  return anyValueMatchesAtPath(
+    (jsonValue as Record<string, unknown>)[propertyNameOrZero],
+    pathArray,
+    predicate,
+    pathIndex + 1
+  );
+}
+
+function argumentsCompatible(a: unknown, b: unknown, onlyForRange: boolean): boolean {
+  const aType = typeof a;
+  const bType = typeof b;
+  if (aType !== bType) {
+    return false;
+  }
+  const stringOrNumber = aType === "string" || aType === "number";
+  if (onlyForRange) {
+    return stringOrNumber;
+  }
+  return stringOrNumber || aType === "boolean" || (a === null && b === null);
+}
+
+const OPERATOR_FUNCTIONS = new Map<Operator, (a: JsonPrimitive, b: unknown) => boolean>([
+  ["=", (a, b) => a === b && argumentsCompatible(a, b, false)],
+  ["<=", (a, b) => argumentsCompatible(a, b, true) && (a as any) <= (b as any)],
+  [">=", (a, b) => argumentsCompatible(a, b, true) && (a as any) >= (b as any)],
+  ["<", (a, b) => argumentsCompatible(a, b, true) && (a as any) < (b as any)],
+  [">", (a, b) => argumentsCompatible(a, b, true) && (a as any) > (b as any)],
+  ["in", (a, b) => Array.isArray(b) && b.includes(a)],
+  ["is", (a, b) => typeof a === b],
+  ["match", (a, b) => typeof b === "function" && isJsonPrimitive(a) && b(a)],
+]);
+
+function buildFilterPredicate(filterCondition: FilterCondition): (jsonValue: unknown) => boolean {
+  const firstElement = filterCondition[0];
+  if (Array.isArray(firstElement)) {
+    // FilterCondition[]
+    const predicates = filterCondition.map((condition) => {
+      assert(Array.isArray(condition));
+      return buildFilterPredicate(condition as FilterCondition);
+    });
+    return (jsonValue: unknown) => {
+      for (const predicate of predicates) {
+        if (!predicate(jsonValue)) {
+          return false;
+        }
+      }
+      return true;
+    };
+  } else if (firstElement === "or" && Array.isArray(filterCondition[1])) {
+    const predicates = filterCondition.slice(1).map((condition) => {
+      assert(Array.isArray(condition));
+      return buildFilterPredicate(condition as FilterCondition);
+    });
+    return (jsonValue: unknown) => {
+      for (const predicate of predicates) {
+        if (predicate(jsonValue)) {
+          return true;
+        }
+      }
+      return false;
+    };
+  } else {
+    let pathArray: PathArray;
+    let operator: string;
+    let argument: unknown;
+
+    if (filterCondition.length === 2) {
+      const pathAndOperator = filterCondition[0];
+      assert(typeof pathAndOperator === "string");
+      const spaceIndex = pathAndOperator.lastIndexOf(" ");
+      assert(spaceIndex >= 0);
+      pathArray = pathToPathArray(pathAndOperator.substring(0, spaceIndex));
+      operator = pathAndOperator.substring(spaceIndex + 1);
+      argument = filterCondition[1];
+    } else {
+      assert(filterCondition.length >= 3);
+      const pathParts = filterCondition.slice(0, -2);
+      assert((pathParts as unknown[]).every((part) => typeof part === "string"));
+      pathArray = pathParts as PathArray;
+      const tempOperator = filterCondition.at(-2);
+      assert(typeof tempOperator === "string");
+      operator = tempOperator;
+      argument = filterCondition.at(-1);
+    }
+
+    const operatorFunction = OPERATOR_FUNCTIONS.get(operator as Operator);
+    assert(operatorFunction, "unknown operator");
+    const predicate = (value: JsonPrimitive) => operatorFunction(value, argument);
+    return (jsonValue: unknown) => anyValueMatchesAtPath(jsonValue, pathArray, predicate);
+  }
+}
+
+// T can just be specified, it is not validated...
+export function queryJson<T extends object, P extends ProjectionType = undefined>(
+  pageAccess: PageAccess,
+  { table, filter, extraFilter, orderBy, limit, offset }: QueryParameters,
+  projection?: P
+): QueryResult<P, T> | false {
+  // TODO: this is a "naive" implementation, optimizations will be implemented later (e.g. using the index)
+  let entries = readAllEntries<HasId>(pageAccess, table);
+  if (!entries) {
+    return false;
+  }
+  if (filter) {
+    const filterPredicate = buildFilterPredicate(filter);
+    entries = entries.filter((entry) => filterPredicate(entry));
+  }
+  if (extraFilter) {
+    entries = entries.filter((entry) => extraFilter(entry));
+  }
+
+  if (orderBy && orderBy.length) {
+    const orderByPathArrays = orderBy.map(pathToPathArray);
+    for (const pathArray of orderByPathArrays) {
+      if (pathArray.includes(0)) {
+        throw new Error("orderBy does not allow arrays");
+      }
+    }
+
+    entries.sort((a, b) => {
+      let result = 0;
+      for (const pathArray of orderByPathArrays) {
+        const aValue = extractSingleValueOrUndefined(a, pathArray);
+        const bValue = extractSingleValueOrUndefined(b, pathArray);
+        result = compareJsonPrimitives(aValue, bValue);
+        if (result !== null) {
+          break;
+        }
+      }
+      return result;
+    });
+  }
+
+  assert(limit === undefined || limit >= 0);
+  assert(offset === undefined || offset >= 0);
+  if (limit !== undefined || offset !== undefined) {
+    entries = entries.slice(offset ?? 0, limit !== undefined ? (offset ?? 0) + limit : undefined);
+  }
+
+  if (projection === "onlyId") {
+    return entries.map((entry) => entry.id) as QueryResult<P, T>;
+  } else if (Array.isArray(projection)) {
+    throw "TODO";
+  } else {
+    return entries as QueryResult<P, T>;
+  }
+}
+
+export function countJson(pageAccess: PageAccess, countParameters: CountParameters): number | false {
+  // TODO: this can/should be optimized, but for now just counting the ids should be okay
+  const ids = queryJson(pageAccess, countParameters, "onlyId");
+  return ids ? ids.length : false;
 }
 
 function initializeIfNecessary(pageAccess: PageAccessDuringTransaction): void {

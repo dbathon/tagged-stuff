@@ -1,17 +1,18 @@
 import { computed, ComputedRef } from "vue";
-import { PageAccess, queryJson, QueryParameters } from "../../data/json/jsonStore";
+import { PageAccess, queryJson } from "../../data/json/jsonStore";
 import { PageStore } from "../../data/page-store/PageStore";
+import { QueryParameters } from "../../data/json/queryTypes";
 
-export function useJsonQuery<T>(
+export function useJsonQuery<T extends object>(
   pageStore: PageStore,
-  tableName: string,
-  queryParameters: QueryParameters = {}
+  queryParameters: () => QueryParameters
 ): ComputedRef<T[] | false> {
   const pageAccess: PageAccess = (pageNumber) => pageStore.getPage(pageNumber).value;
   return computed(() => {
-    const label = "recompute " + tableName;
+    const currentParameters = queryParameters();
+    const label = "recompute " + JSON.stringify(currentParameters);
     console.time(label);
-    const result = queryJson<T>(pageAccess, tableName, queryParameters);
+    const result = queryJson<T>(pageAccess, currentParameters);
     console.timeEnd(label);
     return result;
   });
