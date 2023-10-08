@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import { PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
 import { PageData } from "../page-store/PageData";
 import { countJson, deleteJson, queryJson, saveJson } from "./jsonStore";
+import { QueryParameters } from "./queryTypes";
 
 function createPageAccess(pageSize: number): PageAccessDuringTransaction {
   const pages = new Map<number, PageData>();
@@ -156,4 +157,245 @@ test("jsonStore", () => {
   expect(large1.id).toBe(1);
   expect(queryJson<Large>(pageAccess.get, { table: "large" })).toEqual([large0, large1]);
   expect(countJson(pageAccess.get, { table: "large" })).toEqual(2);
+
+  // empty object should work
+  const empty: WithId = {};
+  saveJson(pageAccess, "empty", empty);
+  expect(empty.id).toBe(0);
+  expect(queryJson(pageAccess.get, { table: "empty" })).toEqual([empty]);
+});
+
+interface TestEntity extends WithId {
+  i: number;
+  even: boolean;
+  evenOrUndefined?: boolean;
+  fizz: boolean;
+  buzz: boolean;
+  tags: string[];
+}
+
+test("queryJson", () => {
+  const pageAccess = createPageAccess(4096);
+  const table = "test";
+  const entities: TestEntity[] = [];
+
+  for (let i = 0; i < 1000; i++) {
+    const entity: TestEntity = {
+      i,
+      even: i % 2 === 0,
+      fizz: i % 3 === 0,
+      buzz: i % 5 === 0,
+      tags: [],
+    };
+    if (entity.even) {
+      entity.evenOrUndefined = true;
+      entity.tags.push("even");
+    }
+    if (entity.fizz) {
+      entity.tags.push("fizz");
+    }
+    if (entity.buzz) {
+      entity.tags.push("buzz");
+    }
+
+    if (i >= 500) {
+      // explicitly set some ids
+      entity.id = 2000 - i;
+    }
+
+    saveJson(pageAccess, table, entity);
+    expect(entity.id).toBeDefined();
+
+    entities.push(entity);
+  }
+
+  // sort by id
+  entities.sort((a, b) => a.id! - b.id!);
+
+  function testQueryAndCount(parameters: QueryParameters, expected: TestEntity[]) {
+    const fullResult = queryJson<TestEntity>(pageAccess.get, parameters);
+    expect(fullResult).toEqual(expected);
+
+    const ids = queryJson(pageAccess.get, parameters, "onlyId");
+    expect(ids).toEqual(expected.map((e) => e.id));
+
+    const count = countJson(pageAccess.get, parameters);
+    expect(count).toEqual(expected.length);
+
+    if (parameters.offset === undefined && parameters.limit === undefined) {
+      const halfLength = expected.length >>> 1;
+      testQueryAndCount(
+        {
+          limit: halfLength,
+          ...parameters,
+        },
+        expected.slice(0, halfLength)
+      );
+      testQueryAndCount(
+        {
+          offset: halfLength,
+          ...parameters,
+        },
+        expected.slice(halfLength)
+      );
+
+      const quarterLength = halfLength >>> 1;
+      testQueryAndCount(
+        {
+          offset: quarterLength,
+          limit: halfLength,
+          ...parameters,
+        },
+        expected.slice(quarterLength, quarterLength + halfLength)
+      );
+
+      const doubleLength = expected.length * 2;
+      testQueryAndCount(
+        {
+          limit: doubleLength,
+          ...parameters,
+        },
+        expected
+      );
+      testQueryAndCount(
+        {
+          offset: halfLength,
+          limit: doubleLength,
+          ...parameters,
+        },
+        expected.slice(halfLength)
+      );
+    }
+  }
+
+  testQueryAndCount({ table }, entities);
+
+  const even = entities.filter((e) => e.even);
+  testQueryAndCount({ table, filter: ["even", "=", true] }, even);
+  testQueryAndCount({ table, filter: ["even =", true] }, even);
+  testQueryAndCount(
+    {
+      table,
+      filter: [
+        ["even =", true],
+        ["i >=", 42],
+      ],
+    },
+    even.filter((e) => e.i >= 42)
+  );
+  testQueryAndCount({ table, filter: ["evenOrUndefined =", true] }, even);
+  testQueryAndCount({ table, filter: ["evenOrUndefined is", "boolean"] }, even);
+  testQueryAndCount({ table, filter: ["evenOrUndefined match", (even) => !!even] }, even);
+  testQueryAndCount({ table, filter: ["tags[] =", "even"] }, even);
+  testQueryAndCount({ table, filter: ["tags", 0, "=", "even"] }, even);
+  testQueryAndCount({ table, extraFilter: (e) => (e as any).even }, even);
+
+  even.sort((a, b) => a.i - b.i);
+  testQueryAndCount({ table, filter: ["even", "=", true], orderBy: ["i"] }, even);
+  testQueryAndCount({ table, filter: ["even", "=", true], orderBy: ["i", "id"] }, even);
+  testQueryAndCount({ table, filter: ["even", "=", true], orderBy: [["i"], ["id"]] }, even);
+
+  const fizzAndBuzz = entities.filter((e) => e.fizz && e.buzz);
+  testQueryAndCount(
+    {
+      table,
+      filter: [
+        ["fizz =", true],
+        ["buzz =", true],
+      ],
+    },
+    fizzAndBuzz
+  );
+  testQueryAndCount(
+    {
+      table,
+      filter: [
+        ["fizz =", true],
+        ["tags[] =", "buzz"],
+      ],
+    },
+    fizzAndBuzz
+  );
+  testQueryAndCount(
+    {
+      table,
+      filter: [
+        ["tags[] =", "fizz"],
+        ["tags[] in", ["buzz"]],
+      ],
+    },
+    fizzAndBuzz
+  );
+
+  const fizzOrBuzz = entities.filter((e) => e.fizz || e.buzz);
+  testQueryAndCount(
+    {
+      table,
+      filter: ["or", ["fizz =", true], ["buzz =", true]],
+    },
+    fizzOrBuzz
+  );
+  testQueryAndCount(
+    {
+      table,
+      filter: [
+        ["or", ["fizz =", true], ["buzz =", true]],
+        // add some extra and-ed conditions that don't change the result
+        [
+          ["id is", "number"],
+          ["i is", "number"],
+        ],
+      ],
+    },
+    fizzOrBuzz
+  );
+  testQueryAndCount(
+    {
+      table,
+      filter: ["or", ["fizz =", true], ["tags[] =", "buzz"]],
+    },
+    fizzOrBuzz
+  );
+  testQueryAndCount(
+    {
+      table,
+      filter: ["or", ["tags[] =", "fizz"], ["tags[] in", ["buzz"]]],
+    },
+    fizzOrBuzz
+  );
+  testQueryAndCount(
+    {
+      table,
+      filter: ["tags[] in", ["fizz", "buzz"]],
+    },
+    fizzOrBuzz
+  );
+});
+
+interface WithUnknown extends WithId {
+  x: unknown;
+}
+
+test("queryJson sorting", () => {
+  const pageAccess = createPageAccess(4096);
+  const table = "test";
+  const entities: WithUnknown[] = [
+    { x: -1 },
+    { x: 0 },
+    { x: 1 },
+    { x: "a" },
+    { x: "b" },
+    { x: false },
+    { x: true },
+    { x: null },
+    { x: undefined },
+  ];
+  for (const entity of entities) {
+    saveJson(pageAccess, table, entity);
+    expect(entity.id).toBeDefined();
+  }
+
+  expect(queryJson(pageAccess.get, { table })).toEqual(entities);
+  // test that sorting by x does not change the order
+  expect(queryJson(pageAccess.get, { table, orderBy: ["x"] })).toEqual(entities);
 });

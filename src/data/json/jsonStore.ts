@@ -18,7 +18,7 @@ import { compareJsonPrimitives } from "./internal/compareJsonPrimitives";
 import { buildIndexEntries, updateIndexForJson } from "./internal/indexing";
 import { JsonPathToNumberCache, NumberToJsonPathCache, jsonPathToNumber, numberToJsonPath } from "./internal/metaBtree";
 import { deserializeJsonEvents, serializeJsonEvents } from "./internal/serializeJsonEvents";
-import { buildJsonFromEvents, FullJsonEvent, JsonPath, produceJsonEvents } from "./jsonEvents";
+import { buildJsonFromEvents, FullJsonEvent, JSON_EMPTY_OBJECT, JsonPath, produceJsonEvents } from "./jsonEvents";
 import {
   CountParameters,
   FilterCondition,
@@ -306,7 +306,13 @@ function readAllEntries<T extends object | unknown = unknown>(pageAccess: PageAc
     return entries.map((entry) => {
       const { id, events } = readEntryIdAndJsonEvents(entry, tableInfo, pathNumberToPath, pageProvider);
 
-      const result = buildJsonFromEvents(events);
+      let result: unknown;
+      if (events.length) {
+        result = buildJsonFromEvents(events);
+      } else {
+        // special case, just an empty object, see emptyObjectWithoutPathCount in saveJson()
+        result = {};
+      }
       (result as HasId).id = id;
 
       return result as T;
@@ -460,7 +466,7 @@ function buildFilterPredicate(filterCondition: FilterCondition): (jsonValue: unk
     } else {
       assert(filterCondition.length >= 3);
       const pathParts = filterCondition.slice(0, -2);
-      assert((pathParts as unknown[]).every((part) => typeof part === "string"));
+      assert((pathParts as unknown[]).every((part) => typeof part === "string" || part === 0));
       pathArray = pathParts as PathArray;
       const tempOperator = filterCondition.at(-2);
       assert(typeof tempOperator === "string");
@@ -661,16 +667,23 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
 
     const jsonEvents: FullJsonEvent[] = [];
     const cache: JsonPathToNumberCache = new Map();
+    let emptyObjectWithoutPathCount = 0;
     produceJsonEvents(
       json,
       (type, path, value) => {
-        // json is an object so path can never be undefined
-        assert(path !== undefined);
-        const pathNumber = jsonPathToNumber(pageProvider, tableInfo.metaRoot, path, cache);
-        jsonEvents.push({ path, pathNumber, type, value });
+        if (path === undefined && type === JSON_EMPTY_OBJECT) {
+          // special case, it is an entirely empty object
+          ++emptyObjectWithoutPathCount;
+        } else {
+          // json is an object so path can never be undefined
+          assert(path !== undefined);
+          const pathNumber = jsonPathToNumber(pageProvider, tableInfo.metaRoot, path, cache);
+          jsonEvents.push({ path, pathNumber, type, value });
+        }
       },
       filterId
     );
+    assert(emptyObjectWithoutPathCount === 0 || (emptyObjectWithoutPathCount === 1 && !jsonEvents.length));
 
     const newIndexEntries = buildIndexEntries(jsonEvents);
     if (definitelyNewEntry) {
