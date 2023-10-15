@@ -11,8 +11,8 @@ import { BackendPageAndVersion, BackendPageToStore, PageStoreBackend } from "./P
 const MIN_PAGE_SIZE = 1 << 12;
 // max page size is 64KB to ensure that 16bit indexes are sufficient
 const MAX_PAGE_SIZE = 1 << 16;
-// page numbers are uint32 (we have to use Math.pow(), bit shift won't work)
-const MAX_PAGE_NUMBER = Math.pow(2, 32) - 1;
+// page numbers are uint32
+const MAX_PAGE_NUMBER = -1 >>> 0;
 
 // the backend page number of the index page
 const INDEX_PAGE_NUMBER = -1;
