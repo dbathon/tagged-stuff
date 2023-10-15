@@ -1,11 +1,11 @@
 import { MetaPageWithPatches } from "./MetaPageWithPatches";
 import { readUint48FromDataView, writeUint48toDataView } from "./util";
 
-export const PAGES_PER_PAGE_GROUP = 32;
+const PAGES_PER_PAGE_GROUP_BITS = 5;
+const PAGES_PER_PAGE_GROUP = 1 << PAGES_PER_PAGE_GROUP_BITS;
 
 export function pageNumberToPageGroupNumber(pageNumber: number) {
-  // we can't use shifting for this, since the page number is uint32
-  return Math.floor(pageNumber / PAGES_PER_PAGE_GROUP);
+  return pageNumber >>> PAGES_PER_PAGE_GROUP_BITS;
 }
 
 /**
