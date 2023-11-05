@@ -1,3 +1,4 @@
+import { uint8ArrayToDataView } from "../../uint8-array/uint8ArrayToDataView";
 import { MetaPageWithPatches } from "./MetaPageWithPatches";
 import { readUint48FromDataView, writeUint48toDataView } from "./util";
 
@@ -20,13 +21,13 @@ export class PageGroupPage extends MetaPageWithPatches {
 
   constructor(
     readonly pageGroupNumber: number,
-    bufferOrPageGroupPageOrUndefined: ArrayBuffer | PageGroupPage | undefined
+    dataOrPageGroupPageOrUndefined: Uint8Array | PageGroupPage | undefined
   ) {
     super();
-    if (bufferOrPageGroupPageOrUndefined === undefined) {
+    if (dataOrPageGroupPageOrUndefined === undefined) {
       // nothing to do
-    } else if (bufferOrPageGroupPageOrUndefined instanceof PageGroupPage) {
-      const sourcePageGroupPage = bufferOrPageGroupPageOrUndefined;
+    } else if (dataOrPageGroupPageOrUndefined instanceof PageGroupPage) {
+      const sourcePageGroupPage = dataOrPageGroupPageOrUndefined;
       if (pageGroupNumber !== sourcePageGroupPage.pageGroupNumber) {
         throw new Error("pageNumberOffset does not match");
       }
@@ -39,7 +40,7 @@ export class PageGroupPage extends MetaPageWithPatches {
         this.pageNumberToPatches.set(pageNumber, [...patches])
       );
     } else {
-      const view = new DataView(bufferOrPageGroupPageOrUndefined);
+      const view = uint8ArrayToDataView(dataOrPageGroupPageOrUndefined);
 
       this.readHeader(view);
 
@@ -63,12 +64,12 @@ export class PageGroupPage extends MetaPageWithPatches {
     return MetaPageWithPatches.headerSerializedLength + PAGES_PER_PAGE_GROUP * 6 + this.patchesSerializedLength;
   }
 
-  serialize(buffer: ArrayBuffer): void {
+  serialize(array: Uint8Array): void {
     const expectedLength = this.serializedLength;
-    if (expectedLength > buffer.byteLength) {
+    if (expectedLength > array.byteLength) {
       throw new Error("buffer is too small");
     }
-    const view = new DataView(buffer);
+    const view = uint8ArrayToDataView(array);
 
     this.writeHeader(view);
 

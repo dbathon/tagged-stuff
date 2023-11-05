@@ -1,15 +1,14 @@
 import { expect, test } from "vitest";
 import { PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
-import { PageData } from "../page-store/PageData";
 import { countJson, deleteJson, queryJson, saveJson } from "./jsonStore";
 import { QueryParameters } from "./queryTypes";
 
 function createPageAccess(pageSize: number): PageAccessDuringTransaction {
-  const pages = new Map<number, PageData>();
-  function get(pageNumber: number): PageData {
+  const pages = new Map<number, Uint8Array>();
+  function get(pageNumber: number): Uint8Array {
     let result = pages.get(pageNumber);
     if (!result) {
-      result = new PageData(new ArrayBuffer(pageSize));
+      result = new Uint8Array(pageSize);
       pages.set(pageNumber, result);
     }
     return result;

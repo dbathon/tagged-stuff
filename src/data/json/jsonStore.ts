@@ -11,9 +11,9 @@ import {
 import { PageProviderForWrite } from "../btree/pageProvider";
 import { assert } from "../misc/assert";
 import { PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
-import { PageData } from "../page-store/PageData";
 import { Uint8ArraySet } from "../uint8-array/Uint8ArraySet";
 import { getTupleByteLength, readTuple, tupleToUint8Array, writeTuple } from "../uint8-array/tuple";
+import { uint8ArrayToDataView } from "../uint8-array/uint8ArrayToDataView";
 import { compareJsonPrimitives } from "./internal/compareJsonPrimitives";
 import { buildIndexEntries, updateIndexForJson } from "./internal/indexing";
 import { JsonPathToNumberCache, NumberToJsonPathCache, jsonPathToNumber, numberToJsonPath } from "./internal/metaBtree";
@@ -64,11 +64,11 @@ const STRING_UINT32_UINT32_UINT32_UINT32_UINT32_UINT32_TUPLE = [
 /** Internal "exception object" indicating missing pages, all exported functions must catch and handle it. */
 const MISSING_PAGE = {};
 
-export type PageAccess = (pageNumber: number) => PageData | undefined;
+export type PageAccess = (pageNumber: number) => Uint8Array | undefined;
 
-type PageAccessNotUndefined = (pageNumber: number) => PageData;
+type PageAccessNotUndefined = (pageNumber: number) => Uint8Array;
 
-type PageProviderNotUndefined = (pageNumber: number) => Uint8Array;
+type PageProviderNotUndefined = PageAccessNotUndefined;
 
 function notFalse<T>(value: T | false): T {
   assert(value !== false);
@@ -85,20 +85,16 @@ function toPageAccessNotUndefined(pageAccess: PageAccess): PageAccessNotUndefine
   };
 }
 
-function toPageProvider(pageAccess: PageAccessNotUndefined): PageProviderNotUndefined {
-  return (pageNumber) => pageAccess(pageNumber).array;
-}
-
 /** Assumes that it is an initialized page store. */
 function toPageProviderForWrite(pageAccess: PageAccessDuringTransaction): PageProviderForWrite {
   let tempReleases: number[] | undefined = undefined;
   let inReleasePage = false;
   const provider: PageProviderForWrite = {
     getPage(pageNumber) {
-      return pageAccess.get(pageNumber).array;
+      return pageAccess.get(pageNumber);
     },
     getPageForUpdate(pageNumber) {
-      return pageAccess.getForUpdate(pageNumber).array;
+      return pageAccess.getForUpdate(pageNumber);
     },
     allocateNewPage() {
       // if we are in releasePage, then don't try to allocate from the free list
@@ -122,7 +118,7 @@ function toPageProviderForWrite(pageAccess: PageAccessDuringTransaction): PagePr
         }
       }
 
-      const zeroPage = pageAccess.getForUpdate(0).dataView;
+      const zeroPage = uint8ArrayToDataView(pageAccess.getForUpdate(0));
       const nextPageNumber = zeroPage.getUint32(MAX_ALLOCATED_OFFSET) + 1;
       zeroPage.setUint32(MAX_ALLOCATED_OFFSET, nextPageNumber);
       return nextPageNumber;
@@ -144,8 +140,8 @@ function toPageProviderForWrite(pageAccess: PageAccessDuringTransaction): PagePr
 }
 
 function isInitialized(pageAccess: PageAccessNotUndefined): boolean {
-  const zeroPage = pageAccess(0).dataView;
-  const magic = zeroPage.getUint32(MAGIC_NUMBER_OFFSET);
+  const zeroPage = pageAccess(0);
+  const magic = ((zeroPage[0] << 24) | (zeroPage[1] << 16) | (zeroPage[2] << 8) | zeroPage[3]) >>> 0;
   if (magic === 0) {
     // assume it is an entirely uninitialized/unused page store...
     // TODO: maybe check that the whole page is 0
@@ -289,7 +285,7 @@ function readAllEntries<T extends object | unknown = unknown>(pageAccess: PageAc
       // every table is empty ;)
       return [];
     }
-    const pageProvider = toPageProvider(pageAccessNotUndefined);
+    const pageProvider = pageAccessNotUndefined;
     const tableInfo = getTableInfo(pageProvider, tableName);
     if (!tableInfo) {
       // the table does not exist, so it is empty
@@ -545,13 +541,13 @@ export function countJson(pageAccess: PageAccess, countParameters: CountParamete
 
 function initializeIfNecessary(pageAccess: PageAccessDuringTransaction): void {
   if (!isInitialized(pageAccess.get)) {
-    const zeroPage = pageAccess.getForUpdate(0).dataView;
+    const zeroPage = uint8ArrayToDataView(pageAccess.getForUpdate(0));
     zeroPage.setUint32(MAGIC_NUMBER_OFFSET, MAGIC_NUMBER_V1);
 
     let maxAllocated = 0;
     const initPageProvider: PageProviderForWrite = {
-      getPage: (pageNumber: number) => pageAccess.get(pageNumber).array,
-      getPageForUpdate: (pageNumber: number) => pageAccess.getForUpdate(pageNumber).array,
+      getPage: (pageNumber: number) => pageAccess.get(pageNumber),
+      getPageForUpdate: (pageNumber: number) => pageAccess.getForUpdate(pageNumber),
       allocateNewPage: () => ++maxAllocated,
       releasePage: (pageNumber: number) => {
         assert(false);

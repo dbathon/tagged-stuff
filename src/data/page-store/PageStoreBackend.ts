@@ -1,11 +1,15 @@
 export interface BackendPageAndVersion {
-  data: ArrayBuffer;
+  /**
+   * This Uint8Array is considered to be constant, the PageStore will directly use this array so it should never change
+   * after it is returned from loadPages().
+   */
+  data: Uint8Array;
   version: number;
 }
 
 export interface BackendPageToStore {
   pageNumber: number;
-  data: ArrayBuffer;
+  data: Uint8Array;
   /** If it is a new page, then this needs to be set to undefined. */
   previousVersion: number | undefined;
 }

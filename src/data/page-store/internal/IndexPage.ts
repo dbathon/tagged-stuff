@@ -1,3 +1,4 @@
+import { uint8ArrayToDataView } from "../../uint8-array/uint8ArrayToDataView";
 import { MetaPageWithPatches } from "./MetaPageWithPatches";
 import { PageGroupPage, pageNumberToPageGroupNumber } from "./PageGroupPage";
 import { Patch } from "./Patch";
@@ -45,16 +46,16 @@ export class IndexPage extends MetaPageWithPatches {
 
   readonly pageGroupNumberToTransactionId: Map<number, number> = new Map();
 
-  constructor(bufferOrIndexPageOrUndefined: ArrayBuffer | IndexPage | undefined) {
+  constructor(dataOrIndexPageOrUndefined: Uint8Array | IndexPage | undefined) {
     super();
-    if (bufferOrIndexPageOrUndefined === undefined) {
+    if (dataOrIndexPageOrUndefined === undefined) {
       // default values for an empty page store
 
       this.pageSize = 0;
 
       this.transactionIdsPageStoreTransactionId = 0;
-    } else if (bufferOrIndexPageOrUndefined instanceof IndexPage) {
-      const sourceIndexPage = bufferOrIndexPageOrUndefined;
+    } else if (dataOrIndexPageOrUndefined instanceof IndexPage) {
+      const sourceIndexPage = dataOrIndexPageOrUndefined;
       // just copy all the data from sourceIndexPage
       this.transactionId = sourceIndexPage.transactionId;
       this.pageSize = sourceIndexPage.pageSize;
@@ -66,7 +67,7 @@ export class IndexPage extends MetaPageWithPatches {
         this.pageGroupNumberToTransactionId.set(pageGroupNumber, transactionIdForPage)
       );
     } else {
-      const view = new DataView(bufferOrIndexPageOrUndefined);
+      const view = uint8ArrayToDataView(dataOrIndexPageOrUndefined);
 
       this.readHeader(view);
 
@@ -95,12 +96,12 @@ export class IndexPage extends MetaPageWithPatches {
     );
   }
 
-  serialize(buffer: ArrayBuffer): void {
+  serialize(array: Uint8Array): void {
     const expectedLength = this.serializedLength;
-    if (expectedLength > buffer.byteLength) {
+    if (expectedLength > array.byteLength) {
       throw new Error("buffer is too small");
     }
-    const view = new DataView(buffer);
+    const view = uint8ArrayToDataView(array);
 
     this.writeHeader(view);
 
