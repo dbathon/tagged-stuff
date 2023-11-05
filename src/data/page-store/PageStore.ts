@@ -511,21 +511,19 @@ export class PageStore {
         previousVersion: this.backendPages.get(INDEX_PAGE_NUMBER)?.page?.version,
       });
 
-      if (pagesToStore.length) {
-        const storeResult = await this.backend.storePages(pagesToStore);
-        if (!storeResult) {
-          return false;
-        }
-
-        // update backendPages
-        storeResult.forEach((newVersion, index) => {
-          const pageToStore = pagesToStore[index];
-          this.backendPages.set(
-            pageToStore.pageNumber,
-            new BackendPage({ data: pageToStore.data, version: newVersion }, pageToStore.pageNumber)
-          );
-        });
+      const storeResult = await this.backend.storePages(pagesToStore);
+      if (!storeResult) {
+        return false;
       }
+
+      // update backendPages
+      storeResult.forEach((newVersion, index) => {
+        const pageToStore = pagesToStore[index];
+        this.backendPages.set(
+          pageToStore.pageNumber,
+          new BackendPage({ data: pageToStore.data, version: newVersion }, pageToStore.pageNumber)
+        );
+      });
     }
 
     // the transaction is completed
