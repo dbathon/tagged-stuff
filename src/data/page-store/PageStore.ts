@@ -5,8 +5,8 @@ import { Patch } from "./internal/Patch";
 import { readUint48FromDataView, writeUint48toDataView } from "./internal/util";
 import { PageAccessDuringTransaction } from "./PageAccessDuringTransaction";
 import { BackendPageAndVersion, BackendPageToStore, PageStoreBackend } from "./PageStoreBackend";
-import { uint8ArraysEqual } from "../uint8-array/uint8ArraysEqual";
 import { uint8ArrayToDataView } from "../uint8-array/uint8ArrayToDataView";
+import { assert } from "../misc/assert";
 
 // require at least 4KB
 const MIN_PAGE_SIZE = 1 << 12;
@@ -115,27 +115,28 @@ class PageEntryKey {
 }
 
 class PageEntry {
+  readonly array: Uint8Array;
   readonly dataRef: ShallowRef<Uint8Array | undefined>;
   readonly readonlyDataRef: Readonly<ShallowRef<Uint8Array | undefined>>;
   /** Optional, if it is set, then it can be used to avoid rebuilding the data on refresh. */
   pageEntryKey?: PageEntryKey;
 
-  constructor(readonly pageNumber: number) {
+  constructor(readonly pageNumber: number, pageSize: number) {
     assertValidPageNumber(pageNumber);
+    this.array = new Uint8Array(pageSize);
     this.dataRef = shallowRef();
     this.readonlyDataRef = shallowReadonly(this.dataRef);
   }
 
-  forceSetData(newPageData: Uint8Array) {
-    this.dataRef.value = newPageData;
-  }
-
-  setData(newPageData: Uint8Array, pageEntryKey?: PageEntryKey) {
-    const oldPageData = this.dataRef.value;
-    // re-set the dataRef if the data is different or if the page was marked as dirty
-    if (oldPageData === undefined || !uint8ArraysEqual(oldPageData, newPageData)) {
-      this.forceSetData(newPageData);
+  arrayUpdated(pageEntryKey: PageEntryKey) {
+    if (this.dataRef.value) {
+      // just trigger the dataRef
+      triggerRef(this.dataRef);
+    } else {
+      // set the dataRef.value initially
+      this.dataRef.value = this.array;
     }
+
     this.pageEntryKey = pageEntryKey;
   }
 }
@@ -143,6 +144,9 @@ class PageEntry {
 const RESOLVED_PROMISE = Promise.resolve();
 
 export class PageStore {
+  private readonly backendPageSize: number;
+  readonly pageSize: number;
+
   // TODO: use "MapWithWeakRefValues" to allow garbage collection...
   private readonly backendPages = new Map<number, BackendPage>();
   // TODO: use "MapWithWeakRefValues" to allow garbage collection...
@@ -160,22 +164,22 @@ export class PageStore {
 
   private transactionActive = false;
 
+  private readonly zeroedPageArray: Uint8Array;
+  private readonly scratchPageArray: Uint8Array;
+
   constructor(private readonly backend: PageStoreBackend) {
-    const pageSize = backend.pageSize;
-    if (pageSize < MIN_PAGE_SIZE) {
+    const backendPageSize = backend.pageSize;
+    if (backendPageSize < MIN_PAGE_SIZE) {
       throw new Error("backend pageSize is too small");
     }
-    if (pageSize > MAX_PAGE_SIZE) {
+    if (backendPageSize > MAX_PAGE_SIZE) {
       throw new Error("backend pageSize is too large");
     }
-  }
-
-  private get backendPageSize(): number {
-    return this.backend.pageSize;
-  }
-
-  get pageSize(): number {
-    return this.backendPageSize - PAGE_OVERHEAD;
+    this.backendPageSize = backendPageSize;
+    const pageSize = backendPageSize - PAGE_OVERHEAD;
+    this.pageSize = pageSize;
+    this.zeroedPageArray = new Uint8Array(pageSize);
+    this.scratchPageArray = new Uint8Array(pageSize);
   }
 
   get loading(): boolean {
@@ -186,8 +190,8 @@ export class PageStore {
     return this.backendPages.get(INDEX_PAGE_NUMBER)?.getAsIndexPage(this.backendPageSize);
   }
 
-  private getTransactionIdOfPageGroupPage(pageGroupNumber: number): number | undefined {
-    const indexPage = this.getIndexPage();
+  private getTransactionIdOfPageGroupPage(pageGroupNumber: number, providedIndexPage?: IndexPage): number | undefined {
+    const indexPage = providedIndexPage ?? this.getIndexPage();
     if (!indexPage) {
       return undefined;
     }
@@ -198,8 +202,8 @@ export class PageStore {
     return transactionId;
   }
 
-  private getPageGroupPage(pageGroupNumber: number): PageGroupPage | undefined {
-    const expectedTransactionId = this.getTransactionIdOfPageGroupPage(pageGroupNumber);
+  private getPageGroupPage(pageGroupNumber: number, providedIndexPage?: IndexPage): PageGroupPage | undefined {
+    const expectedTransactionId = this.getTransactionIdOfPageGroupPage(pageGroupNumber, providedIndexPage);
     if (expectedTransactionId === undefined) {
       return undefined;
     }
@@ -242,32 +246,35 @@ export class PageStore {
     return backendPage;
   }
 
-  private buildPageArray(pageNumber: number): Uint8Array | undefined {
+  private buildPageArray(pageNumber: number, array: Uint8Array): boolean {
     assertValidPageNumber(pageNumber);
     const indexPage = this.getIndexPage();
     if (!indexPage) {
-      return undefined;
+      return false;
     }
 
-    const pageGroupPage = this.getPageGroupPage(pageNumberToPageGroupNumber(pageNumber));
+    const pageGroupPage = this.getPageGroupPage(pageNumberToPageGroupNumber(pageNumber), indexPage);
     if (!pageGroupPage) {
-      return undefined;
+      return false;
     }
 
     const backendPage = this.getBackendPageForPage(pageGroupPage, pageNumber);
     if (!backendPage) {
-      return undefined;
+      return false;
     }
 
     const backendPageData = backendPage.page?.data;
-    const pageArray = backendPageData ? backendPageData.slice(PAGE_OVERHEAD) : new Uint8Array(this.pageSize);
+    const baseArray = backendPageData ? backendPageData.subarray(PAGE_OVERHEAD) : this.zeroedPageArray;
+    assert(array.length === baseArray.length);
+    array.set(baseArray);
+
     // apply page group page patches
-    pageGroupPage.pageNumberToPatches.get(pageNumber)?.forEach((patch) => patch.applyTo(pageArray));
+    pageGroupPage.pageNumberToPatches.get(pageNumber)?.forEach((patch) => patch.applyTo(array));
 
     // apply index page patches
-    indexPage.pageNumberToPatches.get(pageNumber)?.forEach((patch) => patch.applyTo(pageArray));
+    indexPage.pageNumberToPatches.get(pageNumber)?.forEach((patch) => patch.applyTo(array));
 
-    return pageArray;
+    return true;
   }
 
   loadingFinished(): Promise<void> {
@@ -283,6 +290,21 @@ export class PageStore {
     return result;
   }
 
+  private buildPageEntryKey(pageNumber: number, indexPage: IndexPage): PageEntryKey | undefined {
+    const pageGroupTransactionId = this.getTransactionIdOfPageGroupPage(
+      pageNumberToPageGroupNumber(pageNumber),
+      indexPage
+    );
+    if (pageGroupTransactionId === undefined) {
+      return undefined;
+    }
+    return new PageEntryKey(
+      indexPage.transactionId,
+      pageGroupTransactionId,
+      indexPage.pageNumberToPatches.get(pageNumber)
+    );
+  }
+
   private resetPageEntriesFromBackendPages(): void {
     if (this.loading) {
       throw new Error("loading");
@@ -290,26 +312,18 @@ export class PageStore {
 
     const indexPage = this.getIndexPage();
 
-    // first get all the data for pages that potentially changed
-    const entryToData = new Map<PageEntry, [Uint8Array, PageEntryKey]>();
     for (const [pageNumber, entry] of this.pageEntries.entries()) {
       if (indexPage !== undefined) {
-        const pageGroupTransactionId = this.getTransactionIdOfPageGroupPage(pageNumberToPageGroupNumber(pageNumber));
-        if (pageGroupTransactionId !== undefined) {
-          const pageEntryKey = new PageEntryKey(
-            indexPage.transactionId,
-            pageGroupTransactionId,
-            indexPage.pageNumberToPatches.get(pageNumber)
-          );
-
+        const pageEntryKey = this.buildPageEntryKey(pageNumber, indexPage);
+        if (pageEntryKey) {
           if (entry.pageEntryKey && entry.pageEntryKey.equals(pageEntryKey)) {
             // nothing to do
             continue;
           } else {
             // the page might have changed
-            const pageArray = this.buildPageArray(pageNumber);
-            if (pageArray) {
-              entryToData.set(entry, [pageArray, pageEntryKey]);
+            const success = this.buildPageArray(pageNumber, entry.array);
+            if (success) {
+              entry.arrayUpdated(pageEntryKey);
               continue;
             }
           }
@@ -317,11 +331,6 @@ export class PageStore {
       }
       // something is probably inconsistent, trigger a refresh for the page
       this.triggerLoad(pageNumber);
-    }
-
-    // and then only update the pages if everything is available
-    if (!this.loading) {
-      entryToData.forEach(([data, pageEntryKey], entry) => entry.setData(data, pageEntryKey));
     }
   }
 
@@ -381,13 +390,16 @@ export class PageStore {
   getPage(pageNumber: number): Readonly<ShallowRef<Uint8Array | undefined>> {
     let pageEntry = this.pageEntries.get(pageNumber);
     if (!pageEntry) {
-      pageEntry = new PageEntry(pageNumber);
+      pageEntry = new PageEntry(pageNumber, this.pageSize);
       this.pageEntries.set(pageNumber, pageEntry);
       if (!this.loading) {
-        const pageArray = this.buildPageArray(pageNumber);
-        if (pageArray) {
-          // if we are not loading and the page data is available (via patches etc.), then just set it
-          pageEntry.setData(pageArray);
+        const success = this.buildPageArray(pageNumber, pageEntry.array);
+        if (success) {
+          const indexPage = this.getIndexPage();
+          assert(indexPage);
+          const pageEntryKey = this.buildPageEntryKey(pageNumber, indexPage);
+          assert(pageEntryKey);
+          pageEntry.arrayUpdated(pageEntryKey);
         }
       }
       if (!pageEntry.dataRef.value) {
@@ -405,7 +417,7 @@ export class PageStore {
     this.triggerLoad(INDEX_PAGE_NUMBER);
   }
 
-  private async commit(dirtyPageNumberToOldData: Map<number, Uint8Array>): Promise<boolean> {
+  private async commit(dirtyPageNumbers: Set<number>): Promise<boolean> {
     if (!this.transactionActive) {
       throw new Error("there is no transaction active");
     }
@@ -416,15 +428,14 @@ export class PageStore {
     }
     const newIndexPage = new IndexPage(oldIndexPage);
     let changes = false;
-    dirtyPageNumberToOldData.forEach((oldPageData, pageNumber) => {
+    const oldPageData = this.scratchPageArray;
+    for (const pageNumber of dirtyPageNumbers) {
       const entry = this.pageEntries.get(pageNumber);
-      if (!entry) {
-        throw new Error("entry of dirty page does not exist");
-      }
+      assert(entry);
       const data = entry.dataRef.value;
-      if (!data) {
-        throw new Error("data not available");
-      }
+      assert(data);
+      const success = this.buildPageArray(pageNumber, oldPageData);
+      assert(success);
       const patches = Patch.createPatches(oldPageData, data, data.length);
       if (patches.length) {
         changes = true;
@@ -433,7 +444,7 @@ export class PageStore {
           Patch.mergePatches([...(newIndexPage.pageNumberToPatches.get(pageNumber) ?? []), ...patches])
         );
       }
-    });
+    }
 
     if (changes) {
       const transactionId = (newIndexPage.transactionId += 1);
@@ -447,7 +458,7 @@ export class PageStore {
           throw new Error("index page too large, but no largest page group");
         }
         const pageGroupPageBackendPageNumber = pageGroupNumberToBackendPageNumber(largestPageGroupNumber);
-        const oldPageGroupPage = this.getPageGroupPage(largestPageGroupNumber);
+        const oldPageGroupPage = this.getPageGroupPage(largestPageGroupNumber, oldIndexPage);
         if (!oldPageGroupPage) {
           // this can actually happen, if none of the pages of that group were loaded...
           this.triggerLoad(pageGroupPageBackendPageNumber);
@@ -557,7 +568,7 @@ export class PageStore {
         }
 
         let resultValue: T;
-        const dirtyPageNumberToOldData = new Map<number, Uint8Array>();
+        const dirtyPageNumbers = new Set<number>();
         try {
           try {
             const get = (pageNumber: number): Uint8Array => {
@@ -571,9 +582,7 @@ export class PageStore {
               get,
               getForUpdate(pageNumber) {
                 const result = get(pageNumber);
-                if (!dirtyPageNumberToOldData.has(pageNumber)) {
-                  dirtyPageNumberToOldData.set(pageNumber, result.slice(0));
-                }
+                dirtyPageNumbers.add(pageNumber);
                 return result;
               },
             });
@@ -587,7 +596,7 @@ export class PageStore {
             }
           }
 
-          if (await this.commit(dirtyPageNumberToOldData)) {
+          if (await this.commit(dirtyPageNumbers)) {
             result = {
               committed: true,
               resultValue,
@@ -596,18 +605,24 @@ export class PageStore {
           }
         } finally {
           if (result.committed) {
-            // trigger the refs for the changed page entries, since we don't actually set them to new instances
-            for (const pageNumber of dirtyPageNumberToOldData.keys()) {
+            const indexPage = this.getIndexPage();
+            assert(indexPage);
+            // call arrayUpdated for the changed page entries
+            for (const pageNumber of dirtyPageNumbers) {
               const pageEntry = this.pageEntries.get(pageNumber);
-              if (pageEntry) {
-                triggerRef(pageEntry.dataRef);
-              }
+              assert(pageEntry);
+              const pageEntryKey = this.buildPageEntryKey(pageNumber, indexPage);
+              assert(pageEntryKey);
+              pageEntry.arrayUpdated(pageEntryKey);
             }
           } else {
             // reset the modified pages
-            dirtyPageNumberToOldData.forEach((pageArray, pageNumber) => {
-              this.pageEntries.get(pageNumber)?.forceSetData(pageArray);
-            });
+            for (const pageNumber of dirtyPageNumbers) {
+              const pageEntry = this.pageEntries.get(pageNumber);
+              assert(pageEntry);
+              const success = this.buildPageArray(pageNumber, pageEntry.array);
+              assert(success);
+            }
           }
         }
       }
