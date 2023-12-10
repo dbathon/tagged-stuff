@@ -43,6 +43,7 @@ export interface CountParameters {
 }
 
 export interface QueryParameters extends CountParameters {
+  // TODO asc/desc...
   orderBy?: Path[];
   limit?: number;
   offset?: number;
