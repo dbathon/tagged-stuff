@@ -1,4 +1,3 @@
-import { shallowReadonly, shallowRef, ShallowRef, triggerRef } from "vue";
 import { IndexPage } from "./internal/IndexPage";
 import { PageGroupPage, pageNumberToPageGroupNumber } from "./internal/PageGroupPage";
 import { Patch } from "./internal/Patch";
@@ -116,30 +115,30 @@ class PageEntryKey {
 
 class PageEntry {
   readonly array: Uint8Array;
-  readonly dataRef: ShallowRef<Uint8Array | undefined>;
-  readonly readonlyDataRef: Readonly<ShallowRef<Uint8Array | undefined>>;
-  /** Optional, if it is set, then it can be used to avoid rebuilding the data on refresh. */
-  pageEntryKey?: PageEntryKey;
+
+  /** Is set if the array is actually initialized from data from the backend pages. */
+  pageEntryKey: PageEntryKey | undefined = undefined;
+
+  readonly callbacks = new Set<() => void>();
 
   constructor(readonly pageNumber: number, pageSize: number) {
     assertValidPageNumber(pageNumber);
     this.array = new Uint8Array(pageSize);
-    this.dataRef = shallowRef();
-    this.readonlyDataRef = shallowReadonly(this.dataRef);
   }
 
   arrayUpdated(pageEntryKey: PageEntryKey) {
-    if (this.dataRef.value) {
-      // just trigger the dataRef
-      triggerRef(this.dataRef);
-    } else {
-      // set the dataRef.value initially
-      this.dataRef.value = this.array;
-    }
-
     this.pageEntryKey = pageEntryKey;
+
+    // trigger all the callbacks
+    this.callbacks.forEach((callback) => callback());
+  }
+
+  getArrayIfLoaded(): Uint8Array | undefined {
+    return this.pageEntryKey ? this.array : undefined;
   }
 }
+
+export type PageReadsRecorder = <R>(pageReader: (getPage: (pageNumber: number) => Uint8Array | undefined) => R) => R;
 
 const RESOLVED_PROMISE = Promise.resolve();
 
@@ -387,7 +386,7 @@ export class PageStore {
     }
   }
 
-  getPage(pageNumber: number): Readonly<ShallowRef<Uint8Array | undefined>> {
+  private getPageEntry(pageNumber: number): PageEntry {
     let pageEntry = this.pageEntries.get(pageNumber);
     if (!pageEntry) {
       pageEntry = new PageEntry(pageNumber, this.pageSize);
@@ -402,11 +401,70 @@ export class PageStore {
           pageEntry.arrayUpdated(pageEntryKey);
         }
       }
-      if (!pageEntry.dataRef.value) {
+      if (!pageEntry.pageEntryKey) {
         this.triggerLoad(pageNumber);
       }
     }
-    return pageEntry.readonlyDataRef;
+    return pageEntry;
+  }
+
+  getPage(pageNumber: number): Uint8Array | undefined {
+    return this.getPageEntry(pageNumber).getArrayIfLoaded();
+  }
+
+  /**
+   * This method returns a PageReadsRecorder, a function that allows doing one or more page gets/reads in a combined
+   * operation while recording exactly which pages were read. If any of those pages later changes, then the given
+   * pageChangeCallback is called.
+   *
+   * Each call to the PageReadsRecorder "resets" the list of recorded pages, so the pageChangeCallback is only called
+   * if pages that were read in the last invocation of the function change.
+   *
+   * To "deregister" the callback and avoid memory leaks just call the PageReadsRecorder once without doing any page
+   * reads.
+   *
+   * @param pageChangeCallback
+   *   the callback that will be called if any page, that was read in the last PageReadsRecorder invocation, changes
+   */
+  getPageReadsRecorder(pageChangeCallback: () => void): PageReadsRecorder {
+    // wrap the callback so we have a distinct identity (in case the caller reuses the callback function)
+    const wrappedCallBack: () => void = () => pageChangeCallback();
+    const currentPageEntries = new Map<number, { readonly entry: PageEntry; toggle: boolean }>();
+    // this is used to find no longer needed entries without needing a separate map copy every time
+    let currentToggle = false;
+    let active = false;
+    return (pageReader) => {
+      assert(!active, "already active");
+      active = true;
+      currentToggle = !currentToggle;
+
+      try {
+        const getPage = (pageNumber: number) => {
+          let entryWithToggle = currentPageEntries.get(pageNumber);
+          if (entryWithToggle) {
+            entryWithToggle.toggle = currentToggle;
+          } else {
+            const entry = this.getPageEntry(pageNumber);
+            entryWithToggle = { entry, toggle: currentToggle };
+            currentPageEntries.set(pageNumber, entryWithToggle);
+            entry.callbacks.add(wrappedCallBack);
+          }
+          return entryWithToggle.entry.getArrayIfLoaded();
+        };
+
+        return pageReader(getPage);
+      } finally {
+        // remove pages that were not toggled/read
+        currentPageEntries.forEach((entryWithToggle, pageNumber) => {
+          if (entryWithToggle.toggle != currentToggle) {
+            currentPageEntries.delete(pageNumber);
+            // also remove the callback
+            entryWithToggle.entry.callbacks.delete(wrappedCallBack);
+          }
+        });
+        active = false;
+      }
+    };
   }
 
   /**
@@ -432,10 +490,9 @@ export class PageStore {
     for (const pageNumber of dirtyPageNumbers) {
       const entry = this.pageEntries.get(pageNumber);
       assert(entry);
-      const data = entry.dataRef.value;
-      assert(data);
       const success = this.buildPageArray(pageNumber, oldPageData);
       assert(success);
+      const data = entry.array;
       const patches = Patch.createPatches(oldPageData, data, data.length);
       if (patches.length) {
         changes = true;
@@ -572,7 +629,7 @@ export class PageStore {
         try {
           try {
             const get = (pageNumber: number): Uint8Array => {
-              const result = this.getPage(pageNumber).value;
+              const result = this.getPage(pageNumber);
               if (!result) {
                 throw new RetryRequiredError("page is not loaded");
               }

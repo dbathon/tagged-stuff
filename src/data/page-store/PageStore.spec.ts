@@ -38,22 +38,22 @@ describe("PageStore", () => {
       const backend = new InMemoryPageStoreBackend(PAGE_SIZE);
       const store = new PageStore(backend);
       expect(store.loading).toBe(false);
-      const page0 = store.getPage(0);
-      const page2 = store.getPage(2);
-      expect(page0.value).toBe(undefined);
-      expect(page2.value).toBe(undefined);
+      expect(store.getPage(0)).toBe(undefined);
+      expect(store.getPage(2)).toBe(undefined);
 
       expect(store.loading).toBe(true);
       await store.loadingFinished();
       expect(store.loading).toBe(false);
 
-      expect(page0.value![0]).toBe(0);
-      expect(page0.value![1]).toBe(0);
-      expect(page0.value![5]).toBe(0);
-      expect(page0.value![store.pageSize - 1]).toBe(0);
-      expect(page0.value![store.pageSize]).toBe(undefined);
+      const page0 = store.getPage(0);
+      const page2 = store.getPage(2);
+      expect(page0?.[0]).toBe(0);
+      expect(page0?.[1]).toBe(0);
+      expect(page0?.[5]).toBe(0);
+      expect(page0?.[store.pageSize - 1]).toBe(0);
+      expect(page0?.[store.pageSize]).toBe(undefined);
 
-      expect(page2.value![5]).toBe(0);
+      expect(page2?.[5]).toBe(0);
     });
   });
 
@@ -72,75 +72,86 @@ describe("PageStore", () => {
     test("should work if there are no conflicts", async () => {
       const backend = new InMemoryPageStoreBackend(PAGE_SIZE);
       const store = new PageStore(backend);
-      const page0 = store.getPage(0);
+      // trigger load
+      store.getPage(0);
       await store.loadingFinished();
 
       const store2 = new PageStore(backend);
-      const store2Page0 = store2.getPage(0);
+      // trigger load
+      store2.getPage(0);
       await store2.loadingFinished();
 
-      expect(page0.value?.[0]).toBe(0);
-      expect(page0.value?.[1]).toBe(0);
-      expect(store2Page0.value?.[0]).toBe(0);
-      expect(store2Page0.value?.[1]).toBe(0);
+      const page0 = store.getPage(0);
+      const store2Page0 = store2.getPage(0);
+
+      expect(page0?.[0]).toBe(0);
+      expect(page0?.[1]).toBe(0);
+      expect(store2Page0?.[0]).toBe(0);
+      expect(store2Page0?.[1]).toBe(0);
 
       const result = await store.runTransaction((pageAccess) => {
         pageAccess.getForUpdate(0)[0] = 42;
 
-        expect(page0.value?.[0]).toBe(42);
-        expect(page0.value?.[1]).toBe(0);
-        expect(store2Page0.value?.[0]).toBe(0);
-        expect(store2Page0.value?.[1]).toBe(0);
+        expect(page0?.[0]).toBe(42);
+        expect(page0?.[1]).toBe(0);
+        expect(store2Page0?.[0]).toBe(0);
+        expect(store2Page0?.[1]).toBe(0);
       });
 
       expect(result.committed).toBe(true);
 
-      expect(page0.value?.[0]).toBe(42);
-      expect(page0.value?.[1]).toBe(0);
-      expect(store2Page0.value?.[0]).toBe(0);
-      expect(store2Page0.value?.[1]).toBe(0);
+      expect(page0?.[0]).toBe(42);
+      expect(page0?.[1]).toBe(0);
+      expect(store2Page0?.[0]).toBe(0);
+      expect(store2Page0?.[1]).toBe(0);
 
       store2.refresh();
       await store2.loadingFinished();
-      expect(store2Page0.value?.[0]).toBe(42);
-      expect(store2Page0.value?.[1]).toBe(0);
+      expect(store2Page0?.[0]).toBe(42);
+      expect(store2Page0?.[1]).toBe(0);
     });
 
     test("should fail if there are conflicts", async () => {
       const backend = new InMemoryPageStoreBackend(PAGE_SIZE);
       const store = new PageStore(backend);
-      const page0 = store.getPage(0);
-      const page1 = store.getPage(1);
+      // trigger load
+      store.getPage(0);
+      store.getPage(1);
       await store.loadingFinished();
 
       const store2 = new PageStore(backend);
-      const store2Page0 = store2.getPage(0);
+      // trigger load
+      store2.getPage(0);
       await store2.loadingFinished();
 
-      expect(uint8ArraysEqual(page0.value!, new Uint8Array(store.pageSize))).toBe(true);
-      expect(uint8ArraysEqual(page1.value!, new Uint8Array(store.pageSize))).toBe(true);
+      const page0 = store.getPage(0);
+      const page1 = store.getPage(1);
+      const store2Page0 = store2.getPage(0);
+
+      expect(uint8ArraysEqual(page0!, new Uint8Array(store.pageSize))).toBe(true);
+      expect(uint8ArraysEqual(page1!, new Uint8Array(store.pageSize))).toBe(true);
 
       {
         const result = await store.runTransaction((pageAccess) => {
           pageAccess.getForUpdate(0)[0] = 42;
 
-          expect(page0.value?.[0]).toBe(42);
+          expect(page0?.[0]).toBe(42);
         });
         expect(result.committed).toBe(true);
       }
-      expect(page0.value?.[0]).toBe(42);
+      expect(page0?.[0]).toBe(42);
 
       // commit without retry in store2 should fail
-      expect(store2Page0.value?.[0]).toBe(0);
+      expect(store2Page0?.[0]).toBe(0);
       {
         const result = await store2.runTransaction((pageAccess) => {
           pageAccess.getForUpdate(0)[0] = 43;
 
-          expect(store2Page0.value?.[0]).toBe(43);
+          expect(store2Page0?.[0]).toBe(43);
         }, 0);
         expect(result.committed).toBe(false);
       }
-      expect(store2Page0.value?.[0]).toBe(0);
+      expect(store2Page0?.[0]).toBe(0);
 
       store2.refresh();
       await store2.loadingFinished();
@@ -150,14 +161,14 @@ describe("PageStore", () => {
         const result = await store2.runTransaction((pageAccess) => {
           pageAccess.getForUpdate(0)[0] = 43;
 
-          expect(store2Page0.value?.[0]).toBe(43);
+          expect(store2Page0?.[0]).toBe(43);
         }, 0);
         expect(result.committed).toBe(true);
       }
-      expect(store2Page0.value?.[0]).toBe(43);
+      expect(store2Page0?.[0]).toBe(43);
 
       // and with retry should also work (back in the first store)
-      expect(page0.value?.[0]).toBe(42);
+      expect(page0?.[0]).toBe(42);
       const seenPrevValues: number[] = [];
       {
         const result = await store.runTransaction((pageAccess) => {
@@ -165,11 +176,11 @@ describe("PageStore", () => {
           seenPrevValues.push(pageArray[0]);
           pageArray[0] = 44;
 
-          expect(page0.value?.[0]).toBe(44);
+          expect(page0?.[0]).toBe(44);
         });
         expect(result.committed).toBe(true);
       }
-      expect(page0.value?.[0]).toBe(44);
+      expect(page0?.[0]).toBe(44);
       expect(seenPrevValues).toStrictEqual([42, 43]);
     });
 
@@ -188,12 +199,13 @@ describe("PageStore", () => {
       expect(result.committed).toBe(true);
 
       for (let i = 0; i < pageCount; i++) {
-        expectEqualsFillRandom(store.getPage(i).value!, writeCount, i + 1);
+        expectEqualsFillRandom(store.getPage(i)!, writeCount, i + 1);
       }
 
       const store2 = new PageStore(backend);
       for (let i = 0; i < pageCount; i++) {
-        const page = store2.getPage(i);
+        // trigger load
+        store2.getPage(i);
         if (i === 0) {
           expect(store2.loading).toBe(true);
           await store2.loadingFinished();
@@ -201,7 +213,7 @@ describe("PageStore", () => {
           // no more loading needed
           expect(store2.loading).toBe(false);
         }
-        expectEqualsFillRandom(page.value!, writeCount, i + 1);
+        expectEqualsFillRandom(store2.getPage(i)!, writeCount, i + 1);
       }
 
       // load pages after the first page group, those should also not require more loading
@@ -229,14 +241,15 @@ describe("PageStore", () => {
       expect(result.committed).toBe(true);
 
       for (let i = 0; i < pageCount; i++) {
-        expectEqualsFillRandom(store.getPage(i).value!, writeCount, i + 1);
+        expectEqualsFillRandom(store.getPage(i)!, writeCount, i + 1);
       }
 
       const store2 = new PageStore(backend);
       for (let i = 0; i < pageCount; i++) {
-        const page = store2.getPage(i);
+        // trigger load if necessary
+        store2.getPage(i);
         await store2.loadingFinished();
-        expectEqualsFillRandom(page.value!, writeCount, i + 1);
+        expectEqualsFillRandom(store2.getPage(i)!, writeCount, i + 1);
       }
 
       expect(backend.pages.size).toBeGreaterThan(1);
@@ -260,14 +273,15 @@ describe("PageStore", () => {
       expect(result.committed).toBe(true);
 
       for (let i = 0; i < pageCount; i++) {
-        expectEqualsFillRandom(store.getPage(i).value!, writeCount, i + 1);
+        expectEqualsFillRandom(store.getPage(i)!, writeCount, i + 1);
       }
 
       const store2 = new PageStore(backend);
       for (let i = 0; i < pageCount; i++) {
-        const page = store2.getPage(i);
+        // trigger load if necessary
+        store2.getPage(i);
         await store2.loadingFinished();
-        expectEqualsFillRandom(page.value!, writeCount, i + 1);
+        expectEqualsFillRandom(store2.getPage(i)!, writeCount, i + 1);
       }
 
       expect(backend.pages.size).toBeGreaterThan(1);
@@ -288,9 +302,10 @@ describe("PageStore", () => {
 
       store2.refresh();
       for (let i = 0; i < pageCount; i++) {
-        const page = store2.getPage(i);
+        // trigger load if necessary
+        store2.getPage(i);
         await store2.loadingFinished();
-        expectEqualsFillRandom(page.value!, writeCount, i + 1000);
+        expectEqualsFillRandom(store2.getPage(i)!, writeCount, i + 1000);
       }
     });
   });
