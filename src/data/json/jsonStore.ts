@@ -34,18 +34,15 @@ import {
 /** Some magic number to mark a page store as a json store. */
 const MAGIC_NUMBER_V1 = 1983760274;
 
-const FREE_LIST_ROOT_PAGE_NUMBER = 1;
-const TABLES_ROOT_PAGE_NUMBER = 2;
-
+/** Page 0 is just used for the "magic number" */
+const MAGIC_NUMBER_PAGE_NUMBER = 0;
 /**
- * 0 page has (all uint32 uncompressed):
- *  magic number
- *  max allocated page
+ * Page 1 used for the "max allocated page number". This is separate from page 0 to avoid allocating a new page
+ * triggers "all" queries to re-run (because they will all read page 0).
  */
-
-// offsets of values on the zero page
-const MAGIC_NUMBER_OFFSET = 0 << 2;
-const MAX_ALLOCATED_OFFSET = 1 << 2;
+const MAX_ALLOCATED_PAGE_NUMBER = 1;
+const FREE_LIST_ROOT_PAGE_NUMBER = 2;
+const TABLES_ROOT_PAGE_NUMBER = 3;
 
 const UINT32_TUPLE = ["uint32"] as const;
 const UINT32_UINT32_TUPLE = ["uint32", "uint32"] as const;
@@ -118,9 +115,9 @@ function toPageProviderForWrite(pageAccess: PageAccessDuringTransaction): PagePr
         }
       }
 
-      const zeroPage = uint8ArrayToDataView(pageAccess.getForUpdate(0));
-      const nextPageNumber = zeroPage.getUint32(MAX_ALLOCATED_OFFSET) + 1;
-      zeroPage.setUint32(MAX_ALLOCATED_OFFSET, nextPageNumber);
+      const maxAllocatedPage = uint8ArrayToDataView(pageAccess.getForUpdate(MAX_ALLOCATED_PAGE_NUMBER));
+      const nextPageNumber = maxAllocatedPage.getUint32(0) + 1;
+      maxAllocatedPage.setUint32(0, nextPageNumber);
       return nextPageNumber;
     },
     releasePage(pageNumber) {
@@ -140,7 +137,7 @@ function toPageProviderForWrite(pageAccess: PageAccessDuringTransaction): PagePr
 }
 
 function isInitialized(pageAccess: PageAccessNotUndefined): boolean {
-  const zeroPage = pageAccess(0);
+  const zeroPage = pageAccess(MAGIC_NUMBER_PAGE_NUMBER);
   const magic = ((zeroPage[0] << 24) | (zeroPage[1] << 16) | (zeroPage[2] << 8) | zeroPage[3]) >>> 0;
   if (magic === 0) {
     // assume it is an entirely uninitialized/unused page store...
@@ -541,10 +538,10 @@ export function countJson(pageAccess: PageAccess, countParameters: CountParamete
 
 function initializeIfNecessary(pageAccess: PageAccessDuringTransaction): void {
   if (!isInitialized(pageAccess.get)) {
-    const zeroPage = uint8ArrayToDataView(pageAccess.getForUpdate(0));
-    zeroPage.setUint32(MAGIC_NUMBER_OFFSET, MAGIC_NUMBER_V1);
+    const zeroPage = uint8ArrayToDataView(pageAccess.getForUpdate(MAGIC_NUMBER_PAGE_NUMBER));
+    zeroPage.setUint32(0, MAGIC_NUMBER_V1);
 
-    let maxAllocated = 0;
+    let maxAllocated = MAX_ALLOCATED_PAGE_NUMBER;
     const initPageProvider: PageProviderForWrite = {
       getPage: (pageNumber: number) => pageAccess.get(pageNumber),
       getPageForUpdate: (pageNumber: number) => pageAccess.getForUpdate(pageNumber),
@@ -557,11 +554,16 @@ function initializeIfNecessary(pageAccess: PageAccessDuringTransaction): void {
     const rootPageOne = allocateAndInitBtreeRootPage(initPageProvider);
     const rootPageTwo = allocateAndInitBtreeRootPage(initPageProvider);
 
-    if (rootPageOne !== FREE_LIST_ROOT_PAGE_NUMBER || rootPageTwo !== TABLES_ROOT_PAGE_NUMBER || maxAllocated !== 2) {
+    if (
+      rootPageOne !== FREE_LIST_ROOT_PAGE_NUMBER ||
+      rootPageTwo !== TABLES_ROOT_PAGE_NUMBER ||
+      maxAllocated !== TABLES_ROOT_PAGE_NUMBER
+    ) {
       throw new Error("init failed");
     }
 
-    zeroPage.setUint32(MAX_ALLOCATED_OFFSET, maxAllocated);
+    const maxAllocatedPage = uint8ArrayToDataView(pageAccess.getForUpdate(MAX_ALLOCATED_PAGE_NUMBER));
+    maxAllocatedPage.setUint32(0, maxAllocated);
   }
 }
 
