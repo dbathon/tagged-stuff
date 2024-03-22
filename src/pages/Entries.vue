@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { reactive, ref } from "@vue/reactivity";
-import { computed } from "@vue/runtime-core";
+import { reactive, ref } from "vue";
+import { computed } from "vue";
 import { CachingDataStoreBackend } from "../shared/caching-data-store-backend";
 import { DataStore } from "../shared/data-store";
 import type { DataStoreBackend } from "../shared/data-store";

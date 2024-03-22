@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BTreeNode } from "../shared/remote-b-tree";
 import { BTreeSet } from "../shared/b-tree-set";
-import { ref } from "@vue/reactivity";
+import { ref } from "vue";
 
 async function testBTree() {
   const nodes: BTreeNode[] = [

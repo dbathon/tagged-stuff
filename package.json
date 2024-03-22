@@ -17,9 +17,11 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^3.2.0",
     "prettier": "^2.7.1",
+    "sass": "^1.72.0",
     "typescript": "^4.6.4",
     "vite": "^3.2.0",
     "vitest": "^0.27.1",
     "vue-tsc": "^1.0.9"
-  }
+  },
+  "packageManager": "pnpm@8.15.5+sha1.a58c038faac410c947dbdb93eb30994037d0fce2"
 }
