@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { InMemoryPageStoreBackend } from "./InMemoryPageStoreBackend";
 import { PageStore } from "./PageStore";
-import { uint8ArraysEqual } from "../uint8-array/uint8ArraysEqual";
+import { uint8ArraysEqual } from "shared-util";
 
 const PAGE_SIZE = 8192;
 

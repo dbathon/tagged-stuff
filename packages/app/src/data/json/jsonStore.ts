@@ -9,11 +9,16 @@ import {
   scanBtreeEntries,
 } from "../btree/btree";
 import { type PageProviderForWrite } from "../btree/pageProvider";
-import { assert } from "../misc/assert";
 import { type PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
-import { Uint8ArraySet } from "../uint8-array/Uint8ArraySet";
-import { getTupleByteLength, readTuple, tupleToUint8Array, writeTuple } from "../uint8-array/tuple";
-import { uint8ArrayToDataView } from "../uint8-array/uint8ArrayToDataView";
+import {
+  assert,
+  Uint8ArraySet,
+  getTupleByteLength,
+  readTuple,
+  tupleToUint8Array,
+  writeTuple,
+  uint8ArrayToDataView,
+} from "shared-util";
 import { compareJsonPrimitives } from "./internal/compareJsonPrimitives";
 import { buildIndexEntries, updateIndexForJson } from "./internal/indexing";
 import {

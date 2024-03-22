@@ -1,4 +1,4 @@
-import { compareUint8Arrays } from "../uint8-array/compareUint8Arrays";
+import { compareUint8Arrays, isPrefixOfUint8Array, assert } from "shared-util";
 import {
   containsPageEntry,
   getEntryNumberOfPageEntry,
@@ -13,8 +13,6 @@ import {
   scanPageEntriesReverse,
 } from "../page-entries/pageEntries";
 import { type PageProvider, type PageProviderForWrite } from "./pageProvider";
-import { isPrefixOfUint8Array } from "../uint8-array/isPrefixOfUint8Array";
-import { assert } from "../misc/assert";
 
 /**
  * The functions in this file allow treating "pages" (Uint8Arrays) as nodes of a B+-tree.

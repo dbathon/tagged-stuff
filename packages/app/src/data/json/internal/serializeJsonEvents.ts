@@ -1,12 +1,12 @@
-import { assert } from "../../misc/assert";
 import {
+  assert,
   getCompressedFloat64ByteLength,
   readCompressedFloat64,
   writeCompressedFloat64,
-} from "../../uint8-array/compressedFloat64";
-import { readCompressedUint32 } from "../../uint8-array/compressedUint32";
-import { writeCompressedUint32 } from "../../uint8-array/compressedUint32";
-import { getCompressedUint32ByteLength } from "../../uint8-array/compressedUint32";
+  readCompressedUint32,
+  writeCompressedUint32,
+  getCompressedUint32ByteLength,
+} from "shared-util";
 import {
   type BaseJsonEvent,
   JSON_NUMBER,

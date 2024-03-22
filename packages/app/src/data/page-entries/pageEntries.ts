@@ -1,5 +1,4 @@
-import { assert } from "../misc/assert";
-import { compareUint8Arrays } from "../uint8-array/compareUint8Arrays";
+import { assert, compareUint8Arrays } from "shared-util";
 
 /**
  * The functions in this file allow treating "page data" (Uint8Array) like a sorted set of byte arrays (of up to 2000

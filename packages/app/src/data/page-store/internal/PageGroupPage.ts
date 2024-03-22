@@ -1,4 +1,4 @@
-import { uint8ArrayToDataView } from "../../uint8-array/uint8ArrayToDataView";
+import { uint8ArrayToDataView } from "shared-util";
 import { MetaPageWithPatches } from "./MetaPageWithPatches";
 import { readUint48FromDataView, writeUint48toDataView } from "./util";
 

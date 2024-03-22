@@ -17,6 +17,9 @@ importers:
       idb:
         specifier: ^7.1.1
         version: 7.1.1
+      shared-util:
+        specifier: workspace:^
+        version: link:../shared-util
       vue:
         specifier: ^3.4.21
         version: 3.4.21(typescript@5.4.3)
@@ -54,6 +57,15 @@ importers:
       vue-tsc:
         specifier: ^2.0.6
         version: 2.0.7(typescript@5.4.3)
+
+  packages/shared-util:
+    devDependencies:
+      typescript:
+        specifier: ~5.4.0
+        version: 5.4.3
+      vitest:
+        specifier: ^1.4.0
+        version: 1.4.0(@types/node@20.11.30)(sass@1.72.0)
 
 packages:
 

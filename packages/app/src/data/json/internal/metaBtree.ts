@@ -5,10 +5,7 @@ import {
   insertBtreeEntry,
 } from "../../btree/btree";
 import { type PageProvider, type PageProviderForWrite } from "../../btree/pageProvider";
-import { assert } from "../../misc/assert";
-import { murmurHash3_x86_32 } from "../../misc/murmurHash3";
-import { readTuple, tupleToUint8Array } from "../../uint8-array/tuple";
-import { uint8ArraysEqual } from "../../uint8-array/uint8ArraysEqual";
+import { assert, murmurHash3_x86_32, readTuple, tupleToUint8Array, uint8ArraysEqual } from "shared-util";
 import { type JsonPath, type JsonPathKey } from "../jsonEvents";
 
 /**

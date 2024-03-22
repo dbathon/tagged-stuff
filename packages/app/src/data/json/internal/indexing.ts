@@ -1,10 +1,14 @@
 import { findFirstBtreeEntryWithPrefix, insertBtreeEntry, removeBtreeEntry } from "../../btree/btree";
 import { type PageProviderForWrite } from "../../btree/pageProvider";
-import { assert } from "../../misc/assert";
-import { Uint8ArraySet } from "../../uint8-array/Uint8ArraySet";
-import { readBitset32, writeBitset32 } from "../../uint8-array/bitset32";
-import { getCompressedUint32ByteLength, writeCompressedUint32 } from "../../uint8-array/compressedUint32";
-import { writeOrderPreservingFloat39 } from "../../uint8-array/orderPreservingFloat39";
+import {
+  assert,
+  Uint8ArraySet,
+  readBitset32,
+  writeBitset32,
+  getCompressedUint32ByteLength,
+  writeCompressedUint32,
+  writeOrderPreservingFloat39,
+} from "shared-util";
 import {
   JSON_FALSE,
   JSON_NULL,

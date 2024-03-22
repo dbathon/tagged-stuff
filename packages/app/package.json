@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "idb": "^7.1.1",
+    "shared-util": "workspace:^",
     "vue": "^3.4.21",
     "vue-router": "^4.3.0"
   },

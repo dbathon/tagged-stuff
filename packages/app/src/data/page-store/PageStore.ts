@@ -4,8 +4,7 @@ import { Patch } from "./internal/Patch";
 import { readUint48FromDataView, writeUint48toDataView } from "./internal/util";
 import { type PageAccessDuringTransaction } from "./PageAccessDuringTransaction";
 import { type BackendPageAndVersion, type BackendPageToStore, type PageStoreBackend } from "./PageStoreBackend";
-import { uint8ArrayToDataView } from "../uint8-array/uint8ArrayToDataView";
-import { assert } from "../misc/assert";
+import { uint8ArrayToDataView, assert } from "shared-util";
 
 // require at least 4KB
 const MIN_PAGE_SIZE = 1 << 12;

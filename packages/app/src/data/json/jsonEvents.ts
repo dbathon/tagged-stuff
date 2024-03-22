@@ -1,4 +1,4 @@
-import { assert } from "../misc/assert";
+import { assert } from "shared-util";
 
 /**
  * The functions in this file allow producing an "event stream" from a JSON value and then in reverse also allow
