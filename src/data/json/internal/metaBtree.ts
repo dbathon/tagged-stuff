@@ -4,12 +4,12 @@ import {
   findLastBtreeEntry,
   insertBtreeEntry,
 } from "../../btree/btree";
-import { PageProvider, PageProviderForWrite } from "../../btree/pageProvider";
+import { type PageProvider, type PageProviderForWrite } from "../../btree/pageProvider";
 import { assert } from "../../misc/assert";
 import { murmurHash3_x86_32 } from "../../misc/murmurHash3";
 import { readTuple, tupleToUint8Array } from "../../uint8-array/tuple";
 import { uint8ArraysEqual } from "../../uint8-array/uint8ArraysEqual";
-import { JsonPath, JsonPathKey } from "../jsonEvents";
+import { type JsonPath, type JsonPathKey } from "../jsonEvents";
 
 /**
  * TODO

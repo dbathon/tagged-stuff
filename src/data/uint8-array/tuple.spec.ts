@@ -1,5 +1,12 @@
 import { expect, test } from "vitest";
-import { getTupleByteLength, readTuple, tupleToUint8Array, TupleType, TupleTypeDefinition, writeTuple } from "./tuple";
+import {
+  getTupleByteLength,
+  readTuple,
+  tupleToUint8Array,
+  type TupleType,
+  type TupleTypeDefinition,
+  writeTuple,
+} from "./tuple";
 
 function testTuple<T extends TupleTypeDefinition>(tupleType: T, values: TupleType<T>) {
   const length = getTupleByteLength(tupleType, values);

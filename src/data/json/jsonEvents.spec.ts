@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildJsonFromEvents, Json, JsonEvent, produceJsonEvents } from "./jsonEvents";
+import { buildJsonFromEvents, type Json, type JsonEvent, produceJsonEvents } from "./jsonEvents";
 
 describe("jsonEvents", () => {
   const testValues: Json[] = [

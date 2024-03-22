@@ -1,4 +1,4 @@
-import { DataDocument, DataStoreBackend, StoreDocument } from "./data-store";
+import { type DataDocument, type DataStoreBackend, type StoreDocument } from "./data-store";
 import { JdsClient } from "./jds-client";
 
 export class JdsDataStoreBackend implements DataStoreBackend {

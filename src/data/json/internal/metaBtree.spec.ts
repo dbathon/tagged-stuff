@@ -1,8 +1,13 @@
 import { expect, test } from "vitest";
 import { allocateAndInitBtreeRootPage } from "../../btree/btree";
-import { PageProviderForWrite } from "../../btree/pageProvider";
-import { JsonPath } from "../jsonEvents";
-import { JsonPathToNumberCache, NumberToJsonPathCache, jsonPathToNumber, numberToJsonPath } from "./metaBtree";
+import { type PageProviderForWrite } from "../../btree/pageProvider";
+import { type JsonPath } from "../jsonEvents";
+import {
+  type JsonPathToNumberCache,
+  type NumberToJsonPathCache,
+  jsonPathToNumber,
+  numberToJsonPath,
+} from "./metaBtree";
 
 function createPageProviderForWrite(pageSize: number): PageProviderForWrite {
   const pages: Uint8Array[] = [];

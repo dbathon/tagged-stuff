@@ -1,4 +1,4 @@
-import { DataDocument, DataStoreBackend, StoreDocument } from "./data-store";
+import { type DataDocument, type DataStoreBackend, type StoreDocument } from "./data-store";
 import { decodeBytes, encodeBytes } from "./encode-bytes";
 
 // used to "mark" an encrypted store document and try to avoid accidental use as an unencrypted store document

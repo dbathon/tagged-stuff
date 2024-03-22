@@ -1,5 +1,5 @@
-import { DBSchema, IDBPDatabase, openDB } from "idb";
-import { DataDocument, DataStoreBackend, StoreDocument } from "./data-store";
+import { type DBSchema, type IDBPDatabase, openDB } from "idb";
+import { type DataDocument, type DataStoreBackend, type StoreDocument } from "./data-store";
 
 interface CacheEntry {
   document: DataDocument;

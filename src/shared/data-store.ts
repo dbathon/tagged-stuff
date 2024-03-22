@@ -1,7 +1,7 @@
-import { Document } from "./document";
+import { type Document } from "./document";
 import { encodeBytes } from "./encode-bytes";
 import { ReadWriteLock } from "./read-write-lock";
-import { BTreeModificationResult, BTreeNode, RemoteBTree } from "./remote-b-tree";
+import { BTreeModificationResult, type BTreeNode, RemoteBTree } from "./remote-b-tree";
 import { FALSE_RESULT, Result, TRUE_RESULT } from "./result";
 
 export class ConflictError extends Error {

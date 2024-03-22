@@ -1,4 +1,4 @@
-import { JsonPathKey } from "./jsonEvents";
+import { type JsonPathKey } from "./jsonEvents";
 
 export type JsonPrimitiveWithRange = number | string;
 export type JsonPrimitive = JsonPrimitiveWithRange | boolean | null;

@@ -1,4 +1,4 @@
-import { BTreeModificationResult, BTreeNode, BTreeScanConsumer, RemoteBTree } from "./remote-b-tree";
+import { BTreeModificationResult, type BTreeNode, type BTreeScanConsumer, RemoteBTree } from "./remote-b-tree";
 import { FALSE_RESULT, Result, TRUE_RESULT } from "./result";
 
 export class BTreeSet {

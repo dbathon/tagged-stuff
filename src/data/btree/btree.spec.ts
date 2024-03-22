@@ -5,7 +5,7 @@ import {
   allocateAndInitBtreeRootPage,
   checkBtreeIntegrity,
   countBtreeEntries,
-  EntriesRange,
+  type EntriesRange,
   findAllBtreeEntriesWithPrefix,
   findFirstBtreeEntry,
   findFirstBtreeEntryWithPrefix,
@@ -15,7 +15,7 @@ import {
   scanBtreeEntries,
   scanBtreeEntriesReverse,
 } from "./btree";
-import { PageProvider, PageProviderForWrite } from "./pageProvider";
+import { type PageProvider, type PageProviderForWrite } from "./pageProvider";
 
 function leafPage(entries: number[][], pageSize: number): Uint8Array {
   const pageArray = new Uint8Array(pageSize);

@@ -8,27 +8,38 @@ import {
   removeBtreeEntry,
   scanBtreeEntries,
 } from "../btree/btree";
-import { PageProviderForWrite } from "../btree/pageProvider";
+import { type PageProviderForWrite } from "../btree/pageProvider";
 import { assert } from "../misc/assert";
-import { PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
+import { type PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
 import { Uint8ArraySet } from "../uint8-array/Uint8ArraySet";
 import { getTupleByteLength, readTuple, tupleToUint8Array, writeTuple } from "../uint8-array/tuple";
 import { uint8ArrayToDataView } from "../uint8-array/uint8ArrayToDataView";
 import { compareJsonPrimitives } from "./internal/compareJsonPrimitives";
 import { buildIndexEntries, updateIndexForJson } from "./internal/indexing";
-import { JsonPathToNumberCache, NumberToJsonPathCache, jsonPathToNumber, numberToJsonPath } from "./internal/metaBtree";
-import { deserializeJsonEvents, serializeJsonEvents } from "./internal/serializeJsonEvents";
-import { buildJsonFromEvents, FullJsonEvent, JSON_EMPTY_OBJECT, JsonPath, produceJsonEvents } from "./jsonEvents";
 import {
-  CountParameters,
-  FilterCondition,
-  JsonPrimitive,
-  Operator,
-  Path,
-  PathArray,
-  ProjectionType,
-  QueryParameters,
-  QueryResult,
+  type JsonPathToNumberCache,
+  type NumberToJsonPathCache,
+  jsonPathToNumber,
+  numberToJsonPath,
+} from "./internal/metaBtree";
+import { deserializeJsonEvents, serializeJsonEvents } from "./internal/serializeJsonEvents";
+import {
+  buildJsonFromEvents,
+  type FullJsonEvent,
+  JSON_EMPTY_OBJECT,
+  type JsonPath,
+  produceJsonEvents,
+} from "./jsonEvents";
+import {
+  type CountParameters,
+  type FilterCondition,
+  type JsonPrimitive,
+  type Operator,
+  type Path,
+  type PathArray,
+  type ProjectionType,
+  type QueryParameters,
+  type QueryResult,
 } from "./queryTypes";
 
 /** Some magic number to mark a page store as a json store. */
@@ -448,7 +459,8 @@ function buildFilterPredicate(filterCondition: FilterCondition): (jsonValue: unk
     let operator: string;
     let argument: unknown;
 
-    if (filterCondition.length === 2) {
+    const length = filterCondition.length;
+    if (length === 2) {
       const pathAndOperator = filterCondition[0];
       assert(typeof pathAndOperator === "string");
       const spaceIndex = pathAndOperator.lastIndexOf(" ");
@@ -457,14 +469,14 @@ function buildFilterPredicate(filterCondition: FilterCondition): (jsonValue: unk
       operator = pathAndOperator.substring(spaceIndex + 1);
       argument = filterCondition[1];
     } else {
-      assert(filterCondition.length >= 3);
+      assert(length >= 3);
       const pathParts = filterCondition.slice(0, -2);
       assert((pathParts as unknown[]).every((part) => typeof part === "string" || part === 0));
       pathArray = pathParts as PathArray;
-      const tempOperator = filterCondition.at(-2);
+      const tempOperator = filterCondition[length - 2];
       assert(typeof tempOperator === "string");
       operator = tempOperator;
-      argument = filterCondition.at(-1);
+      argument = filterCondition[length - 1];
     }
 
     const operatorFunction = OPERATOR_FUNCTIONS.get(operator as Operator);

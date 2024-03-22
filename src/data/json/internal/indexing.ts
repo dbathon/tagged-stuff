@@ -1,5 +1,5 @@
 import { findFirstBtreeEntryWithPrefix, insertBtreeEntry, removeBtreeEntry } from "../../btree/btree";
-import { PageProviderForWrite } from "../../btree/pageProvider";
+import { type PageProviderForWrite } from "../../btree/pageProvider";
 import { assert } from "../../misc/assert";
 import { Uint8ArraySet } from "../../uint8-array/Uint8ArraySet";
 import { readBitset32, writeBitset32 } from "../../uint8-array/bitset32";
@@ -11,7 +11,7 @@ import {
   JSON_NUMBER,
   JSON_STRING,
   JSON_TRUE,
-  NumericJsonEvent,
+  type NumericJsonEvent,
   getJsonPathAndTypeNumber,
 } from "../jsonEvents";
 

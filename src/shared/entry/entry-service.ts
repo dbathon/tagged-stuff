@@ -1,6 +1,6 @@
 import { AbstractDocumentService } from "../abstract-document-service";
 import { DataStore } from "../data-store";
-import { Entry } from "./entry";
+import { type Entry } from "./entry";
 
 export class EntryService extends AbstractDocumentService<Entry> {
   protected readonly typeName = "entry";

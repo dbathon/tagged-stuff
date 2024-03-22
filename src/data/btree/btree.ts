@@ -12,7 +12,7 @@ import {
   scanPageEntries,
   scanPageEntriesReverse,
 } from "../page-entries/pageEntries";
-import { PageProvider, PageProviderForWrite } from "./pageProvider";
+import { type PageProvider, type PageProviderForWrite } from "./pageProvider";
 import { isPrefixOfUint8Array } from "../uint8-array/isPrefixOfUint8Array";
 import { assert } from "../misc/assert";
 

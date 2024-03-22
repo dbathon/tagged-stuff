@@ -1,7 +1,7 @@
-import { computed, ComputedRef, onScopeDispose, ref } from "vue";
+import { computed, type ComputedRef, onScopeDispose, ref } from "vue";
 import { queryJson } from "../../data/json/jsonStore";
 import { PageStore } from "../../data/page-store/PageStore";
-import { QueryParameters } from "../../data/json/queryTypes";
+import { type QueryParameters } from "../../data/json/queryTypes";
 
 export function useJsonQuery<T extends object>(
   pageStore: PageStore,

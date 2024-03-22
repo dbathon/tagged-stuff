@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
-import { PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
+import { type PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
 import { countJson, deleteJson, queryJson, saveJson } from "./jsonStore";
-import { QueryParameters } from "./queryTypes";
+import { type QueryParameters } from "./queryTypes";
 
 function createPageAccess(pageSize: number): PageAccessDuringTransaction {
   const pages = new Map<number, Uint8Array>();

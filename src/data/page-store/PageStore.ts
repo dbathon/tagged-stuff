@@ -2,8 +2,8 @@ import { IndexPage } from "./internal/IndexPage";
 import { PageGroupPage, pageNumberToPageGroupNumber } from "./internal/PageGroupPage";
 import { Patch } from "./internal/Patch";
 import { readUint48FromDataView, writeUint48toDataView } from "./internal/util";
-import { PageAccessDuringTransaction } from "./PageAccessDuringTransaction";
-import { BackendPageAndVersion, BackendPageToStore, PageStoreBackend } from "./PageStoreBackend";
+import { type PageAccessDuringTransaction } from "./PageAccessDuringTransaction";
+import { type BackendPageAndVersion, type BackendPageToStore, type PageStoreBackend } from "./PageStoreBackend";
 import { uint8ArrayToDataView } from "../uint8-array/uint8ArrayToDataView";
 import { assert } from "../misc/assert";
 

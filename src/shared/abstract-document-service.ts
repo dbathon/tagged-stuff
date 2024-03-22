@@ -1,5 +1,5 @@
 import { DataStore } from "./data-store";
-import { Document } from "./document";
+import { type Document } from "./document";
 
 export abstract class AbstractDocumentService<D extends Document> {
   constructor(protected readonly dataStore: DataStore) {}

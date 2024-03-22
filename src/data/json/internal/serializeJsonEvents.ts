@@ -8,10 +8,10 @@ import { readCompressedUint32 } from "../../uint8-array/compressedUint32";
 import { writeCompressedUint32 } from "../../uint8-array/compressedUint32";
 import { getCompressedUint32ByteLength } from "../../uint8-array/compressedUint32";
 import {
-  BaseJsonEvent,
+  type BaseJsonEvent,
   JSON_NUMBER,
   JSON_STRING,
-  JsonEventType,
+  type JsonEventType,
   getJsonPathAndTypeNumber,
   getJsonPathNumberAndTypeFromPathAndTypeNumber,
 } from "../jsonEvents";

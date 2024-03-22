@@ -1,4 +1,4 @@
-import { BackendPageAndVersion, BackendPageToStore, PageStoreBackend } from "./PageStoreBackend";
+import { type BackendPageAndVersion, type BackendPageToStore, type PageStoreBackend } from "./PageStoreBackend";
 
 /**
  * A simple in memory implementation of PageStoreBackend for testing.
