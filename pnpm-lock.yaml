@@ -4,51 +4,56 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-dependencies:
-  idb:
-    specifier: ^7.1.1
-    version: 7.1.1
-  vue:
-    specifier: ^3.4.21
-    version: 3.4.21(typescript@5.4.3)
-  vue-router:
-    specifier: ^4.3.0
-    version: 4.3.0(vue@3.4.21)
+importers:
 
-devDependencies:
-  '@tsconfig/node20':
-    specifier: ^20.1.2
-    version: 20.1.2
-  '@types/node':
-    specifier: ^20.11.28
-    version: 20.11.30
-  '@vitejs/plugin-vue':
-    specifier: ^5.0.4
-    version: 5.0.4(vite@5.2.3)(vue@3.4.21)
-  '@vue/tsconfig':
-    specifier: ^0.5.1
-    version: 0.5.1
-  npm-run-all2:
-    specifier: ^6.1.2
-    version: 6.1.2
-  prettier:
-    specifier: ^2.7.1
-    version: 2.8.8
-  sass:
-    specifier: ^1.72.0
-    version: 1.72.0
-  typescript:
-    specifier: ~5.4.0
-    version: 5.4.3
-  vite:
-    specifier: ^5.1.6
-    version: 5.2.3(@types/node@20.11.30)(sass@1.72.0)
-  vitest:
-    specifier: ^1.4.0
-    version: 1.4.0(@types/node@20.11.30)(sass@1.72.0)
-  vue-tsc:
-    specifier: ^2.0.6
-    version: 2.0.7(typescript@5.4.3)
+  .:
+    devDependencies:
+      prettier:
+        specifier: ^2.7.1
+        version: 2.8.8
+
+  packages/app:
+    dependencies:
+      idb:
+        specifier: ^7.1.1
+        version: 7.1.1
+      vue:
+        specifier: ^3.4.21
+        version: 3.4.21(typescript@5.4.3)
+      vue-router:
+        specifier: ^4.3.0
+        version: 4.3.0(vue@3.4.21)
+    devDependencies:
+      '@tsconfig/node20':
+        specifier: ^20.1.2
+        version: 20.1.2
+      '@types/node':
+        specifier: ^20.11.28
+        version: 20.11.30
+      '@vitejs/plugin-vue':
+        specifier: ^5.0.4
+        version: 5.0.4(vite@5.2.3)(vue@3.4.21)
+      '@vue/tsconfig':
+        specifier: ^0.5.1
+        version: 0.5.1
+      npm-run-all2:
+        specifier: ^6.1.2
+        version: 6.1.2
+      sass:
+        specifier: ^1.72.0
+        version: 1.72.0
+      typescript:
+        specifier: ~5.4.0
+        version: 5.4.3
+      vite:
+        specifier: ^5.1.6
+        version: 5.2.3(@types/node@20.11.30)(sass@1.72.0)
+      vitest:
+        specifier: ^1.4.0
+        version: 1.4.0(@types/node@20.11.30)(sass@1.72.0)
+      vue-tsc:
+        specifier: ^2.0.6
+        version: 2.0.7(typescript@5.4.3)
 
 packages:
 
