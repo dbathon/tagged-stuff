@@ -345,15 +345,14 @@ function tryWriteEntry(pageArray: Uint8Array, entryCount: number, entry: Uint8Ar
     writeUint16(pageArray, FREE_SPACE_END_POINTER, newEntryPointer);
   }
 
-  if (newEntryPointer !== undefined) {
-    if (byteCountForEntryLength === 1) {
-      pageArray[newEntryPointer] = entryLength;
-    } else {
-      pageArray[newEntryPointer] = 0x80 | (entryLength >>> 8);
-      pageArray[newEntryPointer + 1] = entryLength & 0xff;
-    }
-    pageArray.set(entry, newEntryPointer + byteCountForEntryLength);
+  if (byteCountForEntryLength === 1) {
+    pageArray[newEntryPointer] = entryLength;
+  } else {
+    pageArray[newEntryPointer] = 0x80 | (entryLength >>> 8);
+    pageArray[newEntryPointer + 1] = entryLength & 0xff;
   }
+  pageArray.set(entry, newEntryPointer + byteCountForEntryLength);
+
   return newEntryPointer;
 }
 
