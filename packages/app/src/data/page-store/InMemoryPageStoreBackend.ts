@@ -1,65 +1,82 @@
-import { type BackendPageAndVersion, type BackendPageToStore, type PageStoreBackend } from "./PageStoreBackend";
+import {
+  type BackendIndexPage,
+  type BackendPage,
+  type BackendPageIdentifier,
+  type BackendReadResult,
+  type PageStoreBackend,
+} from "./PageStoreBackend";
 
 /**
  * A simple in memory implementation of PageStoreBackend for testing.
  */
 export class InMemoryPageStoreBackend implements PageStoreBackend {
-  readonly pages = new Map<number, BackendPageAndVersion>();
+  // Support up to 128KB, this limit is arbitrary, it could be increased...
+  readonly maxPageSize = 1 << 17;
 
-  constructor(readonly pageSize: number) {}
+  indexPage: BackendIndexPage = {
+    transactionId: 0,
+    data: new Uint8Array(0),
+  };
 
-  async loadPages(pageNumbers: number[]): Promise<(BackendPageAndVersion | undefined)[]> {
-    return pageNumbers.map((pageNumber) => {
-      const pageAndVersion = this.pages.get(pageNumber);
-      if (!pageAndVersion) {
-        return undefined;
-      } else {
-        // return a copy of the internal data
-        return {
-          data: pageAndVersion.data.slice(0),
-          version: pageAndVersion.version,
-        };
+  readonly pages = new Map<number, BackendPage>();
+
+  constructor() {}
+
+  async readPages(includeIndexPage: boolean, pageIdentifiers: BackendPageIdentifier[]): Promise<BackendReadResult> {
+    const pages: BackendPage[] = [];
+    for (const pageIdentifier of pageIdentifiers) {
+      const page = this.pages.get(pageIdentifier.pageNumber);
+      if (page && page.identifier.transactionId === pageIdentifier.transactionId) {
+        pages.push({
+          identifier: { ...page.identifier },
+          data: page.data.slice(0),
+        });
       }
-    });
+    }
+
+    return {
+      indexPage: includeIndexPage
+        ? {
+            transactionId: this.indexPage.transactionId,
+            data: this.indexPage.data.slice(0),
+          }
+        : undefined,
+      pages,
+    };
   }
 
-  async storePages(pages: BackendPageToStore[]): Promise<number[] | undefined> {
-    // defer all the updates to the end
-    const updates: (() => void)[] = [];
-    const result: number[] = [];
-
-    const seenNumbers = new Set<number>();
-    for (const { pageNumber, data, previousVersion } of pages) {
-      if (data.byteLength !== this.pageSize) {
-        throw new Error("invalid byteLength: " + data.byteLength);
-      }
-      if (seenNumbers.has(pageNumber)) {
-        throw new Error("duplicate pageNumber: " + pageNumber);
-      }
-      seenNumbers.add(pageNumber);
-      const existingPage = this.pages.get(pageNumber);
-      if (!existingPage) {
-        if (previousVersion !== undefined) {
-          return undefined;
-        }
-        updates.push(() => this.pages.set(pageNumber, { data: data.slice(0), version: 0 }));
-        result.push(0);
-      } else {
-        if (previousVersion !== existingPage.version) {
-          return undefined;
-        }
-        const newVersion = existingPage.version + 1;
-        updates.push(() => {
-          existingPage.data = data.slice(0);
-          existingPage.version = newVersion;
-        });
-        result.push(newVersion);
+  async writePages(indexPage: BackendIndexPage, previousTransactionId: number, pages: BackendPage[]): Promise<boolean> {
+    // first do all the conflict checks
+    if (previousTransactionId !== this.indexPage.transactionId) {
+      return false;
+    }
+    for (const page of pages) {
+      const existingPage = this.pages.get(page.identifier.pageNumber);
+      if (existingPage && existingPage.identifier.transactionId === page.identifier.transactionId) {
+        return false;
       }
     }
 
-    for (const update of updates) {
-      update();
+    // do some other validations
+    if (indexPage.transactionId <= previousTransactionId) {
+      throw new Error("invalid index page transactionId");
     }
-    return result;
+    // maybe more?!
+
+    for (const page of pages) {
+      this.pages.set(page.identifier.pageNumber, {
+        identifier: {
+          pageNumber: page.identifier.pageNumber,
+          transactionId: page.identifier.transactionId,
+        },
+        data: page.data.slice(0),
+      });
+    }
+    this.indexPage = {
+      transactionId: indexPage.transactionId,
+      data: indexPage.data.slice(0),
+    };
+
+    return true;
   }
 }
