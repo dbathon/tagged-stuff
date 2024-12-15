@@ -1,9 +1,9 @@
 import { IndexPage } from "./internal/IndexPage";
-import { PageGroupPage, pageNumberToPageGroupNumber } from "./internal/PageGroupPage";
 import { Patch } from "./internal/Patch";
+import { TreeCalc } from "./internal/TreeCalc";
 import { readUint48FromDataView, writeUint48toDataView } from "./internal/util";
 import { type PageAccessDuringTransaction } from "./PageAccessDuringTransaction";
-import { type BackendPageAndVersion, type BackendPageToStore, type PageStoreBackend } from "./PageStoreBackend";
+import { type BackendPage, type BackendPageIdentifier, type PageStoreBackend } from "./PageStoreBackend";
 import { uint8ArrayToDataView, assert } from "shared-util";
 
 // require at least 4KB
@@ -11,13 +11,10 @@ const MIN_PAGE_SIZE = 1 << 12;
 // max page size is 64KB to ensure that 16bit indexes are sufficient
 const MAX_PAGE_SIZE = 1 << 16;
 // page numbers are uint32
-const MAX_PAGE_NUMBER = -1 >>> 0;
+const MAX_PAGE_NUMBER_RAW = -1 >>> 0;
 
-// the backend page number of the index page
-const INDEX_PAGE_NUMBER = -1;
-
-// the size of the "header" (currently just the transaction id) of a page in its backend page
-const PAGE_OVERHEAD = 6;
+// a dummy page number that is just used for load handling
+const DUMMY_INDEX_PAGE_NUMBER = -1;
 
 /**
  * Internal error type to signal that a retry is required.
@@ -25,51 +22,6 @@ const PAGE_OVERHEAD = 6;
 class RetryRequiredError extends Error {
   constructor(message?: string) {
     super(message);
-  }
-}
-
-class BackendPage {
-  private indexPage?: IndexPage;
-  private pageGroupPage?: PageGroupPage;
-
-  constructor(readonly page: BackendPageAndVersion | undefined, readonly pageNumber: number) {}
-
-  getAsIndexPage(backendPageSize: number): IndexPage {
-    let result = this.indexPage;
-    if (!result) {
-      if (this.pageNumber !== INDEX_PAGE_NUMBER) {
-        throw new Error("not an index page number: " + this.pageNumber);
-      }
-      if (this.page) {
-        result = new IndexPage(this.page.data);
-        if (result.pageSize !== backendPageSize || result.pageSize !== this.page.data.byteLength) {
-          throw new Error("pageSize does not match the actual page size");
-        }
-      } else {
-        // built the initial index page
-        result = new IndexPage(undefined);
-        result.pageSize = backendPageSize;
-      }
-      this.indexPage = result;
-    }
-    return result;
-  }
-
-  getAsPageGroupPage(): PageGroupPage {
-    let result = this.pageGroupPage;
-    if (!result) {
-      if (this.pageNumber > -2 || -this.pageNumber % 2 !== 0) {
-        throw new Error("not a page group page number: " + this.pageNumber);
-      }
-      const pageGroupNumber = -this.pageNumber / 2 - 1;
-      if (this.page) {
-        result = new PageGroupPage(pageGroupNumber, this.page.data);
-      } else {
-        result = new PageGroupPage(pageGroupNumber, undefined);
-      }
-      this.pageGroupPage = result;
-    }
-    return result;
   }
 }
 
@@ -83,13 +35,18 @@ export type TransactionResult<T> =
     };
 
 function assertValidPageNumber(pageNumber: number) {
-  if (pageNumber < 0 || pageNumber > MAX_PAGE_NUMBER) {
+  if (pageNumber < 0 || pageNumber > MAX_PAGE_NUMBER_RAW) {
     throw new Error("invalid pageNumber: " + pageNumber);
   }
 }
 
-function pageGroupNumberToBackendPageNumber(pageGroupNumber: number): number {
-  return -2 - 2 * pageGroupNumber;
+function assertValidPageSize(pageSize: number, pageTypePrefix: string) {
+  if (pageSize < MIN_PAGE_SIZE) {
+    throw new Error(pageTypePrefix + "page size is too small");
+  }
+  if (pageSize > MAX_PAGE_SIZE) {
+    throw new Error(pageTypePrefix + "page size is too large");
+  }
 }
 
 /**
@@ -97,22 +54,16 @@ function pageGroupNumberToBackendPageNumber(pageGroupNumber: number): number {
  * equal for a page, then the page cannot have changed, if they are not, then it might have changed.
  */
 class PageEntryKey {
-  constructor(
-    readonly indexPageTransactionId: number,
-    readonly pageGroupTransactionId: number,
-    readonly indexPagePatches: Patch[] | undefined
-  ) {}
+  constructor(readonly pageTransactionId: number, readonly patches: Patch[] | undefined) {}
 
   equals(other: PageEntryKey): boolean {
-    return (
-      this.indexPageTransactionId === other.indexPageTransactionId &&
-      this.pageGroupTransactionId === other.pageGroupTransactionId &&
-      Patch.patchesEqual(this.indexPagePatches, other.indexPagePatches)
-    );
+    return this.pageTransactionId === other.pageTransactionId && Patch.patchesEqual(this.patches, other.patches);
   }
 }
 
 class PageEntry {
+  backendPage?: BackendPage;
+
   readonly array: Uint8Array;
 
   /** Is set if the array is actually initialized from data from the backend pages. */
@@ -142,20 +93,20 @@ export type PageReadsRecorder = <R>(pageReader: (getPage: (pageNumber: number) =
 const RESOLVED_PROMISE = Promise.resolve();
 
 export class PageStore {
-  private readonly backendPageSize: number;
-  readonly pageSize: number;
+  private readonly treeCalc: TreeCalc;
 
-  // TODO: use "MapWithWeakRefValues" to allow garbage collection...
-  private readonly backendPages = new Map<number, BackendPage>();
+  private indexPage?: IndexPage;
+
   // TODO: use "MapWithWeakRefValues" to allow garbage collection...
   private readonly pageEntries = new Map<number, PageEntry>();
 
-  /** Backend pages that will be loaded in the next microtask. */
+  /** Caches the transaction ids of all pages, is invalidated/cleared whenever a new index page is loaded. */
+  private readonly transactionIdCache = new Map<number, number>();
+
+  /** Pages that will be loaded in the next microtask. */
   private readonly loadTriggeredPages = new Set<number>();
-  /** All backend pages that are currently in "loading". */
+  /** All pages that are currently in "loading". */
   private readonly loadingPages = new Set<number>();
-  /** The backend pages that were loaded. */
-  private readonly loadedPages = new Set<number>();
 
   private loadingFinishedPromise?: Promise<void>;
   private loadingFinishedResolve?: () => void;
@@ -165,17 +116,31 @@ export class PageStore {
   private readonly zeroedPageArray: Uint8Array;
   private readonly scratchPageArray: Uint8Array;
 
-  constructor(private readonly backend: PageStoreBackend) {
-    const backendPageSize = backend.pageSize;
-    if (backendPageSize < MIN_PAGE_SIZE) {
-      throw new Error("backend pageSize is too small");
+  constructor(
+    private readonly backend: PageStoreBackend,
+    /**
+     * The exact size of all pages. This cannot be changed (for a specific backend) after the first transaction was
+     * committed.
+     */
+    readonly pageSize: number,
+    /**
+     * The maximum size of the index page. This can generally be changed, it is only used when writing new
+     * transactions. When an existing index page is read, then it is allowed to be larger.
+     */
+    readonly maxIndexPageSize: number
+  ) {
+    assertValidPageSize(pageSize, "");
+    assertValidPageSize(maxIndexPageSize, "index ");
+    const backendMaxPageSize = backend.maxPageSize;
+    if (pageSize > backendMaxPageSize) {
+      throw new Error("page size is too large for backend");
     }
-    if (backendPageSize > MAX_PAGE_SIZE) {
-      throw new Error("backend pageSize is too large");
+    if (maxIndexPageSize > backendMaxPageSize) {
+      throw new Error("index page size is too large for backend");
     }
-    this.backendPageSize = backendPageSize;
-    const pageSize = backendPageSize - PAGE_OVERHEAD;
-    this.pageSize = pageSize;
+
+    this.treeCalc = new TreeCalc(pageSize, 6, MAX_PAGE_NUMBER_RAW);
+
     this.zeroedPageArray = new Uint8Array(pageSize);
     this.scratchPageArray = new Uint8Array(pageSize);
   }
@@ -184,93 +149,82 @@ export class PageStore {
     return !!this.loadingPages.size;
   }
 
-  private getIndexPage(): IndexPage | undefined {
-    return this.backendPages.get(INDEX_PAGE_NUMBER)?.getAsIndexPage(this.backendPageSize);
+  get maxPageNumber(): number {
+    return this.treeCalc.maxPageNumber;
   }
 
-  private getTransactionIdOfPageGroupPage(pageGroupNumber: number, providedIndexPage?: IndexPage): number | undefined {
-    const indexPage = providedIndexPage ?? this.getIndexPage();
-    if (!indexPage) {
+  private assertValidUsablePageNumber(pageNumber: number): void {
+    if (pageNumber > this.treeCalc.maxPageNumber) {
+      throw new Error("pageNumber cannot be used: " + pageNumber);
+    }
+  }
+
+  private getTransactionIdOfPage(pageNumber: number): number | undefined {
+    const cachedResult = this.transactionIdCache.get(pageNumber);
+    if (cachedResult !== undefined) {
+      return cachedResult;
+    }
+    if (!this.indexPage) {
       return undefined;
     }
-    const transactionId = indexPage.pageGroupNumberToTransactionId.get(pageGroupNumber) ?? 0;
-    if (transactionId === 0 && indexPage.transactionIdsPageStoreTransactionId !== 0) {
-      throw new Error("transactionIdsPageStoreTransactionId not yet implemented");
+    if (pageNumber > this.treeCalc.maxPageNumber) {
+      // for these pages the pageNumber must be in transactionIdCache, otherwise just return undefined
+      return undefined;
     }
+
+    let transactionId = this.indexPage.transactionTreeRootTransactionId;
+    for (const pathElement of this.treeCalc.getPath(pageNumber)) {
+      const cachedTransactionId = this.transactionIdCache.get(pathElement.pageNumber);
+      if (cachedTransactionId === undefined) {
+        // populate the cache before calling getPageEntry() because it might call this method again
+        this.transactionIdCache.set(pathElement.pageNumber, transactionId);
+      } else {
+        assert(transactionId === cachedTransactionId);
+      }
+
+      const pageEntry = this.getPageEntry(pathElement.pageNumber);
+      if (cachedTransactionId === undefined) {
+        // these pages are not handled in resetPageEntriesFromBackendPages(), so we need to do it here
+        this.resetPageEntryFromBackendPage(pageEntry);
+      }
+      const pageArray = pageEntry.getArrayIfLoaded();
+      if (!pageArray) {
+        return undefined;
+      }
+      // TODO maybe find away to avoid creating the DataView here
+      const view = uint8ArrayToDataView(pageArray);
+      transactionId = readUint48FromDataView(view, pathElement.offset);
+    }
+
+    this.transactionIdCache.set(pageNumber, transactionId);
     return transactionId;
   }
 
-  private getPageGroupPage(pageGroupNumber: number, providedIndexPage?: IndexPage): PageGroupPage | undefined {
-    const expectedTransactionId = this.getTransactionIdOfPageGroupPage(pageGroupNumber, providedIndexPage);
-    if (expectedTransactionId === undefined) {
-      return undefined;
-    }
-    const backendPageNumber = pageGroupNumberToBackendPageNumber(pageGroupNumber);
-    let backendPage = this.backendPages.get(backendPageNumber);
-    if (expectedTransactionId === 0 && !backendPage) {
-      // there is no persisted page group page, just set the backendPage to what it should be
-      backendPage = new BackendPage(undefined, backendPageNumber);
-      this.backendPages.set(backendPageNumber, backendPage);
-    }
-    const pageGroupPage = backendPage?.getAsPageGroupPage();
-    if (pageGroupPage && expectedTransactionId !== pageGroupPage.transactionId) {
-      return undefined;
-    }
-    return pageGroupPage;
-  }
-
-  private getBackendPageForPage(pageGroupPage: PageGroupPage, pageNumber: number): BackendPage | undefined {
-    assertValidPageNumber(pageNumber);
-    if (pageGroupPage.pageGroupNumber !== pageNumberToPageGroupNumber(pageNumber)) {
-      throw new Error("invalid pageNumber for pageGroupPage: " + pageNumber);
+  private buildPageArray(pageEntry: PageEntry, array: Uint8Array): boolean {
+    if (!this.indexPage) {
+      return false;
     }
 
-    const pageTransactionId = pageGroupPage.pageNumberToTransactionId.get(pageNumber);
-    let backendPage = this.backendPages.get(pageNumber);
-    if (pageTransactionId !== undefined) {
-      const backendPageData = backendPage?.page?.data;
-      if (!backendPageData) {
-        return undefined;
+    const transactionId = this.getTransactionIdOfPage(pageEntry.pageNumber);
+    if (transactionId === undefined) {
+      return false;
+    }
+    let baseArray: Uint8Array;
+    if (transactionId === 0) {
+      baseArray = this.zeroedPageArray;
+    } else {
+      const backendPage = pageEntry.backendPage;
+      if (!backendPage || backendPage.identifier.transactionId !== transactionId) {
+        return false;
       }
-      const transactionId = readUint48FromDataView(uint8ArrayToDataView(backendPageData), 0);
-      if (transactionId !== pageTransactionId) {
-        return undefined;
-      }
-    } else if (!backendPage) {
-      // there is no persisted page, just set the backendPage to what it should be
-      backendPage = new BackendPage(undefined, pageNumber);
-      this.backendPages.set(pageNumber, backendPage);
-    }
-    return backendPage;
-  }
-
-  private buildPageArray(pageNumber: number, array: Uint8Array): boolean {
-    assertValidPageNumber(pageNumber);
-    const indexPage = this.getIndexPage();
-    if (!indexPage) {
-      return false;
+      baseArray = backendPage.data;
     }
 
-    const pageGroupPage = this.getPageGroupPage(pageNumberToPageGroupNumber(pageNumber), indexPage);
-    if (!pageGroupPage) {
-      return false;
-    }
-
-    const backendPage = this.getBackendPageForPage(pageGroupPage, pageNumber);
-    if (!backendPage) {
-      return false;
-    }
-
-    const backendPageData = backendPage.page?.data;
-    const baseArray = backendPageData ? backendPageData.subarray(PAGE_OVERHEAD) : this.zeroedPageArray;
     assert(array.length === baseArray.length);
     array.set(baseArray);
 
-    // apply page group page patches
-    pageGroupPage.pageNumberToPatches.get(pageNumber)?.forEach((patch) => patch.applyTo(array));
-
     // apply index page patches
-    indexPage.pageNumberToPatches.get(pageNumber)?.forEach((patch) => patch.applyTo(array));
+    this.indexPage.pageNumberToPatches.get(pageEntry.pageNumber)?.forEach((patch) => patch.applyTo(array));
 
     return true;
   }
@@ -288,19 +242,31 @@ export class PageStore {
     return result;
   }
 
-  private buildPageEntryKey(pageNumber: number, indexPage: IndexPage): PageEntryKey | undefined {
-    const pageGroupTransactionId = this.getTransactionIdOfPageGroupPage(
-      pageNumberToPageGroupNumber(pageNumber),
-      indexPage
-    );
-    if (pageGroupTransactionId === undefined) {
+  private buildPageEntryKey(pageNumber: number): PageEntryKey | undefined {
+    const transactionId = this.getTransactionIdOfPage(pageNumber);
+    if (transactionId === undefined || !this.indexPage) {
       return undefined;
     }
-    return new PageEntryKey(
-      indexPage.transactionId,
-      pageGroupTransactionId,
-      indexPage.pageNumberToPatches.get(pageNumber)
-    );
+    return new PageEntryKey(transactionId, this.indexPage.pageNumberToPatches.get(pageNumber));
+  }
+
+  private resetPageEntryFromBackendPage(pageEntry: PageEntry): void {
+    const pageEntryKey = this.buildPageEntryKey(pageEntry.pageNumber);
+    if (pageEntryKey) {
+      if (pageEntry.pageEntryKey && pageEntry.pageEntryKey.equals(pageEntryKey)) {
+        // nothing to do
+        return;
+      } else {
+        // the page might have changed
+        const success = this.buildPageArray(pageEntry, pageEntry.array);
+        if (success) {
+          pageEntry.arrayUpdated(pageEntryKey);
+          return;
+        }
+      }
+    }
+    // something is probably inconsistent, trigger a refresh for the page
+    this.triggerLoad(pageEntry.pageNumber);
   }
 
   private resetPageEntriesFromBackendPages(): void {
@@ -308,47 +274,58 @@ export class PageStore {
       throw new Error("loading");
     }
 
-    const indexPage = this.getIndexPage();
-
-    for (const [pageNumber, entry] of this.pageEntries.entries()) {
-      if (indexPage !== undefined) {
-        const pageEntryKey = this.buildPageEntryKey(pageNumber, indexPage);
-        if (pageEntryKey) {
-          if (entry.pageEntryKey && entry.pageEntryKey.equals(pageEntryKey)) {
-            // nothing to do
-            continue;
-          } else {
-            // the page might have changed
-            const success = this.buildPageArray(pageNumber, entry.array);
-            if (success) {
-              entry.arrayUpdated(pageEntryKey);
-              continue;
-            }
-          }
-        }
+    const maxPageNumber = this.maxPageNumber;
+    for (const pageEntry of this.pageEntries.values()) {
+      // only handle "normal" pages here, the other ones will be handled in getTransactionIdOfPage()
+      if (pageEntry.pageNumber <= maxPageNumber) {
+        this.resetPageEntryFromBackendPage(pageEntry);
       }
-      // something is probably inconsistent, trigger a refresh for the page
-      this.triggerLoad(pageNumber);
     }
   }
 
-  private async processLoad(backendPageNumbers: number[]): Promise<void> {
-    // TODO: error handling?!
-    const loadResults = await this.backend.loadPages(backendPageNumbers);
-    backendPageNumbers.forEach((pageNumber, index) => {
-      const loadResult = loadResults[index];
-      this.backendPages.set(pageNumber, new BackendPage(loadResult, pageNumber));
-      this.loadedPages.add(pageNumber);
-    });
-
-    if (this.loadingPages.size === this.loadedPages.size) {
-      // all current loads are finished, update all page entries now
-      if (this.loadTriggeredPages.size) {
-        // should never happen
-        throw new Error("loadTriggeredPages is not empty");
+  private async processLoad(pageNumbers: number[]): Promise<void> {
+    const backendPageIdentifiers: BackendPageIdentifier[] = [];
+    for (const pageNumber of pageNumbers) {
+      if (pageNumber >= 0) {
+        const transactionId = this.getTransactionIdOfPage(pageNumber);
+        if (transactionId !== undefined && transactionId > 0) {
+          backendPageIdentifiers.push({ pageNumber, transactionId });
+        }
       }
-      this.loadingPages.clear();
-      this.loadedPages.clear();
+    }
+    // always include the index page for now
+    // TODO: error handling?!
+    const readResult = await this.backend.readPages(true, backendPageIdentifiers);
+
+    if (readResult.indexPage && this.indexPage?.transactionId !== readResult.indexPage.transactionId) {
+      // we got a new index page
+      this.indexPage = IndexPage.deserialize(
+        readResult.indexPage.transactionId,
+        readResult.indexPage.data,
+        this.pageSize
+      );
+      this.transactionIdCache.clear();
+    }
+
+    for (const backendPage of readResult.pages) {
+      const pageNumber = backendPage.identifier.pageNumber;
+      const pageEntry = this.pageEntries.get(pageNumber);
+      // the pageEntry should always exist, but still just skip it if not
+      if (pageEntry) {
+        pageEntry.backendPage = backendPage;
+      }
+      this.loadingPages.delete(pageNumber);
+    }
+
+    // remove all requested pageNumbers from loadingPages, even if they were not actually loaded
+    // if they are still needed a new load will be triggered by resetPageEntriesFromBackendPages()
+    for (const pageNumber of pageNumbers) {
+      this.loadingPages.delete(pageNumber);
+    }
+
+    if (!this.loadingPages.size) {
+      // all current loads are finished, update all page entries now
+      assert(!this.loadTriggeredPages.size);
 
       this.resetPageEntriesFromBackendPages();
 
@@ -361,27 +338,21 @@ export class PageStore {
     }
   }
 
-  private triggerLoad(backendPageNumber: number): void {
-    if (this.loadingPages.has(backendPageNumber)) {
+  private triggerLoad(pageNumber: number): void {
+    if (this.loadingPages.has(pageNumber)) {
       // this page is already loading
       return;
     }
     const needNewTask = !this.loadTriggeredPages.size;
-    this.loadTriggeredPages.add(backendPageNumber);
-    this.loadingPages.add(backendPageNumber);
+    this.loadTriggeredPages.add(pageNumber);
+    this.loadingPages.add(pageNumber);
 
     if (needNewTask) {
       queueMicrotask(() => {
-        const backendPageNumbers = [...this.loadTriggeredPages];
+        const pageNumbers = [...this.loadTriggeredPages];
         this.loadTriggeredPages.clear();
-        void this.processLoad(backendPageNumbers);
+        void this.processLoad(pageNumbers);
       });
-    }
-
-    // if it is a 0 or positive page, then also refresh the index page and page group page
-    if (backendPageNumber >= 0) {
-      this.triggerLoad(INDEX_PAGE_NUMBER);
-      this.triggerLoad(pageGroupNumberToBackendPageNumber(pageNumberToPageGroupNumber(backendPageNumber)));
     }
   }
 
@@ -391,11 +362,9 @@ export class PageStore {
       pageEntry = new PageEntry(pageNumber, this.pageSize);
       this.pageEntries.set(pageNumber, pageEntry);
       if (!this.loading) {
-        const success = this.buildPageArray(pageNumber, pageEntry.array);
+        const success = this.buildPageArray(pageEntry, pageEntry.array);
         if (success) {
-          const indexPage = this.getIndexPage();
-          assert(indexPage);
-          const pageEntryKey = this.buildPageEntryKey(pageNumber, indexPage);
+          const pageEntryKey = this.buildPageEntryKey(pageNumber);
           assert(pageEntryKey);
           pageEntry.arrayUpdated(pageEntryKey);
         }
@@ -408,6 +377,7 @@ export class PageStore {
   }
 
   getPage(pageNumber: number): Uint8Array | undefined {
+    this.assertValidUsablePageNumber(pageNumber);
     return this.getPageEntry(pageNumber).getArrayIfLoaded();
   }
 
@@ -439,6 +409,8 @@ export class PageStore {
 
       try {
         const getPage = (pageNumber: number) => {
+          this.assertValidUsablePageNumber(pageNumber);
+
           let entryWithToggle = currentPageEntries.get(pageNumber);
           if (entryWithToggle) {
             entryWithToggle.toggle = currentToggle;
@@ -470,16 +442,16 @@ export class PageStore {
    * Triggers a refresh of all pages, to make sure that they are up to date with the pages in the backend.
    */
   refresh(): void {
-    // trigger a load of the index page, if there are changes it will (recursively) trigger further loads
-    this.triggerLoad(INDEX_PAGE_NUMBER);
+    // trigger a load with the dummy index page number, if there are changes it will trigger further loads
+    this.triggerLoad(DUMMY_INDEX_PAGE_NUMBER);
   }
 
-  private async commit(dirtyPageNumbers: Set<number>): Promise<boolean> {
+  private async commit(dirtyPageNumbers: Set<number>, newTransactionId: number): Promise<boolean> {
     if (!this.transactionActive) {
       throw new Error("there is no transaction active");
     }
 
-    const oldIndexPage = this.getIndexPage();
+    const oldIndexPage = this.indexPage;
     if (!oldIndexPage) {
       throw new Error("index page not available");
     }
@@ -489,7 +461,7 @@ export class PageStore {
     for (const pageNumber of dirtyPageNumbers) {
       const entry = this.pageEntries.get(pageNumber);
       assert(entry);
-      const success = this.buildPageArray(pageNumber, oldPageData);
+      const success = this.buildPageArray(entry, oldPageData);
       assert(success);
       const data = entry.array;
       const patches = Patch.createPatches(oldPageData, data, data.length);
@@ -506,67 +478,44 @@ export class PageStore {
       const transactionId = (newIndexPage.transactionId += 1);
       const pagesToStore: BackendPageToStore[] = [];
 
-      // push changes down to the page group pages and individual pages as necessary
-      while (newIndexPage.serializedLength > this.backendPageSize) {
+      // push changes down to the individual pages as necessary
+      while (newIndexPage.serializedLength > this.maxIndexPageSize) {
         const largestPageGroupNumber = newIndexPage.determineLargestPageGroup();
 
         if (largestPageGroupNumber === undefined) {
           throw new Error("index page too large, but no largest page group");
         }
-        const pageGroupPageBackendPageNumber = pageGroupNumberToBackendPageNumber(largestPageGroupNumber);
-        const oldPageGroupPage = this.getPageGroupPage(largestPageGroupNumber, oldIndexPage);
-        if (!oldPageGroupPage) {
-          // this can actually happen, if none of the pages of that group were loaded...
-          this.triggerLoad(pageGroupPageBackendPageNumber);
+
+        // write data to pages that have the largest patches
+        const largestPageNumber = newPageGroupPage.determineLargestPage();
+
+        if (largestPageNumber === undefined) {
+          throw new Error("page group page too large, but no largest page");
+        }
+        const backendPage = this.getBackendPageForPage(oldPageGroupPage, largestPageNumber);
+        if (!backendPage) {
+          // this can actually happen, if the page was not loaded/modified...
+          this.triggerLoad(largestPageNumber);
           return false;
         }
 
-        const newPageGroupPage = new PageGroupPage(largestPageGroupNumber, oldPageGroupPage);
-        newPageGroupPage.transactionId = transactionId;
-        newIndexPage.pageGroupNumberToTransactionId.set(largestPageGroupNumber, transactionId);
-        newIndexPage.movePageGroupDataToPageGroup(newPageGroupPage);
-        newIndexPage;
+        const newBackendPageData = new Uint8Array(this.backendPageSize);
+        writeUint48toDataView(uint8ArrayToDataView(newBackendPageData), 0, transactionId);
+        newPageGroupPage.pageNumberToTransactionId.set(largestPageNumber, transactionId);
 
-        while (newPageGroupPage.serializedLength > this.backendPageSize) {
-          // write data to pages that have the largest patches
-          const largestPageNumber = newPageGroupPage.determineLargestPage();
-
-          if (largestPageNumber === undefined) {
-            throw new Error("page group page too large, but no largest page");
-          }
-          const backendPage = this.getBackendPageForPage(oldPageGroupPage, largestPageNumber);
-          if (!backendPage) {
-            // this can actually happen, if the page was not loaded/modified...
-            this.triggerLoad(largestPageNumber);
-            return false;
-          }
-
-          const newBackendPageData = new Uint8Array(this.backendPageSize);
-          writeUint48toDataView(uint8ArrayToDataView(newBackendPageData), 0, transactionId);
-          newPageGroupPage.pageNumberToTransactionId.set(largestPageNumber, transactionId);
-
-          const newPageArray = newBackendPageData.subarray(PAGE_OVERHEAD);
-          const oldBackendPageData = backendPage.page?.data;
-          if (oldBackendPageData) {
-            newPageArray.set(oldBackendPageData.subarray(PAGE_OVERHEAD));
-          }
-          // apply patches (all relevant patches are in newPageGroupPage)
-          newPageGroupPage.pageNumberToPatches.get(largestPageNumber)!.forEach((patch) => patch.applyTo(newPageArray));
-          newPageGroupPage.pageNumberToPatches.delete(largestPageNumber);
-
-          pagesToStore.push({
-            pageNumber: largestPageNumber,
-            data: newBackendPageData,
-            previousVersion: backendPage.page?.version,
-          });
+        const newPageArray = newBackendPageData.subarray(PAGE_OVERHEAD);
+        const oldBackendPageData = backendPage.page?.data;
+        if (oldBackendPageData) {
+          newPageArray.set(oldBackendPageData.subarray(PAGE_OVERHEAD));
         }
+        // apply patches (all relevant patches are in newPageGroupPage)
+        newPageGroupPage.pageNumberToPatches.get(largestPageNumber)!.forEach((patch) => patch.applyTo(newPageArray));
+        newPageGroupPage.pageNumberToPatches.delete(largestPageNumber);
 
-        const newPageGroupPageArray = new Uint8Array(this.backendPageSize);
-        newPageGroupPage.serialize(newPageGroupPageArray);
         pagesToStore.push({
-          pageNumber: pageGroupPageBackendPageNumber,
-          data: newPageGroupPageArray,
-          previousVersion: this.backendPages.get(pageGroupPageBackendPageNumber)?.page?.version,
+          pageNumber: largestPageNumber,
+          data: newBackendPageData,
+          previousVersion: backendPage.page?.version,
         });
       }
 
@@ -606,6 +555,7 @@ export class PageStore {
     }
 
     if (this.transactionActive) {
+      // TODO maybe automatically "serialize" the transactions (by just waiting until the previous one is finished)
       throw new Error("there is already an active transaction");
     }
     this.transactionActive = true;
@@ -621,6 +571,9 @@ export class PageStore {
           // we are in a retry, so refresh first
           this.refresh();
           await this.loadingFinished();
+
+          // TODO maybe sleep a bit here to avoid concurrent retries if the transactionId is still the same
+          // TODO also increment the transaction id for every retry...
         }
 
         let resultValue: T;
@@ -661,13 +614,13 @@ export class PageStore {
           }
         } finally {
           if (result.committed) {
-            const indexPage = this.getIndexPage();
+            const indexPage = this.indexPage;
             assert(indexPage);
             // call arrayUpdated for the changed page entries
             for (const pageNumber of dirtyPageNumbers) {
               const pageEntry = this.pageEntries.get(pageNumber);
               assert(pageEntry);
-              const pageEntryKey = this.buildPageEntryKey(pageNumber, indexPage);
+              const pageEntryKey = this.buildPageEntryKey(pageNumber);
               assert(pageEntryKey);
               pageEntry.arrayUpdated(pageEntryKey);
             }
@@ -676,7 +629,7 @@ export class PageStore {
             for (const pageNumber of dirtyPageNumbers) {
               const pageEntry = this.pageEntries.get(pageNumber);
               assert(pageEntry);
-              const success = this.buildPageArray(pageNumber, pageEntry.array);
+              const success = this.buildPageArray(pageEntry, pageEntry.array);
               assert(success);
             }
           }
