@@ -26,6 +26,7 @@ export class Patch {
     return new Patch(patchOffset, new Uint8Array(source.buffer, source.byteOffset + offset + 3, patchLength));
   }
 
+  // TODO: only accept actual Uint8Arrays?!
   static createPatches(oldBytes: { [n: number]: number }, newBytes: number[] | Uint8Array, length: number): Patch[] {
     const result: Patch[] = [];
     for (let i = 0; i < length; i++) {
@@ -48,6 +49,7 @@ export class Patch {
   }
 
   /**
+   * TODO: remove this...
    * @returns an "optimized" list of patches without overlaps or duplications
    */
   static mergePatches(patches: Patch[]): Patch[] {

@@ -169,6 +169,7 @@ export class PageStore {
     }
     if (pageNumber > this.treeCalc.maxPageNumber) {
       // for these pages the pageNumber must be in transactionIdCache, otherwise just return undefined
+      // TODO it should be possible to modify TreeCalc to also handle these pages...
       return undefined;
     }
 
@@ -266,6 +267,7 @@ export class PageStore {
       }
     }
     // something is probably inconsistent, trigger a refresh for the page
+    pageEntry.pageEntryKey = undefined;
     this.triggerLoad(pageEntry.pageNumber);
   }
 
@@ -446,7 +448,7 @@ export class PageStore {
     this.triggerLoad(DUMMY_INDEX_PAGE_NUMBER);
   }
 
-  private async commit(dirtyPageNumbers: Set<number>, newTransactionId: number): Promise<boolean> {
+  private async commit(updatedPages: Map<number, Uint8Array>, triedTransactionIds: Set<number>): Promise<boolean> {
     if (!this.transactionActive) {
       throw new Error("there is no transaction active");
     }
@@ -475,7 +477,12 @@ export class PageStore {
     }
 
     if (changes) {
-      const transactionId = (newIndexPage.transactionId += 1);
+      let transactionId = oldIndexPage.transactionId + 1;
+      while (triedTransactionIds.has(transactionId)) {
+        // avoid trying a previous transaction id again
+        ++transactionId;
+      }
+      triedTransactionIds.add(transactionId);
       const pagesToStore: BackendPageToStore[] = [];
 
       // push changes down to the individual pages as necessary
@@ -565,22 +572,25 @@ export class PageStore {
     };
 
     try {
-      // TODO: make sure there is some kind of progress in each iteration, abort otherwise
+      const triedTransactionIds: Set<number> = new Set();
       for (let retry = 0; retries === undefined || retry <= retries; ++retry) {
         if (retry > 0) {
           // we are in a retry, so refresh first
           this.refresh();
           await this.loadingFinished();
 
-          // TODO maybe sleep a bit here to avoid concurrent retries if the transactionId is still the same
-          // TODO also increment the transaction id for every retry...
+          // TODO maybe sleep a bit here if the transactionId is still the same as before to avoid concurrent retries?!
         }
 
         let resultValue: T;
-        const dirtyPageNumbers = new Set<number>();
+        const updatedPages = new Map<number, Uint8Array>();
         try {
           try {
             const get = (pageNumber: number): Uint8Array => {
+              const updatedPage = updatedPages.get(pageNumber);
+              if (updatedPage) {
+                return updatedPage;
+              }
               const result = this.getPage(pageNumber);
               if (!result) {
                 throw new RetryRequiredError("page is not loaded");
@@ -590,8 +600,13 @@ export class PageStore {
             resultValue = transactionFn({
               get,
               getForUpdate(pageNumber) {
-                const result = get(pageNumber);
-                dirtyPageNumbers.add(pageNumber);
+                const updatedPage = updatedPages.get(pageNumber);
+                if (updatedPage) {
+                  return updatedPage;
+                }
+                // first call for this pageNumber, create a copy and put it into updatedPages
+                const result = Uint8Array.from(get(pageNumber));
+                updatedPages.set(pageNumber, result);
                 return result;
               },
             });
@@ -605,7 +620,7 @@ export class PageStore {
             }
           }
 
-          if (await this.commit(dirtyPageNumbers)) {
+          if (await this.commit(updatedPages, triedTransactionIds)) {
             result = {
               committed: true,
               resultValue,
@@ -617,20 +632,13 @@ export class PageStore {
             const indexPage = this.indexPage;
             assert(indexPage);
             // call arrayUpdated for the changed page entries
+            // TODO
             for (const pageNumber of dirtyPageNumbers) {
               const pageEntry = this.pageEntries.get(pageNumber);
               assert(pageEntry);
               const pageEntryKey = this.buildPageEntryKey(pageNumber);
               assert(pageEntryKey);
               pageEntry.arrayUpdated(pageEntryKey);
-            }
-          } else {
-            // reset the modified pages
-            for (const pageNumber of dirtyPageNumbers) {
-              const pageEntry = this.pageEntries.get(pageNumber);
-              assert(pageEntry);
-              const success = this.buildPageArray(pageEntry, pageEntry.array);
-              assert(success);
             }
           }
         }
