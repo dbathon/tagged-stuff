@@ -5,8 +5,8 @@ import { PageStore } from "../data/page-store/PageStore";
 import JsonStoreTestTable from "./json-store/JsonStoreTestTable.vue";
 
 const backendPages = ref(0);
-const backend = new InMemoryPageStoreBackend(4096);
-const pageStore = new PageStore(backend);
+const backend = new InMemoryPageStoreBackend();
+const pageStore = new PageStore(backend, 4096, 4096 * 4);
 
 const interval = setInterval(() => {
   backendPages.value = backend.pages.size;

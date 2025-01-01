@@ -1,9 +1,15 @@
 import { IndexPage } from "./internal/IndexPage";
 import { Patch } from "./internal/Patch";
 import { TreeCalc } from "./internal/TreeCalc";
-import { readUint48FromDataView, writeUint48toDataView } from "./internal/util";
+import { readUint48FromDataView } from "./internal/util";
 import { type PageAccessDuringTransaction } from "./PageAccessDuringTransaction";
-import { type BackendPage, type BackendPageIdentifier, type PageStoreBackend } from "./PageStoreBackend";
+import {
+  type BackendIndexPage,
+  type BackendPage,
+  type BackendPageIdentifier,
+  type BackendReadResult,
+  type PageStoreBackend,
+} from "./PageStoreBackend";
 import { uint8ArrayToDataView, assert } from "shared-util";
 
 // require at least 4KB
@@ -114,7 +120,6 @@ export class PageStore {
   private transactionActive = false;
 
   private readonly zeroedPageArray: Uint8Array;
-  private readonly scratchPageArray: Uint8Array;
 
   constructor(
     private readonly backend: PageStoreBackend,
@@ -142,7 +147,6 @@ export class PageStore {
     this.treeCalc = new TreeCalc(pageSize, 6, MAX_PAGE_NUMBER_RAW);
 
     this.zeroedPageArray = new Uint8Array(pageSize);
-    this.scratchPageArray = new Uint8Array(pageSize);
   }
 
   get loading(): boolean {
@@ -201,24 +205,30 @@ export class PageStore {
     return transactionId;
   }
 
+  private getBaseArray(pageEntry: PageEntry): Uint8Array | undefined {
+    const transactionId = this.getTransactionIdOfPage(pageEntry.pageNumber);
+    if (transactionId === undefined) {
+      return undefined;
+    }
+    if (transactionId === 0) {
+      return this.zeroedPageArray;
+    } else {
+      const backendPage = pageEntry.backendPage;
+      if (!backendPage || backendPage.identifier.transactionId !== transactionId) {
+        return undefined;
+      }
+      return backendPage.data;
+    }
+  }
+
   private buildPageArray(pageEntry: PageEntry, array: Uint8Array): boolean {
     if (!this.indexPage) {
       return false;
     }
 
-    const transactionId = this.getTransactionIdOfPage(pageEntry.pageNumber);
-    if (transactionId === undefined) {
+    const baseArray = this.getBaseArray(pageEntry);
+    if (!baseArray) {
       return false;
-    }
-    let baseArray: Uint8Array;
-    if (transactionId === 0) {
-      baseArray = this.zeroedPageArray;
-    } else {
-      const backendPage = pageEntry.backendPage;
-      if (!backendPage || backendPage.identifier.transactionId !== transactionId) {
-        return false;
-      }
-      baseArray = backendPage.data;
     }
 
     assert(array.length === baseArray.length);
@@ -299,6 +309,16 @@ export class PageStore {
     // TODO: error handling?!
     const readResult = await this.backend.readPages(true, backendPageIdentifiers);
 
+    // remove all requested pageNumbers from loadingPages, even if they were not actually loaded
+    // if they are still needed a new load will be triggered by resetPageEntriesFromBackendPages()
+    for (const pageNumber of pageNumbers) {
+      this.loadingPages.delete(pageNumber);
+    }
+
+    this.applyReadResult(readResult);
+  }
+
+  private applyReadResult(readResult: BackendReadResult): void {
     if (readResult.indexPage && this.indexPage?.transactionId !== readResult.indexPage.transactionId) {
       // we got a new index page
       this.indexPage = IndexPage.deserialize(
@@ -319,15 +339,9 @@ export class PageStore {
       this.loadingPages.delete(pageNumber);
     }
 
-    // remove all requested pageNumbers from loadingPages, even if they were not actually loaded
-    // if they are still needed a new load will be triggered by resetPageEntriesFromBackendPages()
-    for (const pageNumber of pageNumbers) {
-      this.loadingPages.delete(pageNumber);
-    }
-
     if (!this.loadingPages.size) {
       // all current loads are finished, update all page entries now
-      assert(!this.loadTriggeredPages.size);
+      this.loadTriggeredPages.clear();
 
       this.resetPageEntriesFromBackendPages();
 
@@ -353,7 +367,9 @@ export class PageStore {
       queueMicrotask(() => {
         const pageNumbers = [...this.loadTriggeredPages];
         this.loadTriggeredPages.clear();
-        void this.processLoad(pageNumbers);
+        if (pageNumbers.length) {
+          void this.processLoad(pageNumbers);
+        }
       });
     }
   }
@@ -448,109 +464,77 @@ export class PageStore {
     this.triggerLoad(DUMMY_INDEX_PAGE_NUMBER);
   }
 
-  private async commit(updatedPages: Map<number, Uint8Array>, triedTransactionIds: Set<number>): Promise<boolean> {
-    if (!this.transactionActive) {
-      throw new Error("there is no transaction active");
+  private buildCommitData(
+    updatedPages: Map<number, Uint8Array>,
+    triedTransactionIds: Set<number>
+  ):
+    | {
+        indexPage: BackendIndexPage;
+        pages: BackendPage[];
+      }
+    | undefined {
+    if (!updatedPages.size) {
+      return undefined;
     }
-
     const oldIndexPage = this.indexPage;
-    if (!oldIndexPage) {
-      throw new Error("index page not available");
-    }
-    const newIndexPage = new IndexPage(oldIndexPage);
+    // if there were any changes, then the index page must be available
+    assert(oldIndexPage);
+
     let changes = false;
-    const oldPageData = this.scratchPageArray;
-    for (const pageNumber of dirtyPageNumbers) {
-      const entry = this.pageEntries.get(pageNumber);
-      assert(entry);
-      const success = this.buildPageArray(entry, oldPageData);
-      assert(success);
-      const data = entry.array;
-      const patches = Patch.createPatches(oldPageData, data, data.length);
-      if (patches.length) {
-        changes = true;
-        newIndexPage.pageNumberToPatches.set(
-          pageNumber,
-          Patch.mergePatches([...(newIndexPage.pageNumberToPatches.get(pageNumber) ?? []), ...patches])
-        );
+    const newPatches = new Map(oldIndexPage.pageNumberToPatches);
+    updatedPages.forEach((array, pageNumber) => {
+      const pageEntry = this.getPageEntry(pageNumber);
+      const baseArray = this.getBaseArray(pageEntry);
+      // the baseArray needs to be available if there are changes
+      assert(baseArray);
+      const newPatchesForPage = Patch.createPatches(baseArray, array, array.length);
+      if (!changes) {
+        const oldPatchesForPage = newPatches.get(pageNumber);
+        if (Patch.patchesEqual(oldPatchesForPage, newPatchesForPage.length ? newPatchesForPage : undefined)) {
+          // no actual changes
+          return;
+        }
       }
+      changes = true;
+      if (newPatchesForPage.length) {
+        newPatches.set(pageNumber, newPatchesForPage);
+      } else {
+        newPatches.delete(pageNumber);
+      }
+    });
+
+    if (!changes) {
+      return undefined;
     }
 
-    if (changes) {
-      let transactionId = oldIndexPage.transactionId + 1;
-      while (triedTransactionIds.has(transactionId)) {
-        // avoid trying a previous transaction id again
-        ++transactionId;
-      }
-      triedTransactionIds.add(transactionId);
-      const pagesToStore: BackendPageToStore[] = [];
+    // at this point newPatches contains existing patches for unchanged pages and new patches for updated pages
 
-      // push changes down to the individual pages as necessary
-      while (newIndexPage.serializedLength > this.maxIndexPageSize) {
-        const largestPageGroupNumber = newIndexPage.determineLargestPageGroup();
+    let transactionId = oldIndexPage.transactionId + 1;
+    while (triedTransactionIds.has(transactionId)) {
+      // avoid trying a previous transaction id again
+      ++transactionId;
+    }
+    triedTransactionIds.add(transactionId);
 
-        if (largestPageGroupNumber === undefined) {
-          throw new Error("index page too large, but no largest page group");
-        }
+    const newIndexPage = new IndexPage(
+      transactionId,
+      this.pageSize,
+      oldIndexPage.transactionTreeRootTransactionId,
+      newPatches
+    );
 
-        // write data to pages that have the largest patches
-        const largestPageNumber = newPageGroupPage.determineLargestPage();
-
-        if (largestPageNumber === undefined) {
-          throw new Error("page group page too large, but no largest page");
-        }
-        const backendPage = this.getBackendPageForPage(oldPageGroupPage, largestPageNumber);
-        if (!backendPage) {
-          // this can actually happen, if the page was not loaded/modified...
-          this.triggerLoad(largestPageNumber);
-          return false;
-        }
-
-        const newBackendPageData = new Uint8Array(this.backendPageSize);
-        writeUint48toDataView(uint8ArrayToDataView(newBackendPageData), 0, transactionId);
-        newPageGroupPage.pageNumberToTransactionId.set(largestPageNumber, transactionId);
-
-        const newPageArray = newBackendPageData.subarray(PAGE_OVERHEAD);
-        const oldBackendPageData = backendPage.page?.data;
-        if (oldBackendPageData) {
-          newPageArray.set(oldBackendPageData.subarray(PAGE_OVERHEAD));
-        }
-        // apply patches (all relevant patches are in newPageGroupPage)
-        newPageGroupPage.pageNumberToPatches.get(largestPageNumber)!.forEach((patch) => patch.applyTo(newPageArray));
-        newPageGroupPage.pageNumberToPatches.delete(largestPageNumber);
-
-        pagesToStore.push({
-          pageNumber: largestPageNumber,
-          data: newBackendPageData,
-          previousVersion: backendPage.page?.version,
-        });
-      }
-
-      const newIndexPageArray = new Uint8Array(this.backendPageSize);
-      newIndexPage.serialize(newIndexPageArray);
-      pagesToStore.push({
-        pageNumber: INDEX_PAGE_NUMBER,
-        data: newIndexPageArray,
-        previousVersion: this.backendPages.get(INDEX_PAGE_NUMBER)?.page?.version,
-      });
-
-      const storeResult = await this.backend.storePages(pagesToStore);
-      if (!storeResult) {
-        return false;
-      }
-
-      // update backendPages
-      storeResult.forEach((newVersion, index) => {
-        const pageToStore = pagesToStore[index];
-        this.backendPages.set(
-          pageToStore.pageNumber,
-          new BackendPage({ data: pageToStore.data, version: newVersion }, pageToStore.pageNumber)
-        );
-      });
+    if (newIndexPage.serializedLength > this.maxIndexPageSize) {
+      // TODO: implement "materializing" patches in the actual backend pages
+      throw new Error("TODO materialize");
     }
 
-    // the transaction is completed
-    return true;
+    return {
+      indexPage: {
+        transactionId,
+        data: newIndexPage.serialize(),
+      },
+      pages: [],
+    };
   }
 
   async runTransaction<T>(
@@ -567,10 +551,6 @@ export class PageStore {
     }
     this.transactionActive = true;
 
-    let result: TransactionResult<T> = {
-      committed: false,
-    };
-
     try {
       const triedTransactionIds: Set<number> = new Set();
       for (let retry = 0; retries === undefined || retry <= retries; ++retry) {
@@ -585,68 +565,67 @@ export class PageStore {
         let resultValue: T;
         const updatedPages = new Map<number, Uint8Array>();
         try {
-          try {
-            const get = (pageNumber: number): Uint8Array => {
+          const get = (pageNumber: number): Uint8Array => {
+            const updatedPage = updatedPages.get(pageNumber);
+            if (updatedPage) {
+              return updatedPage;
+            }
+            const result = this.getPage(pageNumber);
+            if (!result) {
+              throw new RetryRequiredError("page is not loaded");
+            }
+            return result;
+          };
+          resultValue = transactionFn({
+            get,
+            getForUpdate(pageNumber) {
               const updatedPage = updatedPages.get(pageNumber);
               if (updatedPage) {
                 return updatedPage;
               }
-              const result = this.getPage(pageNumber);
-              if (!result) {
-                throw new RetryRequiredError("page is not loaded");
-              }
+              // first call for this pageNumber, create a copy and put it into updatedPages
+              const result = Uint8Array.from(get(pageNumber));
+              updatedPages.set(pageNumber, result);
               return result;
-            };
-            resultValue = transactionFn({
-              get,
-              getForUpdate(pageNumber) {
-                const updatedPage = updatedPages.get(pageNumber);
-                if (updatedPage) {
-                  return updatedPage;
-                }
-                // first call for this pageNumber, create a copy and put it into updatedPages
-                const result = Uint8Array.from(get(pageNumber));
-                updatedPages.set(pageNumber, result);
-                return result;
-              },
-            });
-          } catch (e) {
-            if (e instanceof RetryRequiredError) {
-              // just retry
-              continue;
-            } else {
-              // rethrow
-              throw e;
-            }
-          }
-
-          if (await this.commit(updatedPages, triedTransactionIds)) {
-            result = {
-              committed: true,
-              resultValue,
-            };
-            break;
-          }
-        } finally {
-          if (result.committed) {
-            const indexPage = this.indexPage;
-            assert(indexPage);
-            // call arrayUpdated for the changed page entries
-            // TODO
-            for (const pageNumber of dirtyPageNumbers) {
-              const pageEntry = this.pageEntries.get(pageNumber);
-              assert(pageEntry);
-              const pageEntryKey = this.buildPageEntryKey(pageNumber);
-              assert(pageEntryKey);
-              pageEntry.arrayUpdated(pageEntryKey);
-            }
+            },
+          });
+        } catch (e) {
+          if (e instanceof RetryRequiredError) {
+            // just retry
+            continue;
+          } else {
+            // rethrow
+            throw e;
           }
         }
+
+        const commitData = this.buildCommitData(updatedPages, triedTransactionIds);
+        if (!commitData) {
+          // if commitData is undefined, then there are no changes and nothing needs to be done
+        } else {
+          const indexPage = this.indexPage;
+          // if there were any changes, then the index page must be available
+          assert(indexPage);
+
+          const success = await this.backend.writePages(
+            commitData.indexPage,
+            indexPage.transactionId,
+            commitData.pages
+          );
+          if (success) {
+            // just apply the commit data as if it was a "read result"
+            this.applyReadResult(commitData);
+          } else {
+            // not committed, retry
+            continue;
+          }
+        }
+        return { committed: true, resultValue };
       }
     } finally {
       this.transactionActive = false;
     }
 
-    return result;
+    return { committed: false };
   }
 }

@@ -35,8 +35,8 @@ function expectEqualsFillRandom(array: Uint8Array, writes: number, seed: number)
 describe("PageStore", () => {
   describe("read from empty store", () => {
     test("should return pages with zero bytes", async () => {
-      const backend = new InMemoryPageStoreBackend(PAGE_SIZE);
-      const store = new PageStore(backend);
+      const backend = new InMemoryPageStoreBackend();
+      const store = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
       expect(store.loading).toBe(false);
       expect(store.getPage(0)).toBe(undefined);
       expect(store.getPage(2)).toBe(undefined);
@@ -60,23 +60,23 @@ describe("PageStore", () => {
   describe("constructor page size validations", () => {
     test("works", () => {
       [2, (1 << 12) - 1, (1 << 16) + 1, 1 << 17].forEach((pageSize) => {
-        expect(() => new PageStore(new InMemoryPageStoreBackend(pageSize))).toThrow();
+        expect(() => new PageStore(new InMemoryPageStoreBackend(), pageSize, pageSize)).toThrow();
       });
       [1 << 12, 1 << 16].forEach((pageSize) => {
-        expect(() => new PageStore(new InMemoryPageStoreBackend(pageSize))).not.toThrow();
+        expect(() => new PageStore(new InMemoryPageStoreBackend(), pageSize, pageSize)).not.toThrow();
       });
     });
   });
 
   describe("transaction", () => {
     test("should work if there are no conflicts", async () => {
-      const backend = new InMemoryPageStoreBackend(PAGE_SIZE);
-      const store = new PageStore(backend);
+      const backend = new InMemoryPageStoreBackend();
+      const store = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
       // trigger load
       store.getPage(0);
       await store.loadingFinished();
 
-      const store2 = new PageStore(backend);
+      const store2 = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
       // trigger load
       store2.getPage(0);
       await store2.loadingFinished();
@@ -91,11 +91,6 @@ describe("PageStore", () => {
 
       const result = await store.runTransaction((pageAccess) => {
         pageAccess.getForUpdate(0)[0] = 42;
-
-        expect(page0?.[0]).toBe(42);
-        expect(page0?.[1]).toBe(0);
-        expect(store2Page0?.[0]).toBe(0);
-        expect(store2Page0?.[1]).toBe(0);
       });
 
       expect(result.committed).toBe(true);
@@ -112,14 +107,14 @@ describe("PageStore", () => {
     });
 
     test("should fail if there are conflicts", async () => {
-      const backend = new InMemoryPageStoreBackend(PAGE_SIZE);
-      const store = new PageStore(backend);
+      const backend = new InMemoryPageStoreBackend();
+      const store = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
       // trigger load
       store.getPage(0);
       store.getPage(1);
       await store.loadingFinished();
 
-      const store2 = new PageStore(backend);
+      const store2 = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
       // trigger load
       store2.getPage(0);
       await store2.loadingFinished();
@@ -134,8 +129,6 @@ describe("PageStore", () => {
       {
         const result = await store.runTransaction((pageAccess) => {
           pageAccess.getForUpdate(0)[0] = 42;
-
-          expect(page0?.[0]).toBe(42);
         });
         expect(result.committed).toBe(true);
       }
@@ -146,8 +139,6 @@ describe("PageStore", () => {
       {
         const result = await store2.runTransaction((pageAccess) => {
           pageAccess.getForUpdate(0)[0] = 43;
-
-          expect(store2Page0?.[0]).toBe(43);
         }, 0);
         expect(result.committed).toBe(false);
       }
@@ -160,8 +151,6 @@ describe("PageStore", () => {
       {
         const result = await store2.runTransaction((pageAccess) => {
           pageAccess.getForUpdate(0)[0] = 43;
-
-          expect(store2Page0?.[0]).toBe(43);
         }, 0);
         expect(result.committed).toBe(true);
       }
@@ -175,8 +164,6 @@ describe("PageStore", () => {
           const pageArray = pageAccess.getForUpdate(0);
           seenPrevValues.push(pageArray[0]);
           pageArray[0] = 44;
-
-          expect(page0?.[0]).toBe(44);
         });
         expect(result.committed).toBe(true);
       }
@@ -185,8 +172,8 @@ describe("PageStore", () => {
     });
 
     test("should work with more data, but still only index page", async () => {
-      const backend = new InMemoryPageStoreBackend(PAGE_SIZE);
-      const store = new PageStore(backend);
+      const backend = new InMemoryPageStoreBackend();
+      const store = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
 
       const pageCount = 10;
       const writeCount = 20;
@@ -202,7 +189,7 @@ describe("PageStore", () => {
         expectEqualsFillRandom(store.getPage(i)!, writeCount, i + 1);
       }
 
-      const store2 = new PageStore(backend);
+      const store2 = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
       for (let i = 0; i < pageCount; i++) {
         // trigger load
         store2.getPage(i);
@@ -222,13 +209,12 @@ describe("PageStore", () => {
       expect(store2.loading).toBe(false);
 
       // everything is stored in the index page
-      expect(backend.pages.size).toBe(1);
-      expect([...backend.pages.keys()]).toEqual([-1]);
+      expect(backend.pages.size).toBe(0);
     });
 
     test("should work with even more data, by moving the diffs to to the page group pages", async () => {
-      const backend = new InMemoryPageStoreBackend(PAGE_SIZE);
-      const store = new PageStore(backend);
+      const backend = new InMemoryPageStoreBackend();
+      const store = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
 
       const pageCount = 100;
       const writeCount = 20;
@@ -244,7 +230,7 @@ describe("PageStore", () => {
         expectEqualsFillRandom(store.getPage(i)!, writeCount, i + 1);
       }
 
-      const store2 = new PageStore(backend);
+      const store2 = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
       for (let i = 0; i < pageCount; i++) {
         // trigger load if necessary
         store2.getPage(i);
@@ -259,8 +245,8 @@ describe("PageStore", () => {
     });
 
     test("should work with more data in individual pages, by moving the data to actual pages", async () => {
-      const backend = new InMemoryPageStoreBackend(PAGE_SIZE);
-      const store = new PageStore(backend);
+      const backend = new InMemoryPageStoreBackend();
+      const store = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
 
       const pageCount = 4;
       const writeCount = 2000;
@@ -276,7 +262,7 @@ describe("PageStore", () => {
         expectEqualsFillRandom(store.getPage(i)!, writeCount, i + 1);
       }
 
-      const store2 = new PageStore(backend);
+      const store2 = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
       for (let i = 0; i < pageCount; i++) {
         // trigger load if necessary
         store2.getPage(i);
