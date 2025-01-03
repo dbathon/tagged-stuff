@@ -82,13 +82,6 @@ class PageEntry {
     this.array = new Uint8Array(pageSize);
   }
 
-  arrayUpdated(pageEntryKey: PageEntryKey) {
-    this.pageEntryKey = pageEntryKey;
-
-    // trigger all the callbacks
-    this.callbacks.forEach((callback) => callback());
-  }
-
   getArrayIfLoaded(): Uint8Array | undefined {
     return this.pageEntryKey ? this.array : undefined;
   }
@@ -247,6 +240,9 @@ export class PageStore {
       throw new Error("loading");
     }
 
+    // collect all relevant callbacks and call them all at the end (each one only once)
+    const callbacks = new Set<() => void>();
+
     for (const pageEntry of this.pageEntries.values()) {
       const pageEntryKey = this.buildPageEntryKey(pageEntry.pageNumber);
       if (pageEntryKey) {
@@ -257,7 +253,8 @@ export class PageStore {
           // the page might have changed
           const success = this.buildPageArray(pageEntry, pageEntry.array);
           if (success) {
-            pageEntry.arrayUpdated(pageEntryKey);
+            pageEntry.pageEntryKey = pageEntryKey;
+            pageEntry.callbacks.forEach((callback) => callbacks.add(callback));
             continue;
           }
         }
@@ -266,6 +263,8 @@ export class PageStore {
       pageEntry.pageEntryKey = undefined;
       this.triggerLoad(pageEntry.pageNumber);
     }
+
+    callbacks.forEach((callback) => callback());
   }
 
   private async processLoad(pageNumbers: number[]): Promise<void> {
@@ -357,7 +356,7 @@ export class PageStore {
         if (success) {
           const pageEntryKey = this.buildPageEntryKey(pageNumber);
           assert(pageEntryKey);
-          pageEntry.arrayUpdated(pageEntryKey);
+          pageEntry.pageEntryKey = pageEntryKey;
         }
       }
       if (!pageEntry.pageEntryKey) {
