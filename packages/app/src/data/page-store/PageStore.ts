@@ -154,11 +154,11 @@ export class PageStore {
   }
 
   get maxPageNumber(): number {
-    return this.treeCalc.maxPageNumber;
+    return this.treeCalc.maxNormalPageNumber;
   }
 
   private assertValidUsablePageNumber(pageNumber: number): void {
-    if (pageNumber > this.treeCalc.maxPageNumber) {
+    if (pageNumber > this.treeCalc.maxNormalPageNumber) {
       throw new Error("pageNumber cannot be used: " + pageNumber);
     }
   }
@@ -171,34 +171,15 @@ export class PageStore {
     if (!this.indexPage) {
       return undefined;
     }
-    if (pageNumber > this.treeCalc.maxPageNumber) {
-      // for these pages the pageNumber must be in transactionIdCache, otherwise just return undefined
-      // TODO it should be possible to modify TreeCalc to also handle these pages...
-      return undefined;
-    }
 
     let transactionId = this.indexPage.transactionTreeRootTransactionId;
     for (const pathElement of this.treeCalc.getPath(pageNumber)) {
-      const cachedTransactionId = this.transactionIdCache.get(pathElement.pageNumber);
-      if (cachedTransactionId === undefined) {
-        // populate the cache before calling getPageEntry() because it might call this method again
-        this.transactionIdCache.set(pathElement.pageNumber, transactionId);
-      } else {
-        assert(transactionId === cachedTransactionId);
-      }
-
-      const pageEntry = this.getPageEntry(pathElement.pageNumber);
-      if (cachedTransactionId === undefined) {
-        // these pages are not handled in resetPageEntriesFromBackendPages(), so we need to do it here
-        this.resetPageEntryFromBackendPage(pageEntry);
-      }
-      const pageArray = pageEntry.getArrayIfLoaded();
+      const pageArray = this.getPageEntry(pathElement.pageNumber).getArrayIfLoaded();
       if (!pageArray) {
         return undefined;
       }
       // TODO maybe find away to avoid creating the DataView here
-      const view = uint8ArrayToDataView(pageArray);
-      transactionId = readUint48FromDataView(view, pathElement.offset);
+      transactionId = readUint48FromDataView(uint8ArrayToDataView(pageArray), pathElement.offset);
     }
 
     this.transactionIdCache.set(pageNumber, transactionId);
@@ -261,37 +242,29 @@ export class PageStore {
     return new PageEntryKey(transactionId, this.indexPage.pageNumberToPatches.get(pageNumber));
   }
 
-  private resetPageEntryFromBackendPage(pageEntry: PageEntry): void {
-    const pageEntryKey = this.buildPageEntryKey(pageEntry.pageNumber);
-    if (pageEntryKey) {
-      if (pageEntry.pageEntryKey && pageEntry.pageEntryKey.equals(pageEntryKey)) {
-        // nothing to do
-        return;
-      } else {
-        // the page might have changed
-        const success = this.buildPageArray(pageEntry, pageEntry.array);
-        if (success) {
-          pageEntry.arrayUpdated(pageEntryKey);
-          return;
-        }
-      }
-    }
-    // something is probably inconsistent, trigger a refresh for the page
-    pageEntry.pageEntryKey = undefined;
-    this.triggerLoad(pageEntry.pageNumber);
-  }
-
   private resetPageEntriesFromBackendPages(): void {
     if (this.loading) {
       throw new Error("loading");
     }
 
-    const maxPageNumber = this.maxPageNumber;
     for (const pageEntry of this.pageEntries.values()) {
-      // only handle "normal" pages here, the other ones will be handled in getTransactionIdOfPage()
-      if (pageEntry.pageNumber <= maxPageNumber) {
-        this.resetPageEntryFromBackendPage(pageEntry);
+      const pageEntryKey = this.buildPageEntryKey(pageEntry.pageNumber);
+      if (pageEntryKey) {
+        if (pageEntry.pageEntryKey?.equals(pageEntryKey)) {
+          // nothing to do
+          continue;
+        } else {
+          // the page might have changed
+          const success = this.buildPageArray(pageEntry, pageEntry.array);
+          if (success) {
+            pageEntry.arrayUpdated(pageEntryKey);
+            continue;
+          }
+        }
       }
+      // something is probably inconsistent, trigger a refresh for the page
+      pageEntry.pageEntryKey = undefined;
+      this.triggerLoad(pageEntry.pageNumber);
     }
   }
 

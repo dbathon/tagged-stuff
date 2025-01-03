@@ -4,37 +4,55 @@ export interface TreePathElement {
   readonly offset: number;
 }
 
+function determineLevelStarts(entriesPerPage: number, maxPageNumber: number, maxNormalPageNumber: number): number[] {
+  const levelStarts: number[] = [];
+  let pageNumberCeil = maxPageNumber;
+  let entriesInLevel = maxNormalPageNumber;
+  // build the levels from the bottom up
+  while (true) {
+    const pageCount = Math.ceil(entriesInLevel / entriesPerPage);
+    levelStarts.push(pageNumberCeil - (pageCount - 1));
+
+    if (pageCount <= 1) {
+      break;
+    }
+    entriesInLevel = pageCount;
+    pageNumberCeil -= pageCount;
+  }
+
+  return levelStarts;
+}
+
 /**
  * TODO...
- * TODO maybe optimize maxPageNumber to avoid wasting pages?
  */
 export class TreeCalc {
   /** The first page number for each level (from the bottom up). */
   private readonly levelStarts: number[];
   /** The maximum page number that can be used for normal pages. */
-  readonly maxPageNumber: number;
-  readonly divider: number;
+  readonly maxNormalPageNumber: number;
+  readonly entriesPerPage: number;
 
-  constructor(readonly pageSize: number, readonly entrySize: number, maxPageNumber: number) {
-    const levelStarts: number[] = [];
-    const divider = Math.floor(pageSize / entrySize);
-    let levelDivider = divider;
-    let pageNumberCeil = maxPageNumber;
-    // build the levels from the bottom up
+  constructor(readonly pageSize: number, readonly entrySize: number, readonly maxPageNumber: number) {
+    const entriesPerPage = Math.floor(pageSize / entrySize);
+
+    let levelStarts: number[];
+    let guessedMaxNormalPageNumber = maxPageNumber;
+    let maxNormalPageNumber: number;
+
+    // determine the optimal maxNormalPageNumber (this should converge very fast)
     while (true) {
-      const pageCount = Math.ceil(maxPageNumber / levelDivider);
-      levelStarts.push(pageNumberCeil - (pageCount - 1));
-
-      if (pageCount <= 1) {
+      levelStarts = determineLevelStarts(entriesPerPage, maxPageNumber, guessedMaxNormalPageNumber);
+      maxNormalPageNumber = levelStarts[levelStarts.length - 1] - 1;
+      if (maxNormalPageNumber === guessedMaxNormalPageNumber) {
         break;
       }
-      levelDivider *= divider;
-      pageNumberCeil -= pageCount;
+      guessedMaxNormalPageNumber = maxNormalPageNumber;
     }
 
     this.levelStarts = levelStarts;
-    this.maxPageNumber = levelStarts[levelStarts.length - 1] - 1;
-    this.divider = divider;
+    this.maxNormalPageNumber = maxNormalPageNumber;
+    this.entriesPerPage = entriesPerPage;
   }
 
   get height(): number {
@@ -42,16 +60,23 @@ export class TreeCalc {
   }
 
   getPath(pageNumber: number): TreePathElement[] {
-    if (pageNumber > this.maxPageNumber) {
-      throw new Error("pageNumber is too large");
+    if (pageNumber < 0 || pageNumber > this.maxPageNumber) {
+      throw new Error("invalid pageNumber: " + pageNumber);
     }
     const result: TreePathElement[] = [];
-    let index = pageNumber;
+    let index = pageNumber <= this.maxNormalPageNumber ? pageNumber : undefined;
     for (const levelStart of this.levelStarts) {
-      const nextIndex = Math.floor(index / this.divider);
+      if (index === undefined) {
+        if (pageNumber >= levelStart) {
+          // we can now determine the index for the next level up
+          index = pageNumber - levelStart;
+        }
+        continue;
+      }
+      const nextIndex = Math.floor(index / this.entriesPerPage);
       result.unshift({
         pageNumber: levelStart + nextIndex,
-        offset: (index % this.divider) * this.entrySize,
+        offset: (index % this.entriesPerPage) * this.entrySize,
       });
       index = nextIndex;
     }
