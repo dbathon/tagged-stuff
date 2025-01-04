@@ -1,13 +1,13 @@
 import { expect, test } from "vitest";
-import { TreeCalc, type TreePathElement } from "./TreeCalc";
+import { TreeCalc, type TransactionIdLocation } from "./TreeCalc";
 
 class TestCase {
   constructor(readonly treeCalc: TreeCalc, readonly expectedHeight: number) {}
 
-  verifyPath(path: TreePathElement[]) {
+  verifyPath(path: TransactionIdLocation[]) {
     expect(path.length).toBeLessThanOrEqual(this.expectedHeight);
 
-    let prevElement: TreePathElement | undefined = undefined;
+    let prevElement: TransactionIdLocation | undefined = undefined;
     for (const element of path) {
       expect(element.pageNumber).toBeGreaterThan(this.treeCalc.maxNormalPageNumber);
       expect(element.offset).toBeGreaterThanOrEqual(0);
@@ -18,6 +18,14 @@ class TestCase {
       }
       prevElement = element;
     }
+  }
+
+  getPath(pageNumber: number): TransactionIdLocation[] {
+    const location = this.treeCalc.getTransactionIdLocation(pageNumber);
+    if (!location) {
+      return [];
+    }
+    return [...this.getPath(location.pageNumber), location];
   }
 }
 
@@ -34,9 +42,9 @@ test("TreeCalc", () => {
     expect(treeCalc.height).toBe(expectedHeight);
 
     for (const normalPath of [
-      treeCalc.getPath(0),
-      treeCalc.getPath(Math.floor(treeCalc.maxNormalPageNumber / 2)),
-      treeCalc.getPath(treeCalc.maxNormalPageNumber),
+      testCase.getPath(0),
+      testCase.getPath(Math.floor(treeCalc.maxNormalPageNumber / 2)),
+      testCase.getPath(treeCalc.maxNormalPageNumber),
     ]) {
       expect(normalPath.length).toBe(expectedHeight);
       testCase.verifyPath(normalPath);
@@ -46,15 +54,15 @@ test("TreeCalc", () => {
       while (remainingPath.length) {
         const lastElement = remainingPath.pop()!;
         expect(lastElement.pageNumber).toBeGreaterThan(treeCalc.maxNormalPageNumber);
-        expect(treeCalc.getPath(lastElement.pageNumber)).toEqual(remainingPath);
+        expect(testCase.getPath(lastElement.pageNumber)).toEqual(remainingPath);
       }
     }
 
-    const rootPagePath = treeCalc.getPath(treeCalc.maxNormalPageNumber + 1);
+    const rootPagePath = testCase.getPath(treeCalc.maxNormalPageNumber + 1);
     expect(rootPagePath.length).toBe(0);
     testCase.verifyPath(rootPagePath);
 
-    const lastPagePath = treeCalc.getPath(treeCalc.maxPageNumber);
+    const lastPagePath = testCase.getPath(treeCalc.maxPageNumber);
     expect(lastPagePath.length).toBe(expectedHeight - 1);
     testCase.verifyPath(lastPagePath);
   }

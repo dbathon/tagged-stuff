@@ -1,8 +1,10 @@
-export interface TreePathElement {
+import { assert } from "shared-util";
+
+export type TransactionIdLocation = {
   readonly pageNumber: number;
   /** The offset of the entry on the page. */
   readonly offset: number;
-}
+};
 
 function determineLevelStarts(entriesPerPage: number, maxPageNumber: number, maxNormalPageNumber: number): number[] {
   const levelStarts: number[] = [];
@@ -59,11 +61,10 @@ export class TreeCalc {
     return this.levelStarts.length;
   }
 
-  getPath(pageNumber: number): TreePathElement[] {
+  getTransactionIdLocation(pageNumber: number): TransactionIdLocation | undefined {
     if (pageNumber < 0 || pageNumber > this.maxPageNumber) {
       throw new Error("invalid pageNumber: " + pageNumber);
     }
-    const result: TreePathElement[] = [];
     let index = pageNumber <= this.maxNormalPageNumber ? pageNumber : undefined;
     for (const levelStart of this.levelStarts) {
       if (index === undefined) {
@@ -73,13 +74,13 @@ export class TreeCalc {
         }
         continue;
       }
-      const nextIndex = Math.floor(index / this.entriesPerPage);
-      result.unshift({
-        pageNumber: levelStart + nextIndex,
+      return {
+        pageNumber: levelStart + Math.floor(index / this.entriesPerPage),
         offset: (index % this.entriesPerPage) * this.entrySize,
-      });
-      index = nextIndex;
+      };
     }
-    return result;
+    // it must be the root page number
+    assert(pageNumber === this.maxNormalPageNumber + 1);
+    return undefined;
   }
 }

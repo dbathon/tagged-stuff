@@ -166,19 +166,18 @@ export class PageStore {
     if (cachedResult !== undefined) {
       return cachedResult;
     }
-    if (!this.indexPage) {
-      return undefined;
+
+    const transactionIdLocation = this.treeCalc.getTransactionIdLocation(pageNumber);
+    if (!transactionIdLocation) {
+      return this.indexPage?.transactionTreeRootTransactionId;
     }
 
-    let transactionId = this.indexPage.transactionTreeRootTransactionId;
-    for (const pathElement of this.treeCalc.getPath(pageNumber)) {
-      const pageArray = this.getPageEntry(pathElement.pageNumber).getArrayIfLoaded();
-      if (!pageArray) {
-        return undefined;
-      }
-      // TODO maybe find away to avoid creating the DataView here
-      transactionId = readUint48FromDataView(uint8ArrayToDataView(pageArray), pathElement.offset);
+    const pageArray = this.getPageEntry(transactionIdLocation.pageNumber).getArrayIfLoaded();
+    if (!pageArray) {
+      return undefined;
     }
+    // TODO maybe find away to avoid creating the DataView here
+    const transactionId = readUint48FromDataView(uint8ArrayToDataView(pageArray), transactionIdLocation.offset);
 
     this.transactionIdCache.set(pageNumber, transactionId);
     return transactionId;
@@ -564,32 +563,31 @@ export class PageStore {
       }
 
       // update the transaction id in the transaction tree
-      const treePath = this.treeCalc.getPath(largestPatches.pageNumber);
-      if (!treePath.length) {
+      const transactionIdLocation = this.treeCalc.getTransactionIdLocation(largestPatches.pageNumber);
+      if (!transactionIdLocation) {
         // we materialized the root of the transaction tree
         transactionTreeRootTransactionId = transactionId;
       } else {
-        const lastElement = treePath[treePath.length - 1];
-        let modifiedTransactionTreePage = modifiedTransactionTreePages.get(lastElement.pageNumber);
+        let modifiedTransactionTreePage = modifiedTransactionTreePages.get(transactionIdLocation.pageNumber);
         if (!modifiedTransactionTreePage) {
-          const transactionTreePageBaseArray = this.getBaseArray(this.getPageEntry(lastElement.pageNumber));
+          const transactionTreePageBaseArray = this.getBaseArray(this.getPageEntry(transactionIdLocation.pageNumber));
           // this needs to be available, because largestPatches.pageNumber is available
           assert(transactionTreePageBaseArray);
           const transactionTreePageArray = Uint8Array.from(transactionTreePageBaseArray);
-          newPatches.get(lastElement.pageNumber)?.forEach((patch) => patch.applyTo(transactionTreePageArray));
+          newPatches.get(transactionIdLocation.pageNumber)?.forEach((patch) => patch.applyTo(transactionTreePageArray));
           modifiedTransactionTreePage = { baseArray: transactionTreePageBaseArray, array: transactionTreePageArray };
           modifiedTransactionTreePages.set(largestPatches.pageNumber, modifiedTransactionTreePage);
         }
 
         writeUint48toDataView(
           uint8ArrayToDataView(modifiedTransactionTreePage.array),
-          lastElement.offset,
+          transactionIdLocation.offset,
           transactionId
         );
         if (!modifiedTransactionTreePage.backendPage) {
           // create new patches
           newPatches.set(
-            lastElement.pageNumber,
+            transactionIdLocation.pageNumber,
             Patch.createPatches(
               modifiedTransactionTreePage.baseArray,
               modifiedTransactionTreePage.array,
