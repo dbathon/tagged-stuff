@@ -1,7 +1,7 @@
 import { IndexPage } from "./internal/IndexPage";
 import { Patch } from "./internal/Patch";
 import { TreeCalc } from "./internal/TreeCalc";
-import { readUint48FromDataView } from "./internal/util";
+import { readUint48FromDataView, writeUint48toDataView } from "./internal/util";
 import { type PageAccessDuringTransaction } from "./PageAccessDuringTransaction";
 import {
   type BackendIndexPage,
@@ -30,6 +30,11 @@ class RetryRequiredError extends Error {
     super(message);
   }
 }
+
+type CommitData = {
+  indexPage: BackendIndexPage;
+  pages: BackendPage[];
+};
 
 export type TransactionResult<T> =
   | {
@@ -240,14 +245,27 @@ export class PageStore {
       throw new Error("loading");
     }
 
+    // we have to process the page entries in a specific order:
+    // first the transaction tree pages from top to bottom and then the "normal" pages (in any order)
+    // this is necessary for getTransactionIdOfPage() to work properly
+    const maxPageNumber = this.maxPageNumber;
+    const normalPageEntries: PageEntry[] = [];
+    const treePageEntries: PageEntry[] = [];
+    for (const pageEntry of this.pageEntries.values()) {
+      (pageEntry.pageNumber <= maxPageNumber ? normalPageEntries : treePageEntries).push(pageEntry);
+    }
+
+    treePageEntries.sort((a, b) => a.pageNumber - b.pageNumber);
+
     // collect all relevant callbacks and call them all at the end (each one only once)
     const callbacks = new Set<() => void>();
 
-    for (const pageEntry of this.pageEntries.values()) {
+    for (const pageEntry of [...treePageEntries, ...normalPageEntries]) {
       const pageEntryKey = this.buildPageEntryKey(pageEntry.pageNumber);
       if (pageEntryKey) {
         if (pageEntry.pageEntryKey?.equals(pageEntryKey)) {
-          // nothing to do
+          // nothing really to do, but still use the new pageEntryKey to allow GC of old index page patches
+          pageEntry.pageEntryKey = pageEntryKey;
           continue;
         } else {
           // the page might have changed
@@ -436,17 +454,9 @@ export class PageStore {
     this.triggerLoad(DUMMY_INDEX_PAGE_NUMBER);
   }
 
-  private buildCommitData(
-    updatedPages: Map<number, Uint8Array>,
-    triedTransactionIds: Set<number>
-  ):
-    | {
-        indexPage: BackendIndexPage;
-        pages: BackendPage[];
-      }
-    | undefined {
+  private buildCommitData(updatedPages: Map<number, Uint8Array>, triedTransactionIds: Set<number>): CommitData | false {
     if (!updatedPages.size) {
-      return undefined;
+      return false;
     }
     const oldIndexPage = this.indexPage;
     // if there were any changes, then the index page must be available
@@ -455,8 +465,7 @@ export class PageStore {
     let changes = false;
     const newPatches = new Map(oldIndexPage.pageNumberToPatches);
     updatedPages.forEach((array, pageNumber) => {
-      const pageEntry = this.getPageEntry(pageNumber);
-      const baseArray = this.getBaseArray(pageEntry);
+      const baseArray = this.getBaseArray(this.getPageEntry(pageNumber));
       // the baseArray needs to be available if there are changes
       assert(baseArray);
       const newPatchesForPage = Patch.createPatches(baseArray, array, array.length);
@@ -476,7 +485,7 @@ export class PageStore {
     });
 
     if (!changes) {
-      return undefined;
+      return false;
     }
 
     // at this point newPatches contains existing patches for unchanged pages and new patches for updated pages
@@ -486,27 +495,112 @@ export class PageStore {
       // avoid trying a previous transaction id again
       ++transactionId;
     }
-    triedTransactionIds.add(transactionId);
 
-    const newIndexPage = new IndexPage(
-      transactionId,
-      this.pageSize,
-      oldIndexPage.transactionTreeRootTransactionId,
-      newPatches
-    );
+    let transactionTreeRootTransactionId = oldIndexPage.transactionTreeRootTransactionId;
+    const backendPages: BackendPage[] = [];
 
-    if (newIndexPage.serializedLength > this.maxIndexPageSize) {
-      // TODO: implement "materializing" patches in the actual backend pages
-      throw new Error("TODO materialize");
-    }
-
-    return {
-      indexPage: {
-        transactionId,
-        data: newIndexPage.serialize(),
-      },
-      pages: [],
+    type ModifiedTransactionTreePage = {
+      readonly baseArray: Uint8Array;
+      array: Uint8Array;
+      /** Set if this page has been materialized. */
+      backendPage?: BackendPage;
     };
+    const modifiedTransactionTreePages = new Map<number, ModifiedTransactionTreePage>();
+
+    while (true) {
+      const newIndexPage = new IndexPage(transactionId, this.pageSize, transactionTreeRootTransactionId, newPatches);
+
+      if (newIndexPage.serializedLength <= this.maxIndexPageSize) {
+        triedTransactionIds.add(transactionId);
+        return {
+          indexPage: {
+            transactionId,
+            data: newIndexPage.serialize(),
+          },
+          pages: backendPages,
+        };
+      }
+
+      // the patches are too big, find the page with the largest patches and write a new backend page
+      type LargePatchesInfo = {
+        readonly pageNumber: number;
+        readonly size: number;
+        readonly patches: Patch[];
+      };
+      let largestPatches: LargePatchesInfo | undefined = undefined;
+      for (const [pageNumber, patches] of newPatches.entries()) {
+        let size = 0;
+        patches.forEach((patch) => (size += patch.serializedLength));
+        if (largestPatches === undefined || size > largestPatches.size) {
+          largestPatches = { pageNumber, size, patches };
+        }
+      }
+      assert(largestPatches);
+
+      const baseArray = this.getBaseArray(this.getPageEntry(largestPatches.pageNumber));
+      if (!baseArray) {
+        // this pageNumber is not loaded, so we unfortunately need to wait until it is loaded and retry...
+        throw new RetryRequiredError();
+      }
+      newPatches.delete(largestPatches.pageNumber);
+      const newArray = Uint8Array.from(baseArray);
+      largestPatches.patches.forEach((patch) => patch.applyTo(newArray));
+      const newBackendPage: BackendPage = {
+        identifier: {
+          pageNumber: largestPatches.pageNumber,
+          transactionId,
+        },
+        data: newArray,
+      };
+      backendPages.push(newBackendPage);
+      if (largestPatches.pageNumber > this.maxPageNumber) {
+        let modifiedTransactionTreePage = modifiedTransactionTreePages.get(largestPatches.pageNumber);
+        if (!modifiedTransactionTreePage) {
+          modifiedTransactionTreePage = { baseArray, array: newArray };
+          modifiedTransactionTreePages.set(largestPatches.pageNumber, modifiedTransactionTreePage);
+        }
+        modifiedTransactionTreePage.array = newBackendPage.data;
+        modifiedTransactionTreePage.backendPage = newBackendPage;
+      }
+
+      // update the transaction id in the transaction tree
+      const treePath = this.treeCalc.getPath(largestPatches.pageNumber);
+      if (!treePath.length) {
+        // we materialized the root of the transaction tree
+        transactionTreeRootTransactionId = transactionId;
+      } else {
+        const lastElement = treePath[treePath.length - 1];
+        let modifiedTransactionTreePage = modifiedTransactionTreePages.get(lastElement.pageNumber);
+        if (!modifiedTransactionTreePage) {
+          const transactionTreePageBaseArray = this.getBaseArray(this.getPageEntry(lastElement.pageNumber));
+          // this needs to be available, because largestPatches.pageNumber is available
+          assert(transactionTreePageBaseArray);
+          const transactionTreePageArray = Uint8Array.from(transactionTreePageBaseArray);
+          newPatches.get(lastElement.pageNumber)?.forEach((patch) => patch.applyTo(transactionTreePageArray));
+          modifiedTransactionTreePage = { baseArray: transactionTreePageBaseArray, array: transactionTreePageArray };
+          modifiedTransactionTreePages.set(largestPatches.pageNumber, modifiedTransactionTreePage);
+        }
+
+        writeUint48toDataView(
+          uint8ArrayToDataView(modifiedTransactionTreePage.array),
+          lastElement.offset,
+          transactionId
+        );
+        if (!modifiedTransactionTreePage.backendPage) {
+          // create new patches
+          newPatches.set(
+            lastElement.pageNumber,
+            Patch.createPatches(
+              modifiedTransactionTreePage.baseArray,
+              modifiedTransactionTreePage.array,
+              modifiedTransactionTreePage.array.length
+            )
+          );
+        } else {
+          // if backendPage is set, then array is the array of the new backend page and has been modified in place
+        }
+      }
+    }
   }
 
   async runTransaction<T>(
@@ -535,8 +629,9 @@ export class PageStore {
         }
 
         let resultValue: T;
-        const updatedPages = new Map<number, Uint8Array>();
+        let commitData: CommitData | false;
         try {
+          const updatedPages = new Map<number, Uint8Array>();
           const get = (pageNumber: number): Uint8Array => {
             const updatedPage = updatedPages.get(pageNumber);
             if (updatedPage) {
@@ -544,7 +639,7 @@ export class PageStore {
             }
             const result = this.getPage(pageNumber);
             if (!result) {
-              throw new RetryRequiredError("page is not loaded");
+              throw new RetryRequiredError();
             }
             return result;
           };
@@ -561,6 +656,8 @@ export class PageStore {
               return result;
             },
           });
+
+          commitData = this.buildCommitData(updatedPages, triedTransactionIds);
         } catch (e) {
           if (e instanceof RetryRequiredError) {
             // just retry
@@ -571,7 +668,6 @@ export class PageStore {
           }
         }
 
-        const commitData = this.buildCommitData(updatedPages, triedTransactionIds);
         if (!commitData) {
           // if commitData is undefined, then there are no changes and nothing needs to be done
         } else {

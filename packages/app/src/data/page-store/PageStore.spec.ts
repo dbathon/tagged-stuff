@@ -212,7 +212,7 @@ describe("PageStore", () => {
       expect(backend.pages.size).toBe(0);
     });
 
-    test("should work with even more data, by moving the diffs to to the page group pages", async () => {
+    test("should work with more data, by materializing the patches to actual pages", async () => {
       const backend = new InMemoryPageStoreBackend();
       const store = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
 
@@ -239,12 +239,9 @@ describe("PageStore", () => {
       }
 
       expect(backend.pages.size).toBeGreaterThan(1);
-      for (const pageNumber of backend.pages.keys()) {
-        expect(pageNumber).toBeLessThan(0);
-      }
     });
 
-    test("should work with more data in individual pages, by moving the data to actual pages", async () => {
+    test("should work with more data per page", async () => {
       const backend = new InMemoryPageStoreBackend();
       const store = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
 
@@ -271,7 +268,6 @@ describe("PageStore", () => {
       }
 
       expect(backend.pages.size).toBeGreaterThan(1);
-      expect([...backend.pages.keys()].filter((key) => key >= 0).length).toBeGreaterThan(0);
 
       // overwrite pages with new data and check again
       const result2 = await store.runTransaction((pageAccess) => {
