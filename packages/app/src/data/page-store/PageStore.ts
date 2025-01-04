@@ -78,7 +78,10 @@ class PageEntry {
   readonly array: Uint8Array;
 
   /** Is set if the array is actually initialized from data from the backend pages. */
-  pageEntryKey: PageEntryKey | undefined = undefined;
+  pageEntryKey?: PageEntryKey = undefined;
+
+  /** Is used as a cache for the expected transactionId of the backendPage */
+  transactionId?: number = undefined;
 
   readonly callbacks = new Set<() => void>();
 
@@ -88,7 +91,12 @@ class PageEntry {
   }
 
   getArrayIfLoaded(): Uint8Array | undefined {
-    return this.pageEntryKey ? this.array : undefined;
+    const transactionId = this.transactionId;
+    return this.pageEntryKey &&
+      transactionId !== undefined &&
+      (transactionId === 0 || transactionId === this.backendPage?.identifier.transactionId)
+      ? this.array
+      : undefined;
   }
 }
 
@@ -103,9 +111,6 @@ export class PageStore {
 
   // TODO: use "MapWithWeakRefValues" to allow garbage collection...
   private readonly pageEntries = new Map<number, PageEntry>();
-
-  /** Caches the transaction ids of all pages, is invalidated/cleared whenever a new index page is loaded. */
-  private readonly transactionIdCache = new Map<number, number>();
 
   /** Pages that will be loaded in the next microtask. */
   private readonly loadTriggeredPages = new Set<number>();
@@ -161,30 +166,30 @@ export class PageStore {
     }
   }
 
-  private getTransactionIdOfPage(pageNumber: number): number | undefined {
-    const cachedResult = this.transactionIdCache.get(pageNumber);
-    if (cachedResult !== undefined) {
-      return cachedResult;
+  private getTransactionIdOfPage(pageEntry: PageEntry): number | undefined {
+    let result = pageEntry.transactionId;
+
+    if (result === undefined) {
+      const transactionIdLocation = this.treeCalc.getTransactionIdLocation(pageEntry.pageNumber);
+      if (!transactionIdLocation) {
+        result = this.indexPage?.transactionTreeRootTransactionId;
+      } else {
+        const pageArray = this.getPageEntry(transactionIdLocation.pageNumber).getArrayIfLoaded();
+        if (pageArray) {
+          // TODO maybe find away to avoid creating the DataView here
+          result = readUint48FromDataView(uint8ArrayToDataView(pageArray), transactionIdLocation.offset);
+        }
+      }
+    }
+    if (result !== undefined) {
+      pageEntry.transactionId = result;
     }
 
-    const transactionIdLocation = this.treeCalc.getTransactionIdLocation(pageNumber);
-    if (!transactionIdLocation) {
-      return this.indexPage?.transactionTreeRootTransactionId;
-    }
-
-    const pageArray = this.getPageEntry(transactionIdLocation.pageNumber).getArrayIfLoaded();
-    if (!pageArray) {
-      return undefined;
-    }
-    // TODO maybe find away to avoid creating the DataView here
-    const transactionId = readUint48FromDataView(uint8ArrayToDataView(pageArray), transactionIdLocation.offset);
-
-    this.transactionIdCache.set(pageNumber, transactionId);
-    return transactionId;
+    return result;
   }
 
   private getBaseArray(pageEntry: PageEntry): Uint8Array | undefined {
-    const transactionId = this.getTransactionIdOfPage(pageEntry.pageNumber);
+    const transactionId = this.getTransactionIdOfPage(pageEntry);
     if (transactionId === undefined) {
       return undefined;
     }
@@ -231,12 +236,12 @@ export class PageStore {
     return result;
   }
 
-  private buildPageEntryKey(pageNumber: number): PageEntryKey | undefined {
-    const transactionId = this.getTransactionIdOfPage(pageNumber);
+  private buildPageEntryKey(pageEntry: PageEntry): PageEntryKey | undefined {
+    const transactionId = this.getTransactionIdOfPage(pageEntry);
     if (transactionId === undefined || !this.indexPage) {
       return undefined;
     }
-    return new PageEntryKey(transactionId, this.indexPage.pageNumberToPatches.get(pageNumber));
+    return new PageEntryKey(transactionId, this.indexPage.pageNumberToPatches.get(pageEntry.pageNumber));
   }
 
   private resetPageEntriesFromBackendPages(): void {
@@ -260,7 +265,7 @@ export class PageStore {
     const callbacks = new Set<() => void>();
 
     for (const pageEntry of [...treePageEntries, ...normalPageEntries]) {
-      const pageEntryKey = this.buildPageEntryKey(pageEntry.pageNumber);
+      const pageEntryKey = this.buildPageEntryKey(pageEntry);
       if (pageEntryKey) {
         if (pageEntry.pageEntryKey?.equals(pageEntryKey)) {
           // nothing really to do, but still use the new pageEntryKey to allow GC of old index page patches
@@ -288,7 +293,7 @@ export class PageStore {
     const backendPageIdentifiers: BackendPageIdentifier[] = [];
     for (const pageNumber of pageNumbers) {
       if (pageNumber >= 0) {
-        const transactionId = this.getTransactionIdOfPage(pageNumber);
+        const transactionId = this.getTransactionIdOfPage(this.getPageEntry(pageNumber));
         if (transactionId !== undefined && transactionId > 0) {
           backendPageIdentifiers.push({ pageNumber, transactionId });
         }
@@ -315,7 +320,8 @@ export class PageStore {
         readResult.indexPage.data,
         this.pageSize
       );
-      this.transactionIdCache.clear();
+      // reset all the cached transaction ids
+      this.pageEntries.forEach((entry) => (entry.transactionId = undefined));
     }
 
     for (const backendPage of readResult.pages) {
@@ -371,7 +377,7 @@ export class PageStore {
       if (!this.loading) {
         const success = this.buildPageArray(pageEntry, pageEntry.array);
         if (success) {
-          const pageEntryKey = this.buildPageEntryKey(pageNumber);
+          const pageEntryKey = this.buildPageEntryKey(pageEntry);
           assert(pageEntryKey);
           pageEntry.pageEntryKey = pageEntryKey;
         }
