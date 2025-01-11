@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 import { InMemoryPageStoreBackend } from "./InMemoryPageStoreBackend";
 import { PageStore } from "./PageStore";
 import { uint8ArraysEqual } from "shared-util";
+import { CompressingPageStoreBackend } from "./CompressingPageStoreBackend";
+import { EncryptingPageStoreBackend } from "./EncryptingPageStoreBackend";
 
 const PAGE_SIZE = 8192;
 
@@ -212,8 +214,17 @@ describe("PageStore", () => {
       expect(backend.pages.size).toBe(0);
     });
 
-    test("should work with more data, by materializing the patches to actual pages", async () => {
-      const backend = new InMemoryPageStoreBackend();
+    test("should work with more data, by materializing the patches to actual pages and also using encryption and compression", async () => {
+      const inMemoryBackend = new InMemoryPageStoreBackend();
+      const key = await crypto.subtle.generateKey(
+        {
+          name: "AES-GCM",
+          length: 128,
+        },
+        true,
+        ["encrypt", "decrypt"]
+      );
+      const backend = new CompressingPageStoreBackend(new EncryptingPageStoreBackend(inMemoryBackend, key));
       const store = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);
 
       const pageCount = 100;
@@ -238,7 +249,7 @@ describe("PageStore", () => {
         expectEqualsFillRandom(store2.getPage(i)!, writeCount, i + 1);
       }
 
-      expect(backend.pages.size).toBeGreaterThan(1);
+      expect(inMemoryBackend.pages.size).toBeGreaterThan(1);
     });
 
     test("should work with more data per page", async () => {
