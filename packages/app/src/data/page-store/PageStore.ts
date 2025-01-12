@@ -504,13 +504,32 @@ export class PageStore {
     let transactionTreeRootTransactionId = oldIndexPage.transactionTreeRootTransactionId;
     const backendPages: BackendPage[] = [];
 
-    type ModifiedTransactionTreePage = {
+    /**
+     * This is mainly needed for the transaction tree pages, because they can be modified below (when a transaction id
+     * is updated), but they can also be materialized to a backend page. And both of those things can happen in any
+     * order.
+     */
+    type PageState = {
       readonly baseArray: Uint8Array;
-      array: Uint8Array;
-      /** Set if this page has been materialized. */
+      readonly array: Uint8Array;
       backendPage?: BackendPage;
     };
-    const modifiedTransactionTreePages = new Map<number, ModifiedTransactionTreePage>();
+    const pageStates = new Map<number, PageState>();
+    const getPageState = (pageNumber: number): PageState => {
+      let result = pageStates.get(pageNumber);
+      if (!result) {
+        const baseArray = this.getBaseArray(this.getPageEntry(pageNumber));
+        if (!baseArray) {
+          // this pageNumber is not loaded, so we unfortunately need to wait until it is loaded and retry...
+          throw new RetryRequiredError();
+        }
+        const array = Uint8Array.from(baseArray);
+        newPatches.get(pageNumber)?.forEach((patch) => patch.applyTo(array));
+        result = { baseArray, array };
+        pageStates.set(pageNumber, result);
+      }
+      return result;
+    };
 
     while (true) {
       const newIndexPage = new IndexPage(transactionId, this.pageSize, transactionTreeRootTransactionId, newPatches);
@@ -530,43 +549,29 @@ export class PageStore {
       type LargePatchesInfo = {
         readonly pageNumber: number;
         readonly size: number;
-        readonly patches: Patch[];
       };
       let largestPatches: LargePatchesInfo | undefined = undefined;
       for (const [pageNumber, patches] of newPatches.entries()) {
         let size = 0;
         patches.forEach((patch) => (size += patch.serializedLength));
         if (largestPatches === undefined || size > largestPatches.size) {
-          largestPatches = { pageNumber, size, patches };
+          largestPatches = { pageNumber, size };
         }
       }
       assert(largestPatches);
 
-      const baseArray = this.getBaseArray(this.getPageEntry(largestPatches.pageNumber));
-      if (!baseArray) {
-        // this pageNumber is not loaded, so we unfortunately need to wait until it is loaded and retry...
-        throw new RetryRequiredError();
-      }
+      const pageState = getPageState(largestPatches.pageNumber);
+      assert(!pageState.backendPage);
       newPatches.delete(largestPatches.pageNumber);
-      const newArray = Uint8Array.from(baseArray);
-      largestPatches.patches.forEach((patch) => patch.applyTo(newArray));
       const newBackendPage: BackendPage = {
         identifier: {
           pageNumber: largestPatches.pageNumber,
           transactionId,
         },
-        data: newArray,
+        data: pageState.array,
       };
       backendPages.push(newBackendPage);
-      if (largestPatches.pageNumber > this.maxPageNumber) {
-        let modifiedTransactionTreePage = modifiedTransactionTreePages.get(largestPatches.pageNumber);
-        if (!modifiedTransactionTreePage) {
-          modifiedTransactionTreePage = { baseArray, array: newArray };
-          modifiedTransactionTreePages.set(largestPatches.pageNumber, modifiedTransactionTreePage);
-        }
-        modifiedTransactionTreePage.array = newBackendPage.data;
-        modifiedTransactionTreePage.backendPage = newBackendPage;
-      }
+      pageState.backendPage = newBackendPage;
 
       // update the transaction id in the transaction tree
       const transactionIdLocation = this.treeCalc.getTransactionIdLocation(largestPatches.pageNumber);
@@ -574,30 +579,21 @@ export class PageStore {
         // we materialized the root of the transaction tree
         transactionTreeRootTransactionId = transactionId;
       } else {
-        let modifiedTransactionTreePage = modifiedTransactionTreePages.get(transactionIdLocation.pageNumber);
-        if (!modifiedTransactionTreePage) {
-          const transactionTreePageBaseArray = this.getBaseArray(this.getPageEntry(transactionIdLocation.pageNumber));
-          // this needs to be available, because largestPatches.pageNumber is available
-          assert(transactionTreePageBaseArray);
-          const transactionTreePageArray = Uint8Array.from(transactionTreePageBaseArray);
-          newPatches.get(transactionIdLocation.pageNumber)?.forEach((patch) => patch.applyTo(transactionTreePageArray));
-          modifiedTransactionTreePage = { baseArray: transactionTreePageBaseArray, array: transactionTreePageArray };
-          modifiedTransactionTreePages.set(largestPatches.pageNumber, modifiedTransactionTreePage);
-        }
+        const transactionTreePageState = getPageState(transactionIdLocation.pageNumber);
 
         writeUint48toDataView(
-          uint8ArrayToDataView(modifiedTransactionTreePage.array),
+          uint8ArrayToDataView(transactionTreePageState.array),
           transactionIdLocation.offset,
           transactionId
         );
-        if (!modifiedTransactionTreePage.backendPage) {
+        if (!transactionTreePageState.backendPage) {
           // create new patches
           newPatches.set(
             transactionIdLocation.pageNumber,
             Patch.createPatches(
-              modifiedTransactionTreePage.baseArray,
-              modifiedTransactionTreePage.array,
-              modifiedTransactionTreePage.array.length
+              transactionTreePageState.baseArray,
+              transactionTreePageState.array,
+              transactionTreePageState.array.length
             )
           );
         } else {
