@@ -1,4 +1,4 @@
-import { onScopeDispose, type Ref, ref, watch } from "vue";
+import { onScopeDispose, reactive, type Ref, ref, toRaw, watch } from "vue";
 import { queryJson } from "../../data/json/jsonStore";
 import { PageStore } from "../../data/page-store/PageStore";
 import { type QueryParameters } from "../../data/json/queryTypes";
@@ -34,6 +34,11 @@ function buildIdMap(array: unknown[]): Map<number, unknown> | undefined {
   return result;
 }
 
+/**
+ * existingValue is expected to be the raw value (not proxied), if any modifications are made then the proxy is
+ * obtained (via reactive()) and used to do the modification. Doing it this way avoids the (significant) proxy overhead
+ * for all reads, but modifications can still be observed reactively.
+ */
 function mergeInto(existingValue: unknown, newValue: unknown): unknown {
   if (existingValue === newValue) {
     return existingValue;
@@ -42,6 +47,7 @@ function mergeInto(existingValue: unknown, newValue: unknown): unknown {
     if (Array.isArray(newValue)) {
       if (Array.isArray(existingValue)) {
         const length = newValue.length;
+        let existingValueReactive: any[] | undefined = undefined;
         // merge array values
         if (length) {
           const idMap = buildIdMap(existingValue);
@@ -53,7 +59,8 @@ function mergeInto(existingValue: unknown, newValue: unknown): unknown {
               const existingEntry = id !== undefined ? idMap.get(id) : undefined;
               const mergedEntry = mergeInto(existingEntry, newEntry);
               if (existingValue[i] !== mergedEntry) {
-                existingValue[i] = mergedEntry;
+                existingValueReactive ??= reactive(existingValue);
+                existingValueReactive[i] = mergedEntry;
               }
             }
           } else {
@@ -62,17 +69,22 @@ function mergeInto(existingValue: unknown, newValue: unknown): unknown {
               const existingEntry = existingValue[i];
               const mergedEntry = mergeInto(existingEntry, newValue[i]);
               if (existingEntry !== mergedEntry) {
-                existingValue[i] = mergedEntry;
+                existingValueReactive ??= reactive(existingValue);
+                existingValueReactive[i] = mergedEntry;
               }
             }
           }
         }
-        existingValue.length = length;
+        if (existingValue.length !== length) {
+          existingValueReactive ??= reactive(existingValue);
+          existingValueReactive.length = length;
+        }
         return existingValue;
       }
     } else if (existingValue && newValue && !Array.isArray(existingValue)) {
       // both existingValue and newValue are objects
       const existingRecord = existingValue as Record<string, unknown>;
+      let existingRecordReactive: Record<string, unknown> | undefined = undefined;
       const newRecord = newValue as Record<string, unknown>;
       const unhandledKeys = new Set(Object.keys(existingRecord));
       for (const [key, newEntryValue] of Object.entries(newRecord)) {
@@ -80,12 +92,18 @@ function mergeInto(existingValue: unknown, newValue: unknown): unknown {
           const existingEntryValue = existingRecord[key];
           const mergedEntryValue = mergeInto(existingEntryValue, newEntryValue);
           if (existingEntryValue !== mergedEntryValue) {
-            existingRecord[key] = mergedEntryValue;
+            existingRecordReactive ??= reactive(existingRecord);
+            existingRecordReactive[key] = mergedEntryValue;
           }
           unhandledKeys.delete(key);
         }
       }
-      unhandledKeys.forEach((key) => delete existingRecord[key]);
+      if (unhandledKeys.size) {
+        existingRecordReactive ??= reactive(existingRecord);
+        for (const key of unhandledKeys) {
+          delete existingRecordReactive[key];
+        }
+      }
       return existingRecord;
     }
   }
@@ -125,7 +143,7 @@ export function useJsonQuery<T extends object>(
       } else {
         if (queryResult) {
           console.time("merge " + label);
-          mergeInto(result.value, queryResult);
+          mergeInto(toRaw(result.value), queryResult);
           console.timeEnd("merge " + label);
         } else {
           // just keep the existing result if the query goes back to false
