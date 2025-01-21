@@ -114,7 +114,7 @@ function mergeInto(existingValue: unknown, newValue: unknown): unknown {
 
 export function useJsonQuery<T extends object>(
   pageStore: PageStore,
-  queryParameters: () => QueryParameters
+  queryParameters: () => QueryParameters,
 ): Ref<T[] | false> {
   // this ref is used to trigger a recompute
   const invalidateToggle = ref(false);
@@ -150,7 +150,7 @@ export function useJsonQuery<T extends object>(
         }
       }
     },
-    { immediate: true }
+    { immediate: true },
   );
 
   return result;

@@ -6,7 +6,7 @@ describe("read/writeCompressedUint32()", () => {
   test("throws on invalid unit32", () => {
     const array = new Uint8Array(10);
     [-1, 1.234, (-1 >>> 0) + 1].forEach((n) =>
-      expect(() => writeCompressedUint32(array, 0, n)).toThrowError("not a uint32")
+      expect(() => writeCompressedUint32(array, 0, n)).toThrowError("not a uint32"),
     );
   });
 

@@ -197,7 +197,7 @@ function scan(
   entryCount: number,
   startEntryNumber: number,
   direction: -1 | 1,
-  callback: (entry: Uint8Array, entryNumber: number) => boolean
+  callback: (entry: Uint8Array, entryNumber: number) => boolean,
 ): void {
   for (let entryNumber = startEntryNumber; entryNumber >= 0 && entryNumber < entryCount; entryNumber += direction) {
     const entry = readEntry(pageArray, entryCount, entryNumber);
@@ -210,7 +210,7 @@ function scan(
 export function scanPageEntries(
   pageArray: Uint8Array,
   startEntryOrEntryNumber: Uint8Array | number | undefined,
-  callback: (entry: Uint8Array, entryNumber: number) => boolean
+  callback: (entry: Uint8Array, entryNumber: number) => boolean,
 ): void {
   const entryCount = readPageEntriesCount(pageArray);
   let startEntryNumber: number;
@@ -230,7 +230,7 @@ export function scanPageEntries(
 export function scanPageEntriesReverse(
   pageArray: Uint8Array,
   startEntryOrEntryNumber: Uint8Array | number | undefined,
-  callback: (entry: Uint8Array, entryNumber: number) => boolean
+  callback: (entry: Uint8Array, entryNumber: number) => boolean,
 ): void {
   const entryCount = readPageEntriesCount(pageArray);
   let startEntryNumber: number;
@@ -276,7 +276,7 @@ function findFreeChunk(
   pageArray: Uint8Array,
   entryCount: number,
   freeChunksSize: number,
-  requiredLength: number
+  requiredLength: number,
 ): number | undefined {
   if (freeChunksSize < requiredLength) {
     return undefined;

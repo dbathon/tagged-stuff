@@ -104,7 +104,7 @@ function produceEvents(
   consumer: JsonEventConsumer,
   filter: AttributeFilter | undefined,
   parentPath: JsonPath | undefined,
-  previousArrayEntryResult?: ProduceEventsResult
+  previousArrayEntryResult?: ProduceEventsResult,
 ): ProduceEventsResult {
   if (typeof jsonValue === "object") {
     if (jsonValue === null) {
@@ -180,7 +180,7 @@ function pathsEqual(a: JsonPath | undefined, b: JsonPath | undefined): boolean {
 
 function findDirectChildPath(
   currentPath: JsonPath | undefined,
-  potentialChildPath: JsonPath | undefined
+  potentialChildPath: JsonPath | undefined,
 ): JsonPath | undefined {
   let result: JsonPath | undefined = potentialChildPath;
   while (result !== undefined && !pathsEqual(currentPath, result.parent)) {

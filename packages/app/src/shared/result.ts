@@ -1,5 +1,8 @@
 export class Result<T> {
-  private constructor(private readonly _value?: T, private readonly _promise?: Promise<T>) {}
+  private constructor(
+    private readonly _value?: T,
+    private readonly _promise?: Promise<T>,
+  ) {}
 
   static withValue<T>(value: T): Result<T> {
     return new Result<T>(value);
@@ -52,7 +55,7 @@ export class Result<T> {
           } else {
             return valueOrResult;
           }
-        })
+        }),
       );
     }
   }

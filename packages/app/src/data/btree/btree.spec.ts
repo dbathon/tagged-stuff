@@ -96,7 +96,7 @@ function testScanResult(
   pageProvider: PageProvider,
   params: { forward?: boolean; startEntry?: ArrayLike<number>; abort?: boolean },
   expected: ArrayLike<number>[],
-  rootPageNumber = 0
+  rootPageNumber = 0,
 ): void {
   const result: Uint8Array[] = [];
   const callback = (entry: Uint8Array) => {
@@ -262,13 +262,13 @@ describe("btree", () => {
           pageProvider.getPage,
           { forward: true, startEntry: entries[i] },
           entries.slice(i),
-          rootPageNumber
+          rootPageNumber,
         );
         testScanResult(
           pageProvider.getPage,
           { forward: false, startEntry: entries[i] },
           entries.slice(0, i + 1).reverse(),
-          rootPageNumber
+          rootPageNumber,
         );
       }
 
@@ -333,7 +333,7 @@ describe("btree", () => {
       innerPage([entries[middle1], entries[middle2]], [1, 2, 3], 1, 400),
       leafPage(entries.slice(0, middle1), 400),
       leafPage(entries.slice(middle1, middle2), 400),
-      leafPage(entries.slice(middle2), 400)
+      leafPage(entries.slice(middle2), 400),
     );
     const rootPageNumber = 0;
 
@@ -347,7 +347,7 @@ describe("btree", () => {
         removePageProvider.getPage,
         { forward: true },
         entries.filter((e) => e !== entry),
-        rootPageNumber
+        rootPageNumber,
       );
 
       assert(removePageProvider.pages.length === 4);
@@ -375,7 +375,7 @@ describe("btree", () => {
     pageProvider: PageProvider,
     rootPageNumber: number,
     expectedCount: number | undefined,
-    testRange?: TestEntriesRange
+    testRange?: TestEntriesRange,
   ) {
     const range: EntriesRange | undefined = testRange && {
       ...testRange,
@@ -507,10 +507,10 @@ describe("btree", () => {
 
     const group1 = entries.filter((e) => e[0] === 1);
     expect(findFirstBtreeEntryWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([1]))).toStrictEqual(
-      group1[0]
+      group1[0],
     );
     expect(findAllBtreeEntriesWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([1]))).toStrictEqual(
-      group1
+      group1,
     );
 
     assert(findFirstBtreeEntryWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([3])) === undefined);

@@ -9,17 +9,17 @@ export type TupleTypeDefinition = readonly TupleElementTypeName[];
 export type TupleType<T extends TupleTypeDefinition> = T extends readonly []
   ? readonly []
   : T extends readonly [infer TN, ...infer Rest extends TupleTypeDefinition]
-  ? readonly [
-      TN extends "number" | "uint32" | "uint32raw"
-        ? number
-        : TN extends "string"
-        ? string
-        : TN extends "array"
-        ? Uint8Array
-        : never,
-      ...TupleType<Rest>
-    ]
-  : never;
+    ? readonly [
+        TN extends "number" | "uint32" | "uint32raw"
+          ? number
+          : TN extends "string"
+            ? string
+            : TN extends "array"
+              ? Uint8Array
+              : never,
+        ...TupleType<Rest>,
+      ]
+    : never;
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -77,7 +77,7 @@ function writeTupleInternal<T extends TupleTypeDefinition>(
   offset: number,
   tupleType: T,
   values: TupleType<T>,
-  lengthsOrArrays: (number | Uint8Array)[]
+  lengthsOrArrays: (number | Uint8Array)[],
 ): void {
   let lengthsOrArraysIndex = 0;
 
@@ -133,7 +133,7 @@ export function writeTuple<T extends TupleTypeDefinition>(
   array: Uint8Array,
   offset: number,
   tupleType: T,
-  values: TupleType<T>
+  values: TupleType<T>,
 ): number {
   const lengthsOrArrays = toLengthsOrArrays(tupleType, values);
   const length = getLengthSum(lengthsOrArrays);
@@ -173,7 +173,7 @@ export function tupleToUint8Array<T extends TupleTypeDefinition>(tupleType: T, v
 export function readTuple<T extends TupleTypeDefinition>(
   array: Uint8Array,
   tupleType: T,
-  offset: number = 0
+  offset: number = 0,
 ): { values: TupleType<T>; length: number } {
   if (!tupleType.length) {
     return { values: [] as TupleType<T>, length: 0 };

@@ -253,8 +253,8 @@ test("queryJson", () => {
     assert(
       jsonEquals(
         ids,
-        expected.map((e) => e.id)
-      )
+        expected.map((e) => e.id),
+      ),
     );
 
     const count = countJson(pageAccess.get, parameters);
@@ -267,14 +267,14 @@ test("queryJson", () => {
           limit: halfLength,
           ...parameters,
         },
-        expected.slice(0, halfLength)
+        expected.slice(0, halfLength),
       );
       testQueryAndCount(
         {
           offset: halfLength,
           ...parameters,
         },
-        expected.slice(halfLength)
+        expected.slice(halfLength),
       );
 
       const quarterLength = halfLength >>> 1;
@@ -284,7 +284,7 @@ test("queryJson", () => {
           limit: halfLength,
           ...parameters,
         },
-        expected.slice(quarterLength, quarterLength + halfLength)
+        expected.slice(quarterLength, quarterLength + halfLength),
       );
 
       const doubleLength = expected.length * 2;
@@ -293,7 +293,7 @@ test("queryJson", () => {
           limit: doubleLength,
           ...parameters,
         },
-        expected
+        expected,
       );
       testQueryAndCount(
         {
@@ -301,7 +301,7 @@ test("queryJson", () => {
           limit: doubleLength,
           ...parameters,
         },
-        expected.slice(halfLength)
+        expected.slice(halfLength),
       );
     }
   }
@@ -319,7 +319,7 @@ test("queryJson", () => {
         ["i >=", 42],
       ],
     },
-    even.filter((e) => e.i >= 42)
+    even.filter((e) => e.i >= 42),
   );
   testQueryAndCount({ table, filter: ["evenOrUndefined =", true] }, even);
   testQueryAndCount({ table, filter: ["evenOrUndefined is", "boolean"] }, even);
@@ -342,7 +342,7 @@ test("queryJson", () => {
         ["buzz =", true],
       ],
     },
-    fizzAndBuzz
+    fizzAndBuzz,
   );
   testQueryAndCount(
     {
@@ -352,7 +352,7 @@ test("queryJson", () => {
         ["tags[] =", "buzz"],
       ],
     },
-    fizzAndBuzz
+    fizzAndBuzz,
   );
   testQueryAndCount(
     {
@@ -362,7 +362,7 @@ test("queryJson", () => {
         ["tags[] in", ["buzz"]],
       ],
     },
-    fizzAndBuzz
+    fizzAndBuzz,
   );
 
   const fizzOrBuzz = entities.filter((e) => e.fizz || e.buzz);
@@ -371,7 +371,7 @@ test("queryJson", () => {
       table,
       filter: ["or", ["fizz =", true], ["buzz =", true]],
     },
-    fizzOrBuzz
+    fizzOrBuzz,
   );
   testQueryAndCount(
     {
@@ -385,28 +385,28 @@ test("queryJson", () => {
         ],
       ],
     },
-    fizzOrBuzz
+    fizzOrBuzz,
   );
   testQueryAndCount(
     {
       table,
       filter: ["or", ["fizz =", true], ["tags[] =", "buzz"]],
     },
-    fizzOrBuzz
+    fizzOrBuzz,
   );
   testQueryAndCount(
     {
       table,
       filter: ["or", ["tags[] =", "fizz"], ["tags[] in", ["buzz"]]],
     },
-    fizzOrBuzz
+    fizzOrBuzz,
   );
   testQueryAndCount(
     {
       table,
       filter: ["tags[] in", ["fizz", "buzz"]],
     },
-    fizzOrBuzz
+    fizzOrBuzz,
   );
 });
 

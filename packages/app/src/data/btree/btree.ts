@@ -84,7 +84,7 @@ function getChildPageNumbers(pageArray: Uint8Array): DataView {
   return new DataView(
     pageArray.buffer,
     pageArray.byteOffset + INNER_PAGE_CHILD_PAGE_NUMBERS_OFFSET,
-    getMaxChildPageNumbers(pageArray) << 2
+    getMaxChildPageNumbers(pageArray) << 2,
   );
 }
 
@@ -108,7 +108,7 @@ function scan(
   pageNumber: number,
   startEntry: Uint8Array | undefined,
   forward: boolean,
-  callback: (entry: Uint8Array) => boolean
+  callback: (entry: Uint8Array) => boolean,
 ): ScanResult {
   const pageArray = pageProvider(pageNumber);
   if (!pageArray) {
@@ -170,7 +170,7 @@ export function scanBtreeEntries(
   pageProvider: PageProvider,
   rootPageNumber: number,
   startEntry: Uint8Array | undefined,
-  callback: (entry: Uint8Array) => boolean
+  callback: (entry: Uint8Array) => boolean,
 ): boolean {
   const result = scan(pageProvider, rootPageNumber, startEntry, true, callback);
   return result !== MISSING_PAGE;
@@ -180,7 +180,7 @@ export function scanBtreeEntriesReverse(
   pageProvider: PageProvider,
   rootPageNumber: number,
   startEntry: Uint8Array | undefined,
-  callback: (entry: Uint8Array) => boolean
+  callback: (entry: Uint8Array) => boolean,
 ): boolean {
   const result = scan(pageProvider, rootPageNumber, startEntry, false, callback);
   return result !== MISSING_PAGE;
@@ -192,7 +192,7 @@ export function scanBtreeEntriesReverse(
 export function findAllBtreeEntriesWithPrefix(
   pageProvider: PageProvider,
   rootPageNumber: number,
-  prefix: Uint8Array
+  prefix: Uint8Array,
 ): Uint8Array[] | false {
   const result: Uint8Array[] = [];
   const scanResult = scanBtreeEntries(pageProvider, rootPageNumber, prefix, (entry) => {
@@ -211,7 +211,7 @@ export function findAllBtreeEntriesWithPrefix(
 export function findFirstBtreeEntryWithPrefix(
   pageProvider: PageProvider,
   rootPageNumber: number,
-  prefix: Uint8Array
+  prefix: Uint8Array,
 ): Uint8Array | undefined | false {
   const pageArray = pageProvider(rootPageNumber);
   if (!pageArray) {
@@ -240,7 +240,7 @@ export function findFirstBtreeEntryWithPrefix(
  */
 export function findFirstBtreeEntry(
   pageProvider: PageProvider,
-  rootPageNumber: number
+  rootPageNumber: number,
 ): Uint8Array | undefined | false {
   const pageArray = pageProvider(rootPageNumber);
   if (!pageArray) {
@@ -383,14 +383,14 @@ function countEntries(pageProvider: PageProvider, pageNumber: number, range?: En
 export function countBtreeEntries(
   pageProvider: PageProvider,
   rootPageNumber: number,
-  range?: EntriesRange
+  range?: EntriesRange,
 ): number | undefined {
   return countEntries(pageProvider, rootPageNumber, range);
 }
 
 function checkIntegrity(
   pageProvider: PageProvider,
-  pageNumber: number
+  pageNumber: number,
 ): { depth: number; firstEntry?: Uint8Array; lastEntry?: Uint8Array } {
   const pageArray = pageProvider(pageNumber);
   if (!pageArray) {
@@ -426,12 +426,12 @@ function checkIntegrity(
         const pageHeight = getPageHeight(pageArray, pageType);
         assert(
           childDepth === pageHeight || (childDepth > 0xff && pageHeight === 0xff),
-          "childDepth and pageHeight do not match: " + childDepth + ", " + pageHeight
+          "childDepth and pageHeight do not match: " + childDepth + ", " + pageHeight,
         );
       } else {
         assert(
           childDepth === childResult.depth,
-          "different depth in child trees: " + childDepth + ", " + childResult.depth
+          "different depth in child trees: " + childDepth + ", " + childResult.depth,
         );
       }
       if (!firstEntry) {
@@ -545,7 +545,7 @@ function splitLeafPageAndInsert(
   pageProvider: PageProviderForWrite,
   leftEntriesPageArrayForUpdate: Uint8Array,
   newEntry: Uint8Array,
-  isRightMostSibling: boolean
+  isRightMostSibling: boolean,
 ): NewChildPageResult {
   const allEntries = getSortedEntriesWithNewEntry(leftEntriesPageArrayForUpdate, newEntry);
   const newEntryIndex = allEntries.indexOf(newEntry);
@@ -558,7 +558,7 @@ function splitLeafPageAndInsert(
   const rightPageNumber = allocateAndInitPage(pageProvider, PAGE_TYPE_LEAF, 0);
   const rightEntriesPageArrayForUpdate = getEntriesPageArray(
     pageProvider.getPageForUpdate(rightPageNumber),
-    PAGE_TYPE_LEAF
+    PAGE_TYPE_LEAF,
   );
 
   // insert entries into right page
@@ -603,7 +603,7 @@ function splitInnerPageAndInsert(
   leftPageArrayForUpdate: Uint8Array,
   leftEntriesPageArrayForUpdate: Uint8Array,
   childInsertResult: NewChildPageResult,
-  isRightMostSibling: boolean
+  isRightMostSibling: boolean,
 ): NewChildPageResult {
   const allEntries = getSortedEntriesWithNewEntry(leftEntriesPageArrayForUpdate, childInsertResult.lowerBound);
 
@@ -629,7 +629,7 @@ function splitInnerPageAndInsert(
   const rightPageNumber = allocateAndInitPage(
     pageProvider,
     PAGE_TYPE_INNER,
-    getPageHeight(leftPageArrayForUpdate, PAGE_TYPE_INNER)
+    getPageHeight(leftPageArrayForUpdate, PAGE_TYPE_INNER),
   );
   const rightPageArrayForUpdate = pageProvider.getPageForUpdate(rightPageNumber);
   const rightEntriesPageArrayForUpdate = getEntriesPageArray(rightPageArrayForUpdate, PAGE_TYPE_INNER);
@@ -673,7 +673,7 @@ function writeChildPageNumber(
   childPageNumbers: DataView,
   childPageNumber: number,
   index: number,
-  countBefore: number
+  countBefore: number,
 ): void {
   // move entries after the new entry to the right
   for (let i = countBefore; i > index; i--) {
@@ -708,7 +708,7 @@ function copyPageContent(fromPageArray: Uint8Array, toPageArrayForUpdate: Uint8A
     // create a Uint8Array view to be able to use set
     toPageArrayForUpdate.set(
       new Uint8Array(childPageNumbers.buffer, childPageNumbers.byteOffset, bytesToCopy),
-      INNER_PAGE_CHILD_PAGE_NUMBERS_OFFSET
+      INNER_PAGE_CHILD_PAGE_NUMBERS_OFFSET,
     );
   }
 }
@@ -717,7 +717,7 @@ function finishRootPageSplit(
   pageProvider: PageProviderForWrite,
   rootPageArrayForUpdate: Uint8Array,
   rootPageArrayBefore: Uint8Array,
-  splitResult: NewChildPageResult
+  splitResult: NewChildPageResult,
 ): void {
   // we want to just keep the root page, so allocate a new page for the left child
   const pageType = getPageType(rootPageArrayForUpdate);
@@ -741,7 +741,7 @@ function insert(
   pageNumber: number,
   entry: Uint8Array,
   isRootPage: boolean,
-  isRightMostSibling: boolean
+  isRightMostSibling: boolean,
 ): boolean | NewChildPageResult {
   const pageArray = pageProvider.getPage(pageNumber);
   const pageType = getPageType(pageArray);
@@ -799,7 +799,7 @@ function insert(
           getChildPageNumbers(pageArrayForUpdate),
           childInsertResult.childPageNumber,
           childIndex + 1,
-          countBefore + 1
+          countBefore + 1,
         );
         return true;
       } else {
@@ -819,7 +819,7 @@ function insert(
           pageArrayForUpdate,
           entriesPageArrayForUpdate,
           childInsertResult,
-          isRightMostSibling
+          isRightMostSibling,
         );
         if (rootPageArrayBefore) {
           finishRootPageSplit(pageProvider, pageArrayForUpdate, rootPageArrayBefore, splitResult);
@@ -835,7 +835,7 @@ function insert(
 export function insertBtreeEntry(
   pageProvider: PageProviderForWrite,
   rootPageNumber: number,
-  entry: Uint8Array
+  entry: Uint8Array,
 ): boolean {
   const insertResult = insert(pageProvider, rootPageNumber, entry, true, true);
   assert(typeof insertResult === "boolean", "insert on root page returned unexpected result");
@@ -849,7 +849,7 @@ function canBeMerged(
   pageArray: Uint8Array,
   entriesPageArray: Uint8Array,
   pageType: PageType,
-  extraEntry?: Uint8Array
+  extraEntry?: Uint8Array,
 ): boolean {
   const freeSpace = readPageEntriesFreeSpace(entriesPageArray) - (extraEntry?.length ?? 0);
   const freeSpacePercent = freeSpace / entriesPageArray.length;
@@ -876,7 +876,7 @@ function maybeMergeIntoLeftSibling(
   childIndexToRemove: number | undefined,
   parentPageArray: Uint8Array | undefined,
   parentChildIndex: number | undefined,
-  pageType: PageType
+  pageType: PageType,
 ): boolean {
   if (
     !parentPageArray ||
@@ -895,7 +895,7 @@ function maybeMergeIntoLeftSibling(
   if (pageType === PAGE_TYPE_INNER) {
     parentLowerBoundEntry = readPageEntryByNumber(
       getEntriesPageArray(parentPageArray, PAGE_TYPE_INNER),
-      parentChildIndex - 1
+      parentChildIndex - 1,
     );
   }
   if (
@@ -903,7 +903,7 @@ function maybeMergeIntoLeftSibling(
       leftSiblingPageArray,
       getEntriesPageArray(leftSiblingPageArray, pageType),
       pageType,
-      parentLowerBoundEntry
+      parentLowerBoundEntry,
     )
   ) {
     return false;
@@ -938,7 +938,7 @@ function maybeMergeIntoLeftSibling(
           leftSiblingChildPageNumbers,
           childPageNumbers.getUint32(i << 2),
           leftSiblingChildCount,
-          leftSiblingChildCount
+          leftSiblingChildCount,
         );
         leftSiblingChildCount++;
       }
@@ -961,7 +961,7 @@ function remove(
   pageNumber: number,
   entry: Uint8Array,
   parentPageArray: Uint8Array | undefined,
-  parentChildIndex: number | undefined
+  parentChildIndex: number | undefined,
 ): boolean | typeof REMOVE_CHILD_PAGE {
   const isRootPage = !parentPageArray;
   const pageArray = pageProvider.getPage(pageNumber);
@@ -989,7 +989,7 @@ function remove(
           undefined,
           parentPageArray,
           parentChildIndex,
-          PAGE_TYPE_LEAF
+          PAGE_TYPE_LEAF,
         );
       }
 
@@ -1025,7 +1025,7 @@ function remove(
           initPageArray(
             pageArrayForUpdate,
             remainingChildPageType,
-            getPageHeight(remainingChildPageArray, remainingChildPageType)
+            getPageHeight(remainingChildPageArray, remainingChildPageType),
           );
           copyPageContent(remainingChildPageArray, pageArrayForUpdate, remainingChildPageType);
           pageProvider.releasePage(remainingChildPageNumber);
@@ -1050,7 +1050,7 @@ function remove(
             childIndex,
             parentPageArray,
             parentChildIndex,
-            PAGE_TYPE_INNER
+            PAGE_TYPE_INNER,
           );
         }
 
@@ -1072,7 +1072,7 @@ function remove(
 export function removeBtreeEntry(
   pageProvider: PageProviderForWrite,
   rootPageNumber: number,
-  entry: Uint8Array
+  entry: Uint8Array,
 ): boolean {
   const removeResult = remove(pageProvider, rootPageNumber, entry, undefined, undefined);
   assert(typeof removeResult === "boolean", "remove on root page returned unexpected result");

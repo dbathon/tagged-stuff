@@ -121,7 +121,7 @@ function updateIndexEntry(
   indexEntry: Uint8Array,
   isAdd: boolean,
   indexRootPageNumber: number,
-  pageProvider: PageProviderForWrite
+  pageProvider: PageProviderForWrite,
 ): void {
   const prefix = buildEntryPrefix(jsonId, indexEntry);
   const existingEntry = notFalse(findFirstBtreeEntryWithPrefix(pageProvider.getPage, indexRootPageNumber, prefix));
@@ -159,7 +159,7 @@ function addIndexEntry(
   jsonId: number,
   indexEntry: Uint8Array,
   indexRootPageNumber: number,
-  pageProvider: PageProviderForWrite
+  pageProvider: PageProviderForWrite,
 ): void {
   updateIndexEntry(jsonId, indexEntry, true, indexRootPageNumber, pageProvider);
 }
@@ -168,7 +168,7 @@ function removeIndexEntry(
   jsonId: number,
   indexEntry: Uint8Array,
   indexRootPageNumber: number,
-  pageProvider: PageProviderForWrite
+  pageProvider: PageProviderForWrite,
 ): void {
   updateIndexEntry(jsonId, indexEntry, false, indexRootPageNumber, pageProvider);
 }
@@ -182,7 +182,7 @@ export function updateIndexForJson(
   indexEntriesBefore: Uint8ArraySet | undefined,
   indexEntriesAfter: Uint8ArraySet | undefined,
   indexRootPageNumber: number,
-  pageProvider: PageProviderForWrite
+  pageProvider: PageProviderForWrite,
 ): void {
   if (!indexEntriesAfter) {
     // just remove all index entries

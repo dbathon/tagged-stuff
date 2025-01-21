@@ -97,7 +97,7 @@ async function test2() {
     const keyEncryptKey = await subtleCrypto.importKey("raw", orgKeyBytes, "AES-CBC", false, ["encrypt"]);
 
     const encKeyBytes = new Uint8Array(
-      await subtleCrypto.encrypt({ name: "AES-CBC", iv: new Uint8Array(16) }, keyEncryptKey, new Uint8Array(1))
+      await subtleCrypto.encrypt({ name: "AES-CBC", iv: new Uint8Array(16) }, keyEncryptKey, new Uint8Array(1)),
     );
     const encKey = encodeBytes(encKeyBytes);
 
@@ -162,7 +162,7 @@ async function testPbkdf2() {
           length: 128,
         },
         true,
-        ["encrypt", "decrypt"]
+        ["encrypt", "decrypt"],
       );
 
       const exportedKey = await subtleCrypto.exportKey("raw", key);

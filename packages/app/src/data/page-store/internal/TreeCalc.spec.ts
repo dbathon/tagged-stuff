@@ -2,7 +2,10 @@ import { assert, expect, test } from "vitest";
 import { TreeCalc, type TransactionIdLocation } from "./TreeCalc";
 
 class TestCase {
-  constructor(readonly treeCalc: TreeCalc, readonly expectedHeight: number) {}
+  constructor(
+    readonly treeCalc: TreeCalc,
+    readonly expectedHeight: number,
+  ) {}
 
   verifyPath(path: TransactionIdLocation[]) {
     assert(path.length <= this.expectedHeight);

@@ -4,7 +4,10 @@ import { JdsClient } from "./jds-client";
 export class JdsDataStoreBackend implements DataStoreBackend {
   readonly jdsClient: JdsClient;
 
-  constructor(jdsBaseUrl: string, readonly storeId: string) {
+  constructor(
+    jdsBaseUrl: string,
+    readonly storeId: string,
+  ) {
     this.jdsClient = new JdsClient(jdsBaseUrl);
   }
 
@@ -60,7 +63,7 @@ export class JdsDataStoreBackend implements DataStoreBackend {
   async update(
     newStoreDocument: StoreDocument,
     newDataDocuments: DataDocument[],
-    obsoleteDataDocumentIds: string[]
+    obsoleteDataDocumentIds: string[],
   ): Promise<boolean> {
     if (newStoreDocument.id !== this.storeId) {
       throw new Error("unexpected store document id: " + this.storeId + ", " + JSON.stringify(newStoreDocument));

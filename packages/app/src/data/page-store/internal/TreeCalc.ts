@@ -35,7 +35,11 @@ export class TreeCalc {
   readonly maxNormalPageNumber: number;
   readonly entriesPerPage: number;
 
-  constructor(readonly pageSize: number, readonly entrySize: number, readonly maxPageNumber: number) {
+  constructor(
+    readonly pageSize: number,
+    readonly entrySize: number,
+    readonly maxPageNumber: number,
+  ) {
     const entriesPerPage = Math.floor(pageSize / entrySize);
 
     let levelStarts: number[];

@@ -30,7 +30,11 @@ export interface BTreeNode {
 }
 
 export class BTreeModificationResult {
-  constructor(readonly newRootId: string, readonly newNodes: BTreeNode[], readonly obsoleteNodes: BTreeNode[]) {}
+  constructor(
+    readonly newRootId: string,
+    readonly newNodes: BTreeNode[],
+    readonly obsoleteNodes: BTreeNode[],
+  ) {}
 }
 
 class Modifications {
@@ -132,7 +136,7 @@ export class RemoteBTree {
     readonly maxNodeSize: number,
     readonly fetchNode: (nodeId: string) => Result<BTreeNode>,
     readonly generateId: () => string,
-    readonly generatedIdLength: number
+    readonly generatedIdLength: number,
   ) {
     /**
      * There is no need for any rounding or constraints on maxNodeSize or minNodeSize (e.g. it is fine for them to not
@@ -167,7 +171,7 @@ export class RemoteBTree {
       !node.children ||
         (node.keys.length >= 1 &&
           node.children.ids.length === node.keys.length + 1 &&
-          node.children.keyCounts.length === node.keys.length + 1)
+          node.children.keyCounts.length === node.keys.length + 1),
     );
     // note: do not assert the max (or min) conditions here:
     // existing trees that were created with different node sizes should just work...
@@ -264,7 +268,7 @@ export class RemoteBTree {
   private scanInternal(
     minKeyOrAny: string | true,
     scanConsumer: BTreeScanConsumer,
-    nodeId: string
+    nodeId: string,
   ): Result<string | boolean> {
     return this.fetchNodeWithCheck(nodeId).transform((node) => {
       if (node.keys.length <= 0) {
@@ -325,7 +329,7 @@ export class RemoteBTree {
 
   scan(minKey: string | undefined, scanConsumer: BTreeScanConsumer, rootId: string): Result<void> {
     return this.scanInternal(minKey === undefined ? true : minKey, scanConsumer, rootId).transform(
-      (_) => UNDEFINED_RESULT
+      (_) => UNDEFINED_RESULT,
     );
   }
 
@@ -406,12 +410,12 @@ export class RemoteBTree {
       const newNodeLeft = this.newNode(
         modifications,
         newKeys.slice(0, leftKeyCount),
-        newChildren && this.sliceChildren(newChildren, 0, leftKeyCount + 1)
+        newChildren && this.sliceChildren(newChildren, 0, leftKeyCount + 1),
       );
       const newNodeRight = this.newNode(
         modifications,
         newKeys.slice(leftKeyCount + 1),
-        newChildren && this.sliceChildren(newChildren, leftKeyCount + 1)
+        newChildren && this.sliceChildren(newChildren, leftKeyCount + 1),
       );
       return {
         splitInsert: {
@@ -499,7 +503,7 @@ export class RemoteBTree {
   private deleteKeyInternal(
     key: string | undefined,
     nodeId: string,
-    modifications: Modifications
+    modifications: Modifications,
   ): Result<DeleteResult | undefined> {
     return this.fetchNodeWithCheck(nodeId).transform((node) => {
       if (node.keys.length <= 0) {
@@ -542,7 +546,7 @@ export class RemoteBTree {
         const deleteKeyInternalResult = this.deleteKeyInternal(
           !isKey ? key : undefined,
           node.children.ids[index],
-          modifications
+          modifications,
         );
         return deleteKeyInternalResult.transform((deleteResult) => {
           if (deleteResult === undefined) {
@@ -617,7 +621,7 @@ export class RemoteBTree {
                             leftSibling.children.keyCounts[newLeftSiblingKeyCount + 1],
                             ...newChildData.children.keyCounts,
                           ],
-                        }
+                        },
                     );
                     newChildren.ids[index] = newChildNode.id;
                     newChildren.keyCounts[index] = this.nodeKeyCount(newChildNode);
@@ -625,7 +629,7 @@ export class RemoteBTree {
                     const newLeftSibling = this.newNode(
                       modifications,
                       leftSibling.keys.slice(0, newLeftSiblingKeyCount),
-                      leftSibling.children && this.sliceChildren(leftSibling.children, 0, newLeftSiblingKeyCount + 1)
+                      leftSibling.children && this.sliceChildren(leftSibling.children, 0, newLeftSiblingKeyCount + 1),
                     );
                     newChildren.ids[index - 1] = newLeftSibling.id;
                     newChildren.keyCounts[index - 1] = this.nodeKeyCount(newLeftSibling);
@@ -670,7 +674,7 @@ export class RemoteBTree {
                           rightSibling.children && {
                             ids: [...newChildData.children.ids, rightSibling.children.ids[0]],
                             keyCounts: [...newChildData.children.keyCounts, rightSibling.children.keyCounts[0]],
-                          }
+                          },
                       );
                       newChildren.ids[index] = newChildNode.id;
                       newChildren.keyCounts[index] = this.nodeKeyCount(newChildNode);
@@ -678,7 +682,7 @@ export class RemoteBTree {
                       const newRightSibling = this.newNode(
                         modifications,
                         rightSibling.keys.slice(1),
-                        rightSibling.children && this.sliceChildren(rightSibling.children, 1)
+                        rightSibling.children && this.sliceChildren(rightSibling.children, 1),
                       );
                       newChildren.ids[index + 1] = newRightSibling.id;
                       newChildren.keyCounts[index + 1] = this.nodeKeyCount(newRightSibling);
@@ -719,7 +723,7 @@ export class RemoteBTree {
                         newChildData.children && {
                           ids: [...leftSibling.children.ids, ...newChildData.children.ids],
                           keyCounts: [...leftSibling.children.keyCounts, ...newChildData.children.keyCounts],
-                        }
+                        },
                     );
 
                     modifications.obsoleteNodes.push(leftSibling);
@@ -732,7 +736,7 @@ export class RemoteBTree {
                         rightSibling.children && {
                           ids: [...newChildData.children.ids, ...rightSibling.children.ids],
                           keyCounts: [...newChildData.children.keyCounts, ...rightSibling.children.keyCounts],
-                        }
+                        },
                     );
 
                     modifications.obsoleteNodes.push(rightSibling);

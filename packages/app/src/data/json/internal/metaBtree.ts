@@ -46,7 +46,7 @@ function notFalse<T>(value: T | false): T {
 function readBytesForNumber(
   pageProvider: PageProvider,
   metaRootPageNumber: number,
-  number: number
+  number: number,
 ): Uint8Array | false {
   const entryPrefix = tupleToUint8Array(UINT32_UINT32_TUPLE, [ENTRY_PREFIX, number]);
   const findResult = findFirstBtreeEntryWithPrefix(pageProvider, metaRootPageNumber, entryPrefix);
@@ -57,7 +57,7 @@ function readBytesForNumber(
 function findOrCreateNumberForBytes(
   pageProvider: PageProviderForWrite,
   metaRootPageNumber: number,
-  bytes: Uint8Array
+  bytes: Uint8Array,
 ): number {
   const hash = murmurHash3_x86_32(bytes);
   const lookupPrefix = tupleToUint8Array(UINT32_UINT32RAW_TUPLE, [LOOKUP_PREFIX, hash]);
@@ -94,7 +94,7 @@ export function jsonPathToNumber(
   pageProvider: PageProviderForWrite,
   metaRootPageNumber: number,
   path: JsonPath,
-  cache?: JsonPathToNumberCache
+  cache?: JsonPathToNumberCache,
 ): number {
   const cachedResult = cache?.get(path);
   if (cachedResult !== undefined) {
@@ -107,7 +107,7 @@ export function jsonPathToNumber(
   const result = findOrCreateNumberForBytes(
     pageProvider,
     metaRootPageNumber,
-    buildBytesForPath(parentPathNumber, path.key)
+    buildBytesForPath(parentPathNumber, path.key),
   );
   assert(result > NUMBER_FOR_EMPTY_PARENT, "path numbers need to be greater than 0");
 
@@ -121,7 +121,7 @@ export function numberToJsonPath(
   pageProvider: PageProvider,
   metaRootPageNumber: number,
   number: number,
-  cache?: NumberToJsonPathCache
+  cache?: NumberToJsonPathCache,
 ): JsonPath | false {
   const cachedResult = cache?.get(number);
   if (cachedResult !== undefined) {

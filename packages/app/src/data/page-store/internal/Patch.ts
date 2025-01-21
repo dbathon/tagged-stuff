@@ -8,7 +8,10 @@ const MAX_LENGTH = 255;
  * TODO: maybe we can optimize this in the future, but it should be good enough for now.
  */
 export class Patch {
-  constructor(readonly offset: number, readonly bytes: Uint8Array) {
+  constructor(
+    readonly offset: number,
+    readonly bytes: Uint8Array,
+  ) {
     if (offset < 0 || offset > MAX_OFFSET) {
       throw new RangeError("invalid offset: " + offset);
     }

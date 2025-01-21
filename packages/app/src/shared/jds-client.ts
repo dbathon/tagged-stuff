@@ -15,7 +15,10 @@ export interface MultiPutAndDelete {
 }
 
 export class MultiPutAndDeleteResult {
-  constructor(readonly newVersions: Record<string, string> | undefined, readonly errorDocumentId: string | undefined) {}
+  constructor(
+    readonly newVersions: Record<string, string> | undefined,
+    readonly errorDocumentId: string | undefined,
+  ) {}
 }
 
 const ID_REGEXP = /^[a-zA-Z0-9][a-zA-Z0-9_\-]{0,199}$/;
@@ -112,7 +115,7 @@ export class JdsClient {
       const documentId = json.documentId as string;
       if (documentId === undefined) {
         throw new Error(
-          "documentId not present in error response: " + JSON.stringify(json) + ", status: " + response.status
+          "documentId not present in error response: " + JSON.stringify(json) + ", status: " + response.status,
         );
       }
       return new MultiPutAndDeleteResult(undefined, documentId);

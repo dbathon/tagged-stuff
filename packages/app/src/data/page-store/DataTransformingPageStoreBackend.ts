@@ -42,7 +42,7 @@ export abstract class DataTransformingPageStoreBackend implements PageStoreBacke
           identifier: page.identifier,
           data: await this.reverseTransform(page.data),
         };
-      })
+      }),
     );
 
     return { indexPage, pages };
@@ -60,7 +60,7 @@ export abstract class DataTransformingPageStoreBackend implements PageStoreBacke
           identifier: page.identifier,
           data: await this.transform(page.data),
         };
-      })
+      }),
     );
 
     return this.underlyingBackend.writePages(transformedIndexPage, previousTransactionId, transformedPages);

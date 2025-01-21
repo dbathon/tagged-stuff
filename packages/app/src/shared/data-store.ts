@@ -5,7 +5,10 @@ import { BTreeModificationResult, type BTreeNode, RemoteBTree } from "./remote-b
 import { FALSE_RESULT, Result, TRUE_RESULT } from "./result";
 
 export class ConflictError extends Error {
-  constructor(readonly documentId: string, message?: string) {
+  constructor(
+    readonly documentId: string,
+    message?: string,
+  ) {
     super(message);
   }
 }
@@ -92,7 +95,7 @@ export interface DataStoreBackend {
   update(
     newStoreDocument: StoreDocument,
     newDataDocuments: DataDocument[],
-    obsoleteDataDocumentIds: string[]
+    obsoleteDataDocumentIds: string[],
   ): Promise<boolean>;
 }
 
@@ -150,7 +153,11 @@ class WriteOperation {
 const ID_SEPARATOR = "|";
 
 class DocumentInfo {
-  constructor(readonly id: string, readonly version: string, readonly backendId: string) {}
+  constructor(
+    readonly id: string,
+    readonly version: string,
+    readonly backendId: string,
+  ) {}
 
   static parseFromKey(key: string): DocumentInfo {
     const [id, version, backendId] = key.split(ID_SEPARATOR);
@@ -249,7 +256,7 @@ export class DataStore {
           }
           return FALSE_RESULT;
         },
-        rootId
+        rootId,
       )
       .transform((_) => documentInfo);
   }
@@ -290,7 +297,7 @@ export class DataStore {
             return undefined;
           }
           return Result.withPromise(this.fetchDocuments<D>([documentInfo])).transform(
-            (dataDocuments) => dataDocuments[0]
+            (dataDocuments) => dataDocuments[0],
           );
         })
         .toPromise();
@@ -322,7 +329,7 @@ export class DataStore {
             }
             return TRUE_RESULT;
           },
-          rootId
+          rootId,
         )
         .transform((_) => {
           if (keys.length === 0) {
@@ -396,7 +403,7 @@ export class DataStore {
               if (documentInfo.version !== document.version) {
                 throw new ConflictError(
                   id,
-                  "version does not match: expected " + documentInfo.version + ", but it is " + document.version
+                  "version does not match: expected " + documentInfo.version + ", but it is " + document.version,
                 );
               }
 

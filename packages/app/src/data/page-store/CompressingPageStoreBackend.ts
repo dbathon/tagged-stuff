@@ -6,7 +6,7 @@ const GZIP_COMPRESSION = 1;
 
 async function compress(data: Uint8Array): Promise<Uint8Array> {
   const arrayBuffer = await new Response(
-    new Blob([data]).stream().pipeThrough(new CompressionStream("gzip"))
+    new Blob([data]).stream().pipeThrough(new CompressionStream("gzip")),
   ).arrayBuffer();
   if (arrayBuffer.byteLength <= data.byteLength) {
     // this should be the very common case
@@ -29,7 +29,7 @@ async function decompress(data: Uint8Array): Promise<Uint8Array> {
     return data.subarray(0, data.length - 1);
   } else if (type === GZIP_COMPRESSION) {
     const arrayBuffer = await new Response(
-      new Blob([data.subarray(0, data.length - 1)]).stream().pipeThrough(new DecompressionStream("gzip"))
+      new Blob([data.subarray(0, data.length - 1)]).stream().pipeThrough(new DecompressionStream("gzip")),
     ).arrayBuffer();
     return new Uint8Array(arrayBuffer);
   } else {

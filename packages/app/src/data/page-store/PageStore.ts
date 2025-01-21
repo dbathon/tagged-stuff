@@ -65,7 +65,10 @@ function assertValidPageSize(pageSize: number, pageTypePrefix: string) {
  * equal for a page, then the page cannot have changed, if they are not, then it might have changed.
  */
 class PageEntryKey {
-  constructor(readonly pageTransactionId: number, readonly patches: Patch[] | undefined) {}
+  constructor(
+    readonly pageTransactionId: number,
+    readonly patches: Patch[] | undefined,
+  ) {}
 
   equals(other: PageEntryKey): boolean {
     return this.pageTransactionId === other.pageTransactionId && Patch.patchesEqual(this.patches, other.patches);
@@ -85,7 +88,10 @@ class PageEntry {
 
   readonly callbacks = new Set<() => void>();
 
-  constructor(readonly pageNumber: number, pageSize: number) {
+  constructor(
+    readonly pageNumber: number,
+    pageSize: number,
+  ) {
     assertValidPageNumber(pageNumber);
     this.array = new Uint8Array(pageSize);
   }
@@ -135,7 +141,7 @@ export class PageStore {
      * The maximum size of the index page. This can generally be changed, it is only used when writing new
      * transactions. When an existing index page is read, then it is allowed to be larger.
      */
-    readonly maxIndexPageSize: number
+    readonly maxIndexPageSize: number,
   ) {
     assertValidPageSize(pageSize, "");
     assertValidPageSize(maxIndexPageSize, "index ");
@@ -318,7 +324,7 @@ export class PageStore {
       this.indexPage = IndexPage.deserialize(
         readResult.indexPage.transactionId,
         readResult.indexPage.data,
-        this.pageSize
+        this.pageSize,
       );
       // reset all the cached transaction ids
       this.pageEntries.forEach((entry) => (entry.transactionId = undefined));
@@ -584,7 +590,7 @@ export class PageStore {
         writeUint48toDataView(
           uint8ArrayToDataView(transactionTreePageState.array),
           transactionIdLocation.offset,
-          transactionId
+          transactionId,
         );
         if (!transactionTreePageState.backendPage) {
           // create new patches
@@ -593,8 +599,8 @@ export class PageStore {
             Patch.createPatches(
               transactionTreePageState.baseArray,
               transactionTreePageState.array,
-              transactionTreePageState.array.length
-            )
+              transactionTreePageState.array.length,
+            ),
           );
         } else {
           // if backendPage is set, then array is the array of the new backend page and has been modified in place
@@ -605,7 +611,7 @@ export class PageStore {
 
   async runTransaction<T>(
     transactionFn: (pageAccess: PageAccessDuringTransaction) => T,
-    retries?: number
+    retries?: number,
   ): Promise<TransactionResult<T>> {
     if (this.loading) {
       await this.loadingFinished();
@@ -678,7 +684,7 @@ export class PageStore {
           const success = await this.backend.writePages(
             commitData.indexPage,
             indexPage.transactionId,
-            commitData.pages
+            commitData.pages,
           );
           if (success) {
             // just apply the commit data as if it was a "read result"

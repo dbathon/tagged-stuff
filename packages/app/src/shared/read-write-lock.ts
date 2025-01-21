@@ -2,7 +2,10 @@ class QueuedOperation {
   private completionPromise?: Promise<void>;
   private completionPromiseResolve?: () => void;
 
-  constructor(readonly type: "R" | "W", readonly previousCompleted?: Promise<void>) {}
+  constructor(
+    readonly type: "R" | "W",
+    readonly previousCompleted?: Promise<void>,
+  ) {}
 
   get afterCompletion(): Promise<void> {
     if (!this.completionPromise) {

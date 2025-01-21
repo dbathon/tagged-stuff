@@ -100,8 +100,8 @@ export class BTreeSet {
         ...(await this.dumpTreeInternal(
           node.children.ids[node.keys.length],
           nextIndent,
-          node.children.keyCounts[node.keys.length]
-        ))
+          node.children.keyCounts[node.keys.length],
+        )),
       );
       return result;
     } else {

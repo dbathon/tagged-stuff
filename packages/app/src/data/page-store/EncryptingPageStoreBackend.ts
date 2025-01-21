@@ -10,7 +10,10 @@ const ALGORITHM = "AES-GCM";
 const OVERHEAD = 28;
 
 export class EncryptingPageStoreBackend extends DataTransformingPageStoreBackend {
-  constructor(underlyingBackend: PageStoreBackend, private readonly key: CryptoKey) {
+  constructor(
+    underlyingBackend: PageStoreBackend,
+    private readonly key: CryptoKey,
+  ) {
     super(underlyingBackend);
 
     // do some very basic validation of the key
@@ -33,7 +36,7 @@ export class EncryptingPageStoreBackend extends DataTransformingPageStoreBackend
         tagLength: 128,
       },
       this.key,
-      data
+      data,
     );
     const result = new Uint8Array(iv.byteLength + encryptedData.byteLength);
     assert(result.length === data.length + OVERHEAD);
@@ -50,7 +53,7 @@ export class EncryptingPageStoreBackend extends DataTransformingPageStoreBackend
         iv: iv,
       },
       this.key,
-      transformedData.subarray(12, transformedData.length)
+      transformedData.subarray(12, transformedData.length),
     );
     return new Uint8Array(decryptedData);
   }

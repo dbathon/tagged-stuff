@@ -22,7 +22,7 @@ export class IndexPage {
      * index page.
      */
     readonly transactionTreeRootTransactionId: number,
-    readonly pageNumberToPatches: Map<number, Patch[]>
+    readonly pageNumberToPatches: Map<number, Patch[]>,
   ) {}
 
   static deserialize(transactionId: number, pageData: Uint8Array, expectedPageSize: number): IndexPage {

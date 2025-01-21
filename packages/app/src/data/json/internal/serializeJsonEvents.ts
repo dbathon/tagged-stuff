@@ -33,7 +33,7 @@ const MAX_EVENTS_SIZE = (1 << 28) - 1;
  */
 export function serializeJsonEvents<E extends BaseJsonEvent>(
   jsonEvents: E[],
-  getPathNumber: (jsonEvent: E) => number | undefined
+  getPathNumber: (jsonEvent: E) => number | undefined,
 ): Uint8Array {
   const pathAndTypeNumbers: number[] = [];
   let eventsSize = 0;
@@ -158,7 +158,7 @@ function readHeader(array: Uint8Array): {
 // TODO implement variations of this method that can read partial data without deserializing everything...
 export function deserializeJsonEvents<E>(
   array: Uint8Array,
-  eventFactory: (pathNumber: number | undefined, type: JsonEventType, value: string | number | undefined) => E
+  eventFactory: (pathNumber: number | undefined, type: JsonEventType, value: string | number | undefined) => E,
 ): E[] {
   const { headerSize, eventsSize, numbersSize, stringLengthsSize, totalSize } = readHeader(array);
   assert(array.length === totalSize);

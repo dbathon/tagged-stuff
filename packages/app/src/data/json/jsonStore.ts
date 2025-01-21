@@ -195,7 +195,7 @@ function getTableInfo(pageProvider: PageProviderNotUndefined, tableName: string)
   const [version, mainRoot, metaRoot, overflowRoot, indexRoot] = readTuple(
     tableEntry,
     UINT32_UINT32_UINT32_UINT32_UINT32_TUPLE,
-    prefix.length
+    prefix.length,
   ).values;
   assert(version === TABLE_INFO_VERSION, "unexpected TableInfo version");
   return { version, mainRoot, metaRoot, overflowRoot, indexRoot };
@@ -224,8 +224,8 @@ function getOrCreateTableInfo(pageProvider: PageProviderForWrite, tableName: str
         metaRoot,
         overflowRoot,
         indexRoot,
-      ])
-    )
+      ]),
+    ),
   );
 
   return { version, mainRoot, metaRoot, overflowRoot, indexRoot };
@@ -235,7 +235,7 @@ function readEntryIdAndJsonEvents(
   entry: Uint8Array,
   tableInfo: TableInfo,
   pathNumberToPath: (pathNumber: number | undefined) => JsonPath | undefined,
-  pageProvider: PageProviderNotUndefined
+  pageProvider: PageProviderNotUndefined,
 ): { id: number; events: FullJsonEvent[] } {
   const idAndZeroOrLengthResult = readTuple(entry, UINT32_UINT32_TUPLE, 0);
   const [id, zeroOrLength] = idAndZeroOrLengthResult.values;
@@ -247,7 +247,7 @@ function readEntryIdAndJsonEvents(
     let totalLength = jsonEventsArray.length;
     const overFlowPrefix = tupleToUint8Array(UINT32_TUPLE, [id]);
     for (const overflowEntry of notFalse(
-      findAllBtreeEntriesWithPrefix(pageProvider, tableInfo.overflowRoot, overFlowPrefix)
+      findAllBtreeEntriesWithPrefix(pageProvider, tableInfo.overflowRoot, overFlowPrefix),
     )) {
       const part = overflowEntry.subarray(readTuple(overflowEntry, UINT32_UINT32_TUPLE).length);
       parts.push(part);
@@ -276,7 +276,7 @@ function readEntryIdAndJsonEvents(
 
 function createPathNumberToPath(
   tableInfo: TableInfo,
-  pageProvider: PageProviderNotUndefined
+  pageProvider: PageProviderNotUndefined,
 ): (pathNumber: number | undefined) => JsonPath | undefined {
   const cache: NumberToJsonPathCache = new Map();
   return (pathNumber) => {
@@ -381,7 +381,7 @@ function anyValueMatchesAtPath(
   jsonValue: unknown,
   pathArray: PathArray,
   predicate: (value: JsonPrimitive) => boolean,
-  pathIndex = 0
+  pathIndex = 0,
 ): boolean {
   if (pathIndex >= pathArray.length) {
     return isJsonPrimitive(jsonValue) && predicate(jsonValue);
@@ -402,7 +402,7 @@ function anyValueMatchesAtPath(
     (jsonValue as Record<string, unknown>)[propertyNameOrZero],
     pathArray,
     predicate,
-    pathIndex + 1
+    pathIndex + 1,
   );
 }
 
@@ -495,7 +495,7 @@ function buildFilterPredicate(filterCondition: FilterCondition): (jsonValue: unk
 export function queryJson<T extends object, P extends ProjectionType = undefined>(
   pageAccess: PageAccess,
   { table, filter, extraFilter, orderBy, limit, offset }: QueryParameters,
-  projection?: P
+  projection?: P,
 ): QueryResult<P, T> | false {
   // TODO: this is a "naive" implementation, optimizations will be implemented later (e.g. using the index)
   let entries = readAllEntries<HasId>(pageAccess, table);
@@ -600,7 +600,7 @@ function deleteJsonInternal(
   pageProvider: PageProviderForWrite,
   tableInfo: TableInfo,
   id: number,
-  newIndexEntries?: Uint8ArraySet
+  newIndexEntries?: Uint8ArraySet,
 ): boolean {
   try {
     const prefix = tupleToUint8Array(UINT32_TUPLE, [id]);
@@ -696,7 +696,7 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
           jsonEvents.push({ path, pathNumber, type, value });
         }
       },
-      filterId
+      filterId,
     );
     assert(emptyObjectWithoutPathCount === 0 || (emptyObjectWithoutPathCount === 1 && !jsonEvents.length));
 
@@ -730,7 +730,7 @@ export function saveJson(pageAccess: PageAccessDuringTransaction, tableName: str
       ) {
         const overflowArray = jsonEventsArray.subarray(
           offset,
-          Math.min(offset + MAX_SINGLE_PAGE_JSON_EVENTS_ARRAY_LENGTH, zeroOrLength)
+          Math.min(offset + MAX_SINGLE_PAGE_JSON_EVENTS_ARRAY_LENGTH, zeroOrLength),
         );
         const idAndIndex = [id, i] as const;
         const overflowEntryLength = getTupleByteLength(UINT32_UINT32_TUPLE, idAndIndex) + overflowArray.length;

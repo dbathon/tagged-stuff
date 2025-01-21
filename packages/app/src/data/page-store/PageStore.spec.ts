@@ -222,7 +222,7 @@ describe("PageStore", () => {
           length: 128,
         },
         true,
-        ["encrypt", "decrypt"]
+        ["encrypt", "decrypt"],
       );
       const backend = new CompressingPageStoreBackend(new EncryptingPageStoreBackend(inMemoryBackend, key));
       const store = new PageStore(backend, PAGE_SIZE, PAGE_SIZE);

@@ -15,7 +15,10 @@ export class CachingDataStoreBackend implements DataStoreBackend {
   private openPromise: Promise<IDBPDatabase<Schema>> | undefined;
   private database: IDBPDatabase<Schema> | undefined;
 
-  constructor(private readonly nextDataStoreBackend: DataStoreBackend, private readonly cacheKey: string) {}
+  constructor(
+    private readonly nextDataStoreBackend: DataStoreBackend,
+    private readonly cacheKey: string,
+  ) {}
 
   private async getDatabase(): Promise<IDBPDatabase<Schema> | undefined> {
     if (!this.opened) {
@@ -93,7 +96,7 @@ export class CachingDataStoreBackend implements DataStoreBackend {
   async update(
     newStoreDocument: StoreDocument,
     newDataDocuments: DataDocument[],
-    obsoleteDataDocumentIds: string[]
+    obsoleteDataDocumentIds: string[],
   ): Promise<boolean> {
     const success = await this.nextDataStoreBackend.update(newStoreDocument, newDataDocuments, obsoleteDataDocumentIds);
 

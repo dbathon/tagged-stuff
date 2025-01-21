@@ -11,14 +11,14 @@ export type Operator = "=" | RangeOperator | "in" | "is" | "match";
 type OperatorArgument<O extends Operator> = O extends "="
   ? JsonPrimitive
   : O extends RangeOperator
-  ? JsonPrimitiveWithRange
-  : O extends "in"
-  ? JsonPrimitive[]
-  : O extends "is"
-  ? "string" | "number" | "boolean"
-  : O extends "match"
-  ? (value: JsonPrimitive) => boolean
-  : never;
+    ? JsonPrimitiveWithRange
+    : O extends "in"
+      ? JsonPrimitive[]
+      : O extends "is"
+        ? "string" | "number" | "boolean"
+        : O extends "match"
+          ? (value: JsonPrimitive) => boolean
+          : never;
 
 type OperatorAndArgument<O extends Operator = Operator> = O extends any ? [O, OperatorArgument<O>] : never;
 
@@ -52,7 +52,7 @@ export interface QueryParameters extends CountParameters {
 export type QueryResult<P extends ProjectionType, T = object> = P extends "onlyId"
   ? number[]
   : P extends Path[]
-  ? (JsonPrimitive | undefined)[][]
-  : P extends undefined
-  ? T[]
-  : never;
+    ? (JsonPrimitive | undefined)[][]
+    : P extends undefined
+      ? T[]
+      : never;

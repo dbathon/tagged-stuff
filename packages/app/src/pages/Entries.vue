@@ -19,7 +19,7 @@ const storeId = settings.storeId || "store";
 const jdsDataStoreBackend = new JdsDataStoreBackend(settings.jdsUrl, storeId);
 const cachingDataStoreBackend = new CachingDataStoreBackend(
   jdsDataStoreBackend,
-  JSON.stringify([settings.jdsUrl, storeId])
+  JSON.stringify([settings.jdsUrl, storeId]),
 );
 let dataStoreBackend: DataStoreBackend = cachingDataStoreBackend;
 if (settings.secret !== undefined && settings.secret.length > 0) {
