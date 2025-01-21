@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { assert, expect, test } from "vitest";
 import {
   getTupleByteLength,
   readTuple,
@@ -16,9 +16,9 @@ function testTuple<T extends TupleTypeDefinition>(tupleType: T, values: TupleTyp
   expect(() => writeTuple(array, 3, tupleType, values)).toThrow("offset is out of bounds");
   expect(array).toEqual(new Uint8Array(length + 2));
 
-  expect(writeTuple(array, 1, tupleType, values)).toBe(length);
-  expect(array[0]).toBe(0);
-  expect(array.at(-1)).toBe(0);
+  assert(writeTuple(array, 1, tupleType, values) === length);
+  assert(array[0] === 0);
+  assert(array.at(-1) === 0);
 
   const array2 = tupleToUint8Array(tupleType, values);
   expect(array2).toStrictEqual(array.subarray(1, length + 1));

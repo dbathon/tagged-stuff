@@ -1,9 +1,9 @@
-import { expect, test } from "vitest";
+import { assert, expect, test } from "vitest";
 import { uint8ArraysEqual } from "./uint8ArraysEqual";
 
 function testEqual(array: ArrayLike<number>, prefix: ArrayLike<number>, expectedResult: boolean) {
   const result = uint8ArraysEqual(Uint8Array.from(array), Uint8Array.from(prefix));
-  expect(result).toBe(expectedResult);
+  assert(result === expectedResult);
 }
 
 test("uint8ArraysEqual", () => {
@@ -19,10 +19,10 @@ test("uint8ArraysEqual", () => {
   testEqual([], [42], false);
 
   const someArray = Uint8Array.from([1, 2, 3, 4]);
-  expect(uint8ArraysEqual(someArray, someArray)).toBe(true);
+  assert(uint8ArraysEqual(someArray, someArray));
 
-  expect(uint8ArraysEqual(someArray.subarray(0, 3), someArray.subarray(0, 3))).toBe(true);
-  expect(uint8ArraysEqual(someArray.subarray(0, 3), someArray.subarray(1, 4))).toBe(false);
-  expect(uint8ArraysEqual(someArray.subarray(0, 3), someArray.subarray(0, 2))).toBe(false);
-  expect(uint8ArraysEqual(someArray.subarray(0, 3), someArray.subarray(0, 4))).toBe(false);
+  assert(uint8ArraysEqual(someArray.subarray(0, 3), someArray.subarray(0, 3)));
+  assert(!uint8ArraysEqual(someArray.subarray(0, 3), someArray.subarray(1, 4)));
+  assert(!uint8ArraysEqual(someArray.subarray(0, 3), someArray.subarray(0, 2)));
+  assert(!uint8ArraysEqual(someArray.subarray(0, 3), someArray.subarray(0, 4)));
 });

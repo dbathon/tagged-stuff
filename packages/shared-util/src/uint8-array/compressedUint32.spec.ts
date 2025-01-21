@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, assert, expect, test } from "vitest";
 import { compareUint8Arrays } from "./compareUint8Arrays";
 import { getCompressedUint32ByteLength, readCompressedUint32, writeCompressedUint32 } from "./compressedUint32";
 
@@ -66,20 +66,20 @@ describe("read/writeCompressedUint32()", () => {
     for (const testValue of testValues) {
       array.set(zeroArray);
       const writeLength = writeCompressedUint32(array, 1, testValue);
-      expect(writeLength).toBeGreaterThanOrEqual(1);
-      expect(writeLength).toBeLessThanOrEqual(5);
+      assert(writeLength >= 1);
+      assert(writeLength <= 5);
 
       // check that other array values are unchanged
-      expect(array[0]).toBe(0);
+      assert(array[0] === 0);
       for (let i = writeLength + 1; i < array.length; i++) {
-        expect(array[i]).toBe(0);
+        assert(array[i] === 0);
       }
 
       const { uint32: readValue, length: readLength } = readCompressedUint32(array, 1);
-      expect(readValue).toBe(testValue);
-      expect(readLength).toBe(writeLength);
+      assert(readValue === testValue);
+      assert(readLength === writeLength);
 
-      expect(getCompressedUint32ByteLength(testValue)).toBe(writeLength);
+      assert(getCompressedUint32ByteLength(testValue) === writeLength);
     }
   });
 
@@ -90,7 +90,7 @@ describe("read/writeCompressedUint32()", () => {
       writeCompressedUint32(a, 0, value);
       writeCompressedUint32(b, 0, largerValue);
       expect(value).toBeLessThan(largerValue);
-      expect(compareUint8Arrays(a, b)).toBe(-1);
+      assert(compareUint8Arrays(a, b) === -1);
     }
 
     for (let i = 1; i < testValues.length; i++) {
@@ -108,8 +108,8 @@ describe("read/writeCompressedUint32()", () => {
     function testRead(bytes: number[], expected: number, expectedLength: number) {
       const array = Uint8Array.from(bytes);
       const result = readCompressedUint32(array, 0);
-      expect(result.uint32).toBe(expected);
-      expect(result.length).toBe(expectedLength);
+      assert(result.uint32 === expected);
+      assert(result.length === expectedLength);
     }
 
     // inputs that are too short are extended with 0...

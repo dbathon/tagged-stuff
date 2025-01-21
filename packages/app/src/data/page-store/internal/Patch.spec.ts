@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, assert, expect, test } from "vitest";
 import { Patch } from "./Patch";
 
 describe("createPatches", () => {
@@ -13,42 +13,42 @@ describe("createPatches", () => {
   test("trivial case", () => {
     const data = Uint8Array.from([0, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
     const patches = Patch.createPatches(allZeroes, data, 10);
-    expect(patches.length).toBe(1);
+    assert(patches.length === 1);
     const [patch] = patches;
-    expect(patch.offset).toBe(1);
-    expect(patch.bytes.length).toBe(1);
+    assert(patch.offset === 1);
+    assert(patch.bytes.length === 1);
     checkPatches(allZeroes, data, patches);
   });
 
   test("two identical bytes inside the patch (serialized form has the shorter length than two patches", () => {
     const data = Uint8Array.from([0, 1, 0, 0, 2, 0, 0, 0, 0, 0]);
     const patches = Patch.createPatches(allZeroes, data, 10);
-    expect(patches.length).toBe(1);
+    assert(patches.length === 1);
     const [patch] = patches;
-    expect(patch.offset).toBe(1);
-    expect(patch.bytes.length).toBe(4);
+    assert(patch.offset === 1);
+    assert(patch.bytes.length === 4);
     checkPatches(allZeroes, data, patches);
   });
 
   test("three identical bytes inside the patch (serialized form has the same length as two patches", () => {
     const data = Uint8Array.from([0, 1, 0, 0, 0, 2, 0, 0, 0, 0]);
     const patches = Patch.createPatches(allZeroes, data, 10);
-    expect(patches.length).toBe(1);
+    assert(patches.length === 1);
     const [patch] = patches;
-    expect(patch.offset).toBe(1);
-    expect(patch.bytes.length).toBe(5);
+    assert(patch.offset === 1);
+    assert(patch.bytes.length === 5);
     checkPatches(allZeroes, data, patches);
   });
 
   test("four identical bytes between two patches", () => {
     const data = Uint8Array.from([0, 1, 0, 0, 0, 0, 2, 0, 0, 0]);
     const patches = Patch.createPatches(allZeroes, data, 10);
-    expect(patches.length).toBe(2);
+    assert(patches.length === 2);
     const [patch1, patch2] = patches;
-    expect(patch1.offset).toBe(1);
-    expect(patch1.bytes.length).toBe(1);
-    expect(patch2.offset).toBe(6);
-    expect(patch2.bytes.length).toBe(1);
+    assert(patch1.offset === 1);
+    assert(patch1.bytes.length === 1);
+    assert(patch2.offset === 6);
+    assert(patch2.bytes.length === 1);
     checkPatches(allZeroes, data, patches);
   });
 
@@ -59,12 +59,12 @@ describe("createPatches", () => {
       mostlyOnes[i] = 1;
     }
     const patches = Patch.createPatches(zeros, mostlyOnes, 300);
-    expect(patches.length).toBe(2);
+    assert(patches.length === 2);
     const [patch1, patch2] = patches;
-    expect(patch1.offset).toBe(1);
-    expect(patch1.bytes.length).toBe(255);
-    expect(patch2.offset).toBe(256);
-    expect(patch2.bytes.length).toBe(43);
+    assert(patch1.offset === 1);
+    assert(patch1.bytes.length === 255);
+    assert(patch2.offset === 256);
+    assert(patch2.bytes.length === 43);
     checkPatches(zeros, mostlyOnes, patches);
   });
 });

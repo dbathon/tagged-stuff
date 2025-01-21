@@ -1,37 +1,37 @@
-import { describe, expect, test } from "vitest";
+import { describe, assert, expect, test } from "vitest";
 import { BTreeSet } from "./b-tree-set";
 
 function testInsertAndDelete(treeSet: BTreeSet, insertElements: string[], deleteElements: string[]) {
-  expect(treeSet.getKeyCount().value).toBe(0);
-  expect(treeSet.data.size).toBe(1); // root node
+  assert(treeSet.getKeyCount().value === 0);
+  assert(treeSet.data.size === 1); // root node
 
   for (const element of insertElements) {
-    expect(treeSet.contains(element).value).toBe(false);
-    expect(treeSet.insert(element).value).toBe(true);
-    expect(treeSet.contains(element).value).toBe(true);
+    assert(treeSet.contains(element).value === false);
+    assert(treeSet.insert(element).value === true);
+    assert(treeSet.contains(element).value === true);
   }
 
-  expect(treeSet.getKeyCount().value).toBe(insertElements.length);
+  assert(treeSet.getKeyCount().value === insertElements.length);
 
   expect(treeSet.simpleScan().value).toStrictEqual([...insertElements].sort());
 
   for (const element of insertElements) {
-    expect(treeSet.insert(element).value).toBe(false);
-    expect(treeSet.contains(element).value).toBe(true);
+    assert(treeSet.insert(element).value === false);
+    assert(treeSet.contains(element).value === true);
   }
 
   for (const element of deleteElements) {
-    expect(treeSet.contains(element).value).toBe(true);
-    expect(treeSet.delete(element).value).toBe(true);
-    expect(treeSet.contains(element).value).toBe(false);
+    assert(treeSet.contains(element).value === true);
+    assert(treeSet.delete(element).value === true);
+    assert(treeSet.contains(element).value === false);
   }
 
-  expect(treeSet.getKeyCount().value).toBe(0);
-  expect(treeSet.data.size).toBe(1);
+  assert(treeSet.getKeyCount().value === 0);
+  assert(treeSet.data.size === 1);
 
   for (const element of deleteElements) {
-    expect(treeSet.delete(element).value).toBe(false);
-    expect(treeSet.contains(element).value).toBe(false);
+    assert(treeSet.delete(element).value === false);
+    assert(treeSet.contains(element).value === false);
   }
 }
 

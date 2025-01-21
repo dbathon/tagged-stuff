@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { assert, expect, test } from "vitest";
 import { readOrderPreservingFloat39, writeOrderPreservingFloat39 } from "./orderPreservingFloat39";
 import { compareUint8Arrays } from "./compareUint8Arrays";
 
@@ -45,7 +45,7 @@ test("write/readOrderPreservingFloat39", () => {
     writeOrderPreservingFloat39(scratchArray, 3, float);
     const { value, exact } = readOrderPreservingFloat39(scratchArray, 3);
     if (exact) {
-      expect(value).toBe(float);
+      assert(Object.is(value, float));
     } else {
       scratchDataView.setFloat64(0, float);
       // only preserve the first 39 bits
@@ -53,9 +53,9 @@ test("write/readOrderPreservingFloat39", () => {
       scratchArray[5] = 0;
       scratchArray[6] = 0;
       scratchArray[7] = 0;
-      expect(value).toBe(scratchDataView.getFloat64(0));
+      assert(Object.is(value, scratchDataView.getFloat64(0)));
     }
-    expect(exact).toBe(expectExact);
+    assert(exact === expectExact);
   }
 
   const testArray = new Uint8Array(7);
@@ -64,10 +64,10 @@ test("write/readOrderPreservingFloat39", () => {
     testRoundtrip(float);
 
     writeOrderPreservingFloat39(testArray, 1, float);
-    expect(testArray[0]).toBe(0);
-    expect(testArray[6]).toBe(0);
+    assert(testArray[0] === 0);
+    assert(testArray[6] === 0);
     if (previousArray !== undefined) {
-      expect(compareUint8Arrays(previousArray, testArray)).toBe(-1);
+      assert(compareUint8Arrays(previousArray, testArray) === -1);
     }
     previousArray = Uint8Array.from(testArray);
   }

@@ -1,20 +1,20 @@
-import { expect, test } from "vitest";
+import { assert, expect, test } from "vitest";
 import { TreeCalc, type TransactionIdLocation } from "./TreeCalc";
 
 class TestCase {
   constructor(readonly treeCalc: TreeCalc, readonly expectedHeight: number) {}
 
   verifyPath(path: TransactionIdLocation[]) {
-    expect(path.length).toBeLessThanOrEqual(this.expectedHeight);
+    assert(path.length <= this.expectedHeight);
 
     let prevElement: TransactionIdLocation | undefined = undefined;
     for (const element of path) {
-      expect(element.pageNumber).toBeGreaterThan(this.treeCalc.maxNormalPageNumber);
-      expect(element.offset).toBeGreaterThanOrEqual(0);
-      expect(element.offset + this.treeCalc.entrySize).toBeLessThanOrEqual(this.treeCalc.pageSize);
+      assert(element.pageNumber > this.treeCalc.maxNormalPageNumber);
+      assert(element.offset >= 0);
+      assert(element.offset + this.treeCalc.entrySize <= this.treeCalc.pageSize);
 
       if (prevElement) {
-        expect(element.pageNumber).toBeGreaterThan(prevElement.pageNumber);
+        assert(element.pageNumber > prevElement.pageNumber);
       }
       prevElement = element;
     }
@@ -39,31 +39,31 @@ test("TreeCalc", () => {
 
   for (const testCase of testCases) {
     const { treeCalc, expectedHeight } = testCase;
-    expect(treeCalc.height).toBe(expectedHeight);
+    assert(treeCalc.height === expectedHeight);
 
     for (const normalPath of [
       testCase.getPath(0),
       testCase.getPath(Math.floor(treeCalc.maxNormalPageNumber / 2)),
       testCase.getPath(treeCalc.maxNormalPageNumber),
     ]) {
-      expect(normalPath.length).toBe(expectedHeight);
+      assert(normalPath.length === expectedHeight);
       testCase.verifyPath(normalPath);
 
       // verify that getPath() also works for the page numbers in the path
       const remainingPath = [...normalPath];
       while (remainingPath.length) {
         const lastElement = remainingPath.pop()!;
-        expect(lastElement.pageNumber).toBeGreaterThan(treeCalc.maxNormalPageNumber);
+        assert(lastElement.pageNumber > treeCalc.maxNormalPageNumber);
         expect(testCase.getPath(lastElement.pageNumber)).toEqual(remainingPath);
       }
     }
 
     const rootPagePath = testCase.getPath(treeCalc.maxNormalPageNumber + 1);
-    expect(rootPagePath.length).toBe(0);
+    assert(rootPagePath.length === 0);
     testCase.verifyPath(rootPagePath);
 
     const lastPagePath = testCase.getPath(treeCalc.maxPageNumber);
-    expect(lastPagePath.length).toBe(expectedHeight - 1);
+    assert(lastPagePath.length === expectedHeight - 1);
     testCase.verifyPath(lastPagePath);
   }
 });

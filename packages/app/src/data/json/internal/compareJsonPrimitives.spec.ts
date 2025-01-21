@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { assert, test } from "vitest";
 import { compareJsonPrimitives } from "./compareJsonPrimitives";
 
 test("compareJsonPrimitives", () => {
@@ -71,6 +71,6 @@ test("compareJsonPrimitives", () => {
   ];
 
   for (const [a, b, compareResult] of testCases) {
-    expect(compareJsonPrimitives(a, b)).toBe(compareResult);
+    assert(compareJsonPrimitives(a, b) === compareResult);
   }
 });

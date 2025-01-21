@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, assert, expect, test } from "vitest";
 import {
   containsPageEntry,
   insertPageEntry,
@@ -17,7 +17,7 @@ describe("pageEntries", () => {
   test("blank page has zero entries", () => {
     const pageArray = new Uint8Array(100);
     const entries = readAllPageEntries(pageArray);
-    expect(entries.length).toBe(0);
+    assert(entries.length === 0);
   });
 
   test("insert works", () => {
@@ -39,14 +39,14 @@ describe("pageEntries", () => {
       const pageArray = new Uint8Array(100);
       const dataView = new DataView(pageArray.buffer);
       for (const index of order) {
-        expect(insertPageEntry(pageArray, testEntries[index])).toBe(true);
+        assert(insertPageEntry(pageArray, testEntries[index]) === true);
       }
 
       const entries = readAllPageEntries(pageArray);
       expect(entries).toEqual(testEntries);
 
       // no free chunks exist
-      expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBe(0);
+      assert(dataView.getUint16(FREE_CHUNKS_SIZE) === 0);
     }
   });
 
@@ -55,25 +55,25 @@ describe("pageEntries", () => {
     const dataView = new DataView(pageArray.buffer);
 
     const startFreeSpace = readPageEntriesFreeSpace(pageArray);
-    expect(startFreeSpace).toBeGreaterThan(0);
+    assert(startFreeSpace > 0);
 
     const entries: Uint8Array[] = [];
     const count = 20;
     for (let i = 0; i < count; i++) {
       const entry = Uint8Array.from([i, 0, 1, 2, 3, 4, 5]);
-      expect(insertPageEntry(pageArray, entry)).toBe(true);
+      assert(insertPageEntry(pageArray, entry) === true);
       entries.push(entry);
       expect(readPageEntriesFreeSpace(pageArray)).toBeLessThan(startFreeSpace);
     }
 
     expect(readAllPageEntries(pageArray)).toEqual(entries);
     // no free chunks exist
-    expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBe(0);
+    assert(dataView.getUint16(FREE_CHUNKS_SIZE) === 0);
 
     // remove the first entry
-    expect(removePageEntry(pageArray, entries[0])).toBe(true);
+    assert(removePageEntry(pageArray, entries[0]) === true);
     // removing again should return false
-    expect(removePageEntry(pageArray, entries[0])).toBe(false);
+    assert(removePageEntry(pageArray, entries[0]) === false);
 
     expect(readAllPageEntries(pageArray)).toEqual(entries.slice(1));
     // free chunks exists
@@ -81,15 +81,15 @@ describe("pageEntries", () => {
 
     // remove the other entries
     for (let i = 1; i < count; i++) {
-      expect(removePageEntry(pageArray, entries[i])).toBe(true);
+      assert(removePageEntry(pageArray, entries[i]) === true);
       // removing again should return false
-      expect(removePageEntry(pageArray, entries[i])).toBe(false);
+      assert(removePageEntry(pageArray, entries[i]) === false);
     }
 
     expect(readAllPageEntries(pageArray)).toEqual([]);
     // no free chunks exist
-    expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBe(0);
-    expect(readPageEntriesFreeSpace(pageArray)).toBe(startFreeSpace);
+    assert(dataView.getUint16(FREE_CHUNKS_SIZE) === 0);
+    assert(readPageEntriesFreeSpace(pageArray) === startFreeSpace);
   });
 
   test("scanPageEntries", () => {
@@ -116,7 +116,7 @@ describe("pageEntries", () => {
       [testEntry(5), 2],
     ];
     testEntryPairs.forEach(([entry]) => {
-      expect(insertPageEntry(pageArray, entry)).toBe(true);
+      assert(insertPageEntry(pageArray, entry) === true);
     });
 
     const forwardCases: [Uint8Array | number | undefined, number][] = [
@@ -180,7 +180,7 @@ describe("pageEntries", () => {
     const pageArray = new Uint8Array(0xffff);
 
     const maxSizeEntry = new Uint8Array(2000);
-    expect(insertPageEntry(pageArray, maxSizeEntry)).toBe(true);
+    assert(insertPageEntry(pageArray, maxSizeEntry) === true);
 
     const tooLargeEntry = new Uint8Array(2001);
     expect(() => insertPageEntry(pageArray, tooLargeEntry)).toThrow();
@@ -219,7 +219,7 @@ describe("pageEntries", () => {
         entry[i] = random() % 256;
       }
 
-      expect(containsPageEntry(pageArray, entry)).toBe(false);
+      assert(containsPageEntry(pageArray, entry) === false);
 
       const insertSuccess = insertPageEntry(pageArray, entry);
       if (!insertSuccess) {
@@ -230,24 +230,24 @@ describe("pageEntries", () => {
       entries.push(entry);
     }
 
-    expect(entries.length).toBeGreaterThan(0);
-    expect(readPageEntriesCount(pageArray)).toBe(entries.length);
-    expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBe(0);
+    assert(entries.length > 0);
+    assert(readPageEntriesCount(pageArray) === entries.length);
+    assert(dataView.getUint16(FREE_CHUNKS_SIZE) === 0);
 
     entries.forEach((entry) => {
-      expect(containsPageEntry(pageArray, entry)).toBe(true);
+      assert(containsPageEntry(pageArray, entry) === true);
     });
 
     // remove each one and immediately insert it again and check that the free chunk is reused
     entries.forEach((entry) => {
       const freeSpaceBefore = readPageEntriesFreeSpace(pageArray);
-      expect(removePageEntry(pageArray, entry)).toBe(true);
-      expect(removePageEntry(pageArray, entry)).toBe(false);
-      expect(readPageEntriesFreeSpace(pageArray)).toBeGreaterThan(freeSpaceBefore);
+      assert(removePageEntry(pageArray, entry) === true);
+      assert(removePageEntry(pageArray, entry) === false);
+      assert(readPageEntriesFreeSpace(pageArray) > freeSpaceBefore);
 
-      expect(insertPageEntry(pageArray, entry)).toBe(true);
-      expect(readPageEntriesFreeSpace(pageArray)).toBe(freeSpaceBefore);
-      expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBe(0);
+      assert(insertPageEntry(pageArray, entry) === true);
+      assert(readPageEntriesFreeSpace(pageArray) === freeSpaceBefore);
+      assert(dataView.getUint16(FREE_CHUNKS_SIZE) === 0);
     });
 
     // remove half of them
@@ -255,20 +255,20 @@ describe("pageEntries", () => {
     while (removed.length < entries.length) {
       const index = random() % entries.length;
       const entry = entries[index];
-      expect(removePageEntry(pageArray, entry)).toBe(true);
+      assert(removePageEntry(pageArray, entry) === true);
       entries.splice(index, 1);
       removed.push(entry);
     }
 
-    expect(readPageEntriesCount(pageArray)).toBe(entries.length);
-    expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBeGreaterThan(0);
+    assert(readPageEntriesCount(pageArray) === entries.length);
+    assert(dataView.getUint16(FREE_CHUNKS_SIZE) > 0);
 
     entries.forEach((entry) => {
-      expect(containsPageEntry(pageArray, entry)).toBe(true);
+      assert(containsPageEntry(pageArray, entry) === true);
     });
 
     removed.forEach((entry) => {
-      expect(containsPageEntry(pageArray, entry)).toBe(false);
+      assert(containsPageEntry(pageArray, entry) === false);
     });
 
     // try re-adding the entries (not all might work because of fragmentation)
@@ -276,7 +276,7 @@ describe("pageEntries", () => {
     while (removed.length) {
       const index = random() % removed.length;
       const entry = removed[index];
-      expect(containsPageEntry(pageArray, entry)).toBe(false);
+      assert(containsPageEntry(pageArray, entry) === false);
       if (insertPageEntry(pageArray, entry)) {
         removed.splice(index, 1);
         entries.push(entry);
@@ -285,23 +285,23 @@ describe("pageEntries", () => {
         break;
       }
     }
-    expect(reinsertCount).toBeGreaterThan(0);
+    assert(reinsertCount > 0);
 
     entries.forEach((entry) => {
-      expect(containsPageEntry(pageArray, entry)).toBe(true);
+      assert(containsPageEntry(pageArray, entry) === true);
     });
 
     removed.forEach((entry) => {
-      expect(containsPageEntry(pageArray, entry)).toBe(false);
+      assert(containsPageEntry(pageArray, entry) === false);
     });
 
     // remove all entries again
     entries.forEach((entry) => {
-      expect(removePageEntry(pageArray, entry)).toBe(true);
+      assert(removePageEntry(pageArray, entry) === true);
     });
 
-    expect(readPageEntriesCount(pageArray)).toBe(0);
-    expect(readPageEntriesFreeSpace(pageArray)).toBe(freeSpaceAtStart);
-    expect(dataView.getUint16(FREE_CHUNKS_SIZE)).toBe(0);
+    assert(readPageEntriesCount(pageArray) === 0);
+    assert(readPageEntriesFreeSpace(pageArray) === freeSpaceAtStart);
+    assert(dataView.getUint16(FREE_CHUNKS_SIZE) === 0);
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, assert, expect, test } from "vitest";
 import { getCompressedFloat64ByteLength, readCompressedFloat64, writeCompressedFloat64 } from "./compressedFloat64";
 
 describe("read/writeCompressedFloat64()", () => {
@@ -97,20 +97,20 @@ describe("read/writeCompressedFloat64()", () => {
   function testRoundtrip(testValue: number) {
     const array = new Uint8Array(11);
     const writeLength = writeCompressedFloat64(array, 1, testValue);
-    expect(writeLength).toBeGreaterThanOrEqual(1);
-    expect(writeLength).toBeLessThanOrEqual(9);
+    assert(writeLength >= 1);
+    assert(writeLength <= 9);
 
     // check that other array values are unchanged
-    expect(array[0]).toBe(0);
+    assert(array[0] === 0);
     for (let i = writeLength + 1; i < array.length; i++) {
-      expect(array[i]).toBe(0);
+      assert(array[i] === 0);
     }
 
     const { value: readValue, length: readLength } = readCompressedFloat64(array, 1);
-    expect(readValue).toBe(testValue);
-    expect(readLength).toBe(writeLength);
+    assert(Object.is(readValue, testValue));
+    assert(readLength === writeLength);
 
-    expect(getCompressedFloat64ByteLength(testValue)).toBe(writeLength);
+    assert(getCompressedFloat64ByteLength(testValue) === writeLength);
   }
 
   test("reads the written value", () => {

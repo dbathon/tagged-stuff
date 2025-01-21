@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, assert, expect, test } from "vitest";
 import { getBitset32ByteLength, readBitset32, writeBitset32 } from "./bitset32";
 
 function xorShift32(x: number): number {
@@ -21,17 +21,17 @@ function newRandom(seed: number): () => number {
 function roundtripWithChecks(bits: number): { bits: number; length: number } {
   const array = Uint8Array.from([1, 1, 1, 1, 1, 1]);
   const expectedLength = getBitset32ByteLength(bits);
-  expect(expectedLength).toBeGreaterThanOrEqual(1);
-  expect(expectedLength).toBeLessThanOrEqual(5);
+  assert(expectedLength >= 1);
+  assert(expectedLength <= 5);
 
   const length = writeBitset32(array, 0, bits);
-  expect(length).toBe(expectedLength);
+  assert(length === expectedLength);
   // does not modify the uint8 after the written bytes
-  expect(array[length]).toBe(1);
+  assert(array[length] === 1);
 
   const read = readBitset32(array, 0);
-  expect(read.length).toBe(expectedLength);
-  expect(read.bits).toBe(bits >>> 0);
+  assert(read.length === expectedLength);
+  assert(read.bits === bits >>> 0);
 
   return read;
 }
@@ -62,7 +62,7 @@ describe("read/writeBitset32()", () => {
 
     for (const bitset of testBitsets) {
       const result = roundtripWithChecks(bitset);
-      expect(result.bits).toBe(bitset);
+      assert(result.bits === bitset);
     }
   });
 
@@ -76,15 +76,15 @@ describe("read/writeBitset32()", () => {
       }
       bits = bits >>> 0;
       const read = roundtripWithChecks(bits);
-      expect(read.length).toBe(1);
-      expect(read.bits).toBe(bits);
+      assert(read.length === 1);
+      assert(read.bits === bits);
     }
   });
 
   test("does not validate input and 'truncates' information", () => {
     for (const testValue of [-1, (-1 >>> 0) + 1, 2343.35345, -23546.345]) {
       const result = roundtripWithChecks(testValue);
-      expect(result.bits).toBe(testValue >>> 0);
+      assert(result.bits === testValue >>> 0);
       expect(result.bits).not.toBe(testValue);
     }
   });

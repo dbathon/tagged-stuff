@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { compareUint8Arrays } from "shared-util";
+import { describe, assert, expect, test } from "vitest";
+import { compareUint8Arrays, uint8ArraysEqual } from "shared-util";
 import { insertPageEntry } from "../page-entries/pageEntries";
 import {
   allocateAndInitBtreeRootPage,
@@ -22,7 +22,7 @@ function leafPage(entries: number[][], pageSize: number): Uint8Array {
   pageArray[0] = 0b10001;
   const entriesPageArray = new Uint8Array(pageArray.buffer, 1);
   entries.forEach((entry) => {
-    expect(insertPageEntry(entriesPageArray, Uint8Array.from(entry))).toBe(true);
+    assert(insertPageEntry(entriesPageArray, Uint8Array.from(entry)) === true);
   });
   return pageArray;
 }
@@ -34,7 +34,7 @@ function innerPage(entries: number[][], childPageNumbers: number[], pageHeight: 
   const childPageNumbersCount = Math.floor(pageArray.length / 16);
   const entriesPageArray = new Uint8Array(pageArray.buffer, 2 + childPageNumbersCount * 4);
   entries.forEach((entry) => {
-    expect(insertPageEntry(entriesPageArray, Uint8Array.from(entry))).toBe(true);
+    assert(insertPageEntry(entriesPageArray, Uint8Array.from(entry)) === true);
   });
   const childPageNumbersDataView = new DataView(pageArray.buffer, 2, childPageNumbersCount * 4);
   childPageNumbers.forEach((childPageNumber, index) => {
@@ -107,9 +107,11 @@ function testScanResult(
   let scanResult = params.forward
     ? scanBtreeEntries(pageProvider, rootPageNumber, startEntry, callback)
     : scanBtreeEntriesReverse(pageProvider, rootPageNumber, startEntry, callback);
-  expect(scanResult).toBe(true);
-  const expectedResult = expected.map((array) => Uint8Array.from(array));
-  expect(result).toEqual(expectedResult);
+  assert(scanResult === true);
+  assert(result.length === expected.length);
+  for (let i = 0; i < result.length; i++) {
+    assert(uint8ArraysEqual(result[i], Uint8Array.from(expected[i])));
+  }
 
   checkBtreeIntegrity(pageProvider, rootPageNumber);
 }
@@ -215,17 +217,17 @@ describe("btree", () => {
     const pageProvider = createPageProviderForWrite(400);
     const rootPageNumber = allocateAndInitBtreeRootPage(pageProvider);
 
-    expect(insertBtreeEntry(pageProvider, rootPageNumber, Uint8Array.from([3]))).toBe(true);
-    expect(insertBtreeEntry(pageProvider, rootPageNumber, Uint8Array.from([3]))).toBe(false);
-    expect(insertBtreeEntry(pageProvider, rootPageNumber, Uint8Array.from([1]))).toBe(true);
-    expect(insertBtreeEntry(pageProvider, rootPageNumber, Uint8Array.from([1]))).toBe(false);
-    expect(insertBtreeEntry(pageProvider, rootPageNumber, Uint8Array.from([3]))).toBe(false);
-    expect(insertBtreeEntry(pageProvider, rootPageNumber, Uint8Array.from([1]))).toBe(false);
+    assert(insertBtreeEntry(pageProvider, rootPageNumber, Uint8Array.from([3])) === true);
+    assert(insertBtreeEntry(pageProvider, rootPageNumber, Uint8Array.from([3])) === false);
+    assert(insertBtreeEntry(pageProvider, rootPageNumber, Uint8Array.from([1])) === true);
+    assert(insertBtreeEntry(pageProvider, rootPageNumber, Uint8Array.from([1])) === false);
+    assert(insertBtreeEntry(pageProvider, rootPageNumber, Uint8Array.from([3])) === false);
+    assert(insertBtreeEntry(pageProvider, rootPageNumber, Uint8Array.from([1])) === false);
 
     testScanForOneAndThreeEntries(pageProvider.getPage, rootPageNumber);
 
-    expect(pageProvider.pages.length).toBe(1);
-    expect(pageProvider.releasedPageNumbers.size).toBe(0);
+    assert(pageProvider.pages.length === 1);
+    assert(pageProvider.releasedPageNumbers.size === 0);
   });
 
   function makeEntry(int32: number, length: number): Uint8Array {
@@ -247,11 +249,11 @@ describe("btree", () => {
       for (const entry of insertOrder) {
         entries.push(entry);
         entries.sort(compareUint8Arrays);
-        expect(insertBtreeEntry(pageProvider, rootPageNumber, entry)).toBe(true);
-        expect(insertBtreeEntry(pageProvider, rootPageNumber, entry)).toBe(false);
+        assert(insertBtreeEntry(pageProvider, rootPageNumber, entry) === true);
+        assert(insertBtreeEntry(pageProvider, rootPageNumber, entry) === false);
 
         testScanResult(pageProvider.getPage, { forward: true }, entries, rootPageNumber);
-        expect(countBtreeEntries(pageProvider.getPage, rootPageNumber)).toBe(entries.length);
+        assert(countBtreeEntries(pageProvider.getPage, rootPageNumber) === entries.length);
       }
 
       // test partial scans
@@ -270,14 +272,14 @@ describe("btree", () => {
         );
       }
 
-      expect(pageProvider.pages.length).toBeGreaterThan(1);
-      expect(pageProvider.releasedPageNumbers.size).toBe(0);
+      assert(pageProvider.pages.length > 1);
+      assert(pageProvider.releasedPageNumbers.size === 0);
 
       // check that the first two layers are inner pages
       const rootPage = pageProvider.getPage(rootPageNumber);
-      expect(rootPage[0]).toBe(0b10010);
+      assert(rootPage[0] === 0b10010);
       const childPage = pageProvider.getPage(new DataView(rootPage.buffer, rootPage.byteOffset + 2).getUint32(0));
-      expect(childPage[0]).toBe(0b10010);
+      assert(childPage[0] === 0b10010);
 
       for (const removeOrder of orders) {
         const removePageProvider = pageProvider.clone();
@@ -285,16 +287,16 @@ describe("btree", () => {
         let remaining = removeOrder.length;
         // remove the entries
         removeOrder.forEach((entry) => {
-          expect(removeBtreeEntry(removePageProvider, rootPageNumber, entry)).toBe(true);
-          expect(removeBtreeEntry(removePageProvider, rootPageNumber, entry)).toBe(false);
+          assert(removeBtreeEntry(removePageProvider, rootPageNumber, entry) === true);
+          assert(removeBtreeEntry(removePageProvider, rootPageNumber, entry) === false);
           checkBtreeIntegrity(removePageProvider.getPage, rootPageNumber);
-          expect(countBtreeEntries(removePageProvider.getPage, rootPageNumber)).toBe(--remaining);
+          assert(countBtreeEntries(removePageProvider.getPage, rootPageNumber) === --remaining);
         });
 
         testScanResult(removePageProvider.getPage, { forward: true }, [], rootPageNumber);
 
-        expect(removePageProvider.pages.length - removePageProvider.releasedPageNumbers.size).toBe(1);
-        expect(removePageProvider.releasedPageNumbers.size).toBeGreaterThan(0);
+        assert(removePageProvider.pages.length - removePageProvider.releasedPageNumbers.size === 1);
+        assert(removePageProvider.releasedPageNumbers.size > 0);
       }
     }
   }
@@ -339,8 +341,8 @@ describe("btree", () => {
 
     entries.forEach((entry, index) => {
       const removePageProvider = pageProvider.clone();
-      expect(removeBtreeEntry(removePageProvider, rootPageNumber, Uint8Array.from(entry))).toBe(true);
-      expect(removeBtreeEntry(removePageProvider, rootPageNumber, Uint8Array.from(entry))).toBe(false);
+      assert(removeBtreeEntry(removePageProvider, rootPageNumber, Uint8Array.from(entry)) === true);
+      assert(removeBtreeEntry(removePageProvider, rootPageNumber, Uint8Array.from(entry)) === false);
       testScanResult(
         removePageProvider.getPage,
         { forward: true },
@@ -348,13 +350,13 @@ describe("btree", () => {
         rootPageNumber
       );
 
-      expect(removePageProvider.pages.length).toBe(4);
+      assert(removePageProvider.pages.length === 4);
       if (index < middle1) {
         // no merge for the leftmost child
-        expect(removePageProvider.releasedPageNumbers.size).toBe(0);
+        assert(removePageProvider.releasedPageNumbers.size === 0);
       } else {
         // removal of the entry should have merged two leaf pages
-        expect(removePageProvider.releasedPageNumbers.size).toBe(1);
+        assert(removePageProvider.releasedPageNumbers.size === 1);
       }
     });
   });
@@ -380,7 +382,7 @@ describe("btree", () => {
       start: testRange.start && Uint8Array.from(testRange.start),
       end: testRange.end && Uint8Array.from(testRange.end),
     };
-    expect(countBtreeEntries(pageProvider, rootPageNumber, range)).toBe(expectedCount);
+    assert(countBtreeEntries(pageProvider, rootPageNumber, range) === expectedCount);
 
     // also test the defaults for exclusive
     if (range?.startExclusive === undefined) {
@@ -388,10 +390,10 @@ describe("btree", () => {
         ...(range || {}),
         startExclusive: false,
       };
-      expect(countBtreeEntries(pageProvider, rootPageNumber, rangeWithExplicit)).toBe(expectedCount);
+      assert(countBtreeEntries(pageProvider, rootPageNumber, rangeWithExplicit) === expectedCount);
       if (rangeWithExplicit.endExclusive === undefined) {
         rangeWithExplicit.endExclusive = true;
-        expect(countBtreeEntries(pageProvider, rootPageNumber, rangeWithExplicit)).toBe(expectedCount);
+        assert(countBtreeEntries(pageProvider, rootPageNumber, rangeWithExplicit) === expectedCount);
       }
     }
     if (range?.endExclusive === undefined) {
@@ -399,7 +401,7 @@ describe("btree", () => {
         ...(range || {}),
         endExclusive: true,
       };
-      expect(countBtreeEntries(pageProvider, rootPageNumber, rangeWithExplicit)).toBe(expectedCount);
+      assert(countBtreeEntries(pageProvider, rootPageNumber, rangeWithExplicit) === expectedCount);
     }
   }
 
@@ -482,9 +484,9 @@ describe("btree", () => {
     const pageProvider = createPageProviderForWrite(400);
     const rootPageNumber = allocateAndInitBtreeRootPage(pageProvider);
 
-    expect(findFirstBtreeEntry(pageProvider.getPage, rootPageNumber)).toBe(undefined);
-    expect(findLastBtreeEntry(pageProvider.getPage, rootPageNumber)).toBe(undefined);
-    expect(findFirstBtreeEntryWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([1]))).toBe(undefined);
+    assert(findFirstBtreeEntry(pageProvider.getPage, rootPageNumber) === undefined);
+    assert(findLastBtreeEntry(pageProvider.getPage, rootPageNumber) === undefined);
+    assert(findFirstBtreeEntryWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([1])) === undefined);
     expect(findAllBtreeEntriesWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([1]))).toStrictEqual([]);
 
     const entries: Uint8Array[] = [];
@@ -495,10 +497,10 @@ describe("btree", () => {
       }
     }
     for (const entry of entries) {
-      expect(insertBtreeEntry(pageProvider, rootPageNumber, entry)).toBe(true);
+      assert(insertBtreeEntry(pageProvider, rootPageNumber, entry) === true);
     }
 
-    expect(pageProvider.pages.length).toBeGreaterThan(1);
+    assert(pageProvider.pages.length > 1);
 
     expect(findFirstBtreeEntry(pageProvider.getPage, rootPageNumber)).toStrictEqual(entries[0]);
     expect(findLastBtreeEntry(pageProvider.getPage, rootPageNumber)).toStrictEqual(entries.at(-1));
@@ -511,14 +513,14 @@ describe("btree", () => {
       group1
     );
 
-    expect(findFirstBtreeEntryWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([3]))).toBe(undefined);
+    assert(findFirstBtreeEntryWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([3])) === undefined);
     expect(findAllBtreeEntriesWithPrefix(pageProvider.getPage, rootPageNumber, Uint8Array.from([3]))).toStrictEqual([]);
 
     const pagesMissingPageProvider: PageProvider = (pageNumber) => undefined;
-    expect(findFirstBtreeEntry(pagesMissingPageProvider, rootPageNumber)).toBe(false);
-    expect(findLastBtreeEntry(pagesMissingPageProvider, rootPageNumber)).toBe(false);
+    assert(findFirstBtreeEntry(pagesMissingPageProvider, rootPageNumber) === false);
+    assert(findLastBtreeEntry(pagesMissingPageProvider, rootPageNumber) === false);
 
-    expect(findFirstBtreeEntryWithPrefix(pagesMissingPageProvider, rootPageNumber, Uint8Array.from([3]))).toBe(false);
-    expect(findAllBtreeEntriesWithPrefix(pagesMissingPageProvider, rootPageNumber, Uint8Array.from([3]))).toBe(false);
+    assert(findFirstBtreeEntryWithPrefix(pagesMissingPageProvider, rootPageNumber, Uint8Array.from([3])) === false);
+    assert(findAllBtreeEntriesWithPrefix(pagesMissingPageProvider, rootPageNumber, Uint8Array.from([3])) === false);
   });
 });

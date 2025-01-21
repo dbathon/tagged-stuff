@@ -1,7 +1,41 @@
-import { expect, test } from "vitest";
+import { assert, test } from "vitest";
 import { type PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
 import { countJson, deleteJson, queryJson, saveJson } from "./jsonStore";
 import { type QueryParameters } from "./queryTypes";
+
+function jsonEquals(a: unknown, b: unknown): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (typeof a === "object" && typeof b === "object") {
+    if (Array.isArray(b)) {
+      if (Array.isArray(a)) {
+        const length = a.length;
+        if (b.length !== length) {
+          return false;
+        }
+
+        for (let i = 0; i < length; i++) {
+          if (!jsonEquals(a[i], b[i])) {
+            return false;
+          }
+        }
+        return true;
+      }
+    } else if (a && b && !Array.isArray(a)) {
+      // both a and b are objects
+      const allKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
+      for (const key of allKeys) {
+        if (!jsonEquals((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) {
+          return false;
+        }
+      }
+      return true;
+    }
+  }
+
+  return false;
+}
 
 function createPageAccess(pageSize: number): PageAccessDuringTransaction {
   const pages = new Map<number, Uint8Array>();
@@ -44,9 +78,9 @@ interface Large extends WithId {
 test("jsonStore", () => {
   const pageAccess = createPageAccess(4096);
 
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo" })).toEqual([]);
-  expect(queryJson<Bar>(pageAccess.get, { table: "bar" })).toEqual([]);
-  expect(countJson(pageAccess.get, { table: "bar" })).toEqual(0);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo" }), []));
+  assert(jsonEquals(queryJson<Bar>(pageAccess.get, { table: "bar" }), []));
+  assert(countJson(pageAccess.get, { table: "bar" }) === 0);
 
   const foo0: Foo = {
     active: true,
@@ -55,9 +89,9 @@ test("jsonStore", () => {
   };
 
   saveJson(pageAccess, "foo", foo0);
-  expect(foo0.id).toBe(0);
+  assert(foo0.id === 0);
 
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo" })).toEqual([foo0]);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo" }), [foo0]));
 
   const foo1: Foo = {
     active: false,
@@ -65,32 +99,32 @@ test("jsonStore", () => {
     count: 42,
   };
   saveJson(pageAccess, "foo", foo1);
-  expect(foo1.id).toBe(1);
+  assert(foo1.id === 1);
 
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo" })).toEqual([foo0, foo1]);
-  expect(countJson(pageAccess.get, { table: "foo" })).toEqual(2);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo" }), [foo0, foo1]));
+  assert(countJson(pageAccess.get, { table: "foo" }) === 2);
 
   foo0.count += 5;
   saveJson(pageAccess, "foo", foo0);
-  expect(foo0.id).toBe(0);
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo" })).toEqual([foo0, foo1]);
+  assert(foo0.id === 0);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo" }), [foo0, foo1]));
 
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo", filter: ["id >=", 1] })).toEqual([foo1]);
-  expect(countJson(pageAccess.get, { table: "foo", filter: ["id >=", 1] })).toEqual(1);
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo", filter: ["id >=", 2] })).toEqual([]);
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo", limit: 1 })).toEqual([foo0]);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo", filter: ["id >=", 1] }), [foo1]));
+  assert(countJson(pageAccess.get, { table: "foo", filter: ["id >=", 1] }) === 1);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo", filter: ["id >=", 2] }), []));
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo", limit: 1 }), [foo0]));
 
-  expect(deleteJson(pageAccess, "foo", 0)).toBe(true);
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo", limit: 1 })).toEqual([foo1]);
-  expect(deleteJson(pageAccess, "foo", 0)).toBe(false);
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo", limit: 1 })).toEqual([foo1]);
+  assert(deleteJson(pageAccess, "foo", 0) === true);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo", limit: 1 }), [foo1]));
+  assert(deleteJson(pageAccess, "foo", 0) === false);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo", limit: 1 }), [foo1]));
 
   // "restore" foo0
   saveJson(pageAccess, "foo", foo0);
-  expect(foo0.id).toBe(0);
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo", limit: 1 })).toEqual([foo0]);
+  assert(foo0.id === 0);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo", limit: 1 }), [foo0]));
 
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo", filter: ["id >=", 42] })).toEqual([]);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo", filter: ["id >=", 42] }), []));
 
   // save an entry with a given id
   const foo42: Foo = {
@@ -100,8 +134,8 @@ test("jsonStore", () => {
     count: 42,
   };
   saveJson(pageAccess, "foo", foo42);
-  expect(foo42.id).toBe(42);
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo", filter: ["id >=", 42] })).toEqual([foo42]);
+  assert(foo42.id === 42);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo", filter: ["id >=", 42] }), [foo42]));
 
   // next id should now be 43
   const foo43: Foo = {
@@ -110,18 +144,18 @@ test("jsonStore", () => {
     count: 43,
   };
   saveJson(pageAccess, "foo", foo43);
-  expect(foo43.id).toBe(43);
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo", filter: ["id >=", 42] })).toEqual([foo42, foo43]);
+  assert(foo43.id === 43);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo", filter: ["id >=", 42] }), [foo42, foo43]));
 
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo" })).toEqual([foo0, foo1, foo42, foo43]);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo" }), [foo0, foo1, foo42, foo43]));
 
   // some more deletes
-  expect(deleteJson(pageAccess, "foo", 1)).toBe(true);
-  expect(deleteJson(pageAccess, "foo", 1)).toBe(false);
-  expect(deleteJson(pageAccess, "foo", 2)).toBe(false);
-  expect(deleteJson(pageAccess, "foo", 42)).toBe(true);
-  expect(deleteJson(pageAccess, "foo", 1)).toBe(false);
-  expect(queryJson<Foo>(pageAccess.get, { table: "foo" })).toEqual([foo0, foo43]);
+  assert(deleteJson(pageAccess, "foo", 1) === true);
+  assert(deleteJson(pageAccess, "foo", 1) === false);
+  assert(deleteJson(pageAccess, "foo", 2) === false);
+  assert(deleteJson(pageAccess, "foo", 42) === true);
+  assert(deleteJson(pageAccess, "foo", 1) === false);
+  assert(jsonEquals(queryJson<Foo>(pageAccess.get, { table: "foo" }), [foo0, foo43]));
 
   const bar0: Bar = {
     barStrings: ["a", "b", "c"],
@@ -130,38 +164,38 @@ test("jsonStore", () => {
   };
 
   saveJson(pageAccess, "bar", bar0);
-  expect(bar0.id).toBe(0);
-  expect(queryJson<Bar>(pageAccess.get, { table: "bar" })).toEqual([bar0]);
+  assert(bar0.id === 0);
+  assert(jsonEquals(queryJson<Bar>(pageAccess.get, { table: "bar" }), [bar0]));
 
   const large0: Large = {
     large: "x".repeat(5000),
   };
   saveJson(pageAccess, "large", large0);
-  expect(large0.id).toBe(0);
-  expect(queryJson<Large>(pageAccess.get, { table: "large" })).toEqual([large0]);
+  assert(large0.id === 0);
+  assert(jsonEquals(queryJson<Large>(pageAccess.get, { table: "large" }), [large0]));
 
   // test update of large entry
   large0.large = "x".repeat(5000) + "y";
   large0.a = 123;
   large0.b = "foo";
   saveJson(pageAccess, "large", large0);
-  expect(large0.id).toBe(0);
-  expect(queryJson<Large>(pageAccess.get, { table: "large" })).toEqual([large0]);
+  assert(large0.id === 0);
+  assert(jsonEquals(queryJson<Large>(pageAccess.get, { table: "large" }), [large0]));
 
   const large1: Large = {
     large: "y".repeat(6000),
     a: 1234.5465656,
   };
   saveJson(pageAccess, "large", large1);
-  expect(large1.id).toBe(1);
-  expect(queryJson<Large>(pageAccess.get, { table: "large" })).toEqual([large0, large1]);
-  expect(countJson(pageAccess.get, { table: "large" })).toEqual(2);
+  assert(large1.id === 1);
+  assert(jsonEquals(queryJson<Large>(pageAccess.get, { table: "large" }), [large0, large1]));
+  assert(countJson(pageAccess.get, { table: "large" }) === 2);
 
   // empty object should work
   const empty: WithId = {};
   saveJson(pageAccess, "empty", empty);
-  expect(empty.id).toBe(0);
-  expect(queryJson(pageAccess.get, { table: "empty" })).toEqual([empty]);
+  assert(empty.id === 0);
+  assert(jsonEquals(queryJson(pageAccess.get, { table: "empty" }), [empty]));
 });
 
 interface TestEntity extends WithId {
@@ -203,7 +237,7 @@ test("queryJson", () => {
     }
 
     saveJson(pageAccess, table, entity);
-    expect(entity.id).toBeDefined();
+    assert(entity.id !== undefined);
 
     entities.push(entity);
   }
@@ -213,13 +247,18 @@ test("queryJson", () => {
 
   function testQueryAndCount(parameters: QueryParameters, expected: TestEntity[]) {
     const fullResult = queryJson<TestEntity>(pageAccess.get, parameters);
-    expect(fullResult).toEqual(expected);
+    assert(jsonEquals(fullResult, expected));
 
     const ids = queryJson(pageAccess.get, parameters, "onlyId");
-    expect(ids).toEqual(expected.map((e) => e.id));
+    assert(
+      jsonEquals(
+        ids,
+        expected.map((e) => e.id)
+      )
+    );
 
     const count = countJson(pageAccess.get, parameters);
-    expect(count).toEqual(expected.length);
+    assert(count === expected.length);
 
     if (parameters.offset === undefined && parameters.limit === undefined) {
       const halfLength = expected.length >>> 1;
@@ -391,10 +430,10 @@ test("queryJson sorting", () => {
   ];
   for (const entity of entities) {
     saveJson(pageAccess, table, entity);
-    expect(entity.id).toBeDefined();
+    assert(entity.id !== undefined);
   }
 
-  expect(queryJson(pageAccess.get, { table })).toEqual(entities);
+  assert(jsonEquals(queryJson(pageAccess.get, { table }), entities));
   // test that sorting by x does not change the order
-  expect(queryJson(pageAccess.get, { table, orderBy: ["x"] })).toEqual(entities);
+  assert(jsonEquals(queryJson(pageAccess.get, { table, orderBy: ["x"] }), entities));
 });

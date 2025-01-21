@@ -1,14 +1,14 @@
-import { expect, test } from "vitest";
+import { assert, expect, test } from "vitest";
 import { compareUint8Arrays } from "./compareUint8Arrays";
 
 /** a is expected to be before b. */
 function testCompare(a: number[], b: number[]) {
   const aArray = Uint8Array.from(a);
   const bArray = Uint8Array.from(b);
-  expect(compareUint8Arrays(aArray, bArray)).toBe(-1);
-  expect(compareUint8Arrays(bArray, aArray)).toBe(1);
-  expect(compareUint8Arrays(aArray, aArray)).toBe(0);
-  expect(compareUint8Arrays(bArray, bArray)).toBe(0);
+  assert(compareUint8Arrays(aArray, bArray) === -1);
+  assert(compareUint8Arrays(bArray, aArray) === 1);
+  assert(compareUint8Arrays(aArray, aArray) === 0);
+  assert(compareUint8Arrays(bArray, bArray) === 0);
 
   if (a.length < 20) {
     // also test with "extended" arrays

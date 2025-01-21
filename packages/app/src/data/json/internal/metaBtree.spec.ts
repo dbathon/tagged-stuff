@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { assert, expect, test } from "vitest";
 import { allocateAndInitBtreeRootPage } from "../../btree/btree";
 import { type PageProviderForWrite } from "../../btree/pageProvider";
 import { type JsonPath } from "../jsonEvents";
@@ -49,22 +49,22 @@ test("metaBtree", () => {
     const params = [pageProvider, metaRootPageNumber, path] as const;
     const number = jsonPathToNumber(...params);
     numbers.push(number);
-    expect(jsonPathToNumber(...params)).toBe(number);
-    expect(jsonPathToNumber(...params, toNumberCache)).toBe(number);
-    expect(jsonPathToNumber(...params, toNumberCache)).toBe(number);
+    assert(jsonPathToNumber(...params) === number);
+    assert(jsonPathToNumber(...params, toNumberCache) === number);
+    assert(jsonPathToNumber(...params, toNumberCache) === number);
   }
 
   const fromNumberCache: NumberToJsonPathCache = new Map();
   for (let i = 0; i < paths.length; i++) {
     const path = paths[i];
     const number = numbers[i];
-    expect(jsonPathToNumber(pageProvider, metaRootPageNumber, path)).toBe(number);
-    expect(jsonPathToNumber(pageProvider, metaRootPageNumber, path, toNumberCache)).toBe(number);
+    assert(jsonPathToNumber(pageProvider, metaRootPageNumber, path) === number);
+    assert(jsonPathToNumber(pageProvider, metaRootPageNumber, path, toNumberCache) === number);
 
     expect(numberToJsonPath(pageProvider.getPage, metaRootPageNumber, number)).toEqual(path);
 
     const cachedResult = numberToJsonPath(pageProvider.getPage, metaRootPageNumber, number, fromNumberCache);
     expect(cachedResult).toEqual(path);
-    expect(numberToJsonPath(pageProvider.getPage, metaRootPageNumber, number, fromNumberCache)).toBe(cachedResult);
+    assert(numberToJsonPath(pageProvider.getPage, metaRootPageNumber, number, fromNumberCache) === cachedResult);
   }
 });

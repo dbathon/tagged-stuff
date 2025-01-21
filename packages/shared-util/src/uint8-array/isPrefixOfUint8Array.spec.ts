@@ -1,9 +1,9 @@
-import { expect, test } from "vitest";
+import { assert, expect, test } from "vitest";
 import { isPrefixOfUint8Array } from "./isPrefixOfUint8Array";
 
 function testPrefix(array: ArrayLike<number>, prefix: ArrayLike<number>, expectedResult: boolean) {
   const result = isPrefixOfUint8Array(Uint8Array.from(array), Uint8Array.from(prefix));
-  expect(result).toBe(expectedResult);
+  assert(result === expectedResult);
 }
 
 test("isPrefixOfUint8Array", () => {
@@ -17,5 +17,5 @@ test("isPrefixOfUint8Array", () => {
   testPrefix([1, 2, 3], [1, 3, 3], false);
 
   const someArray = Uint8Array.from([1]);
-  expect(isPrefixOfUint8Array(someArray, someArray)).toBe(true);
+  assert(isPrefixOfUint8Array(someArray, someArray) === true);
 });
