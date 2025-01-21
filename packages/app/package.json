@@ -12,22 +12,22 @@
     "test": "vitest"
   },
   "dependencies": {
-    "idb": "^7.1.1",
+    "idb": "^8.0.1",
     "shared-util": "workspace:^",
-    "vue": "^3.4.21",
-    "vue-router": "^4.3.0"
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
-    "@tsconfig/node20": "^20.1.2",
-    "@types/node": "^20.11.28",
-    "@vitejs/plugin-vue": "^5.0.4",
-    "@vue/tsconfig": "^0.5.1",
-    "npm-run-all2": "^6.1.2",
-    "sass": "^1.72.0",
-    "typescript": "~5.4.0",
-    "vite": "^5.1.6",
-    "vitest": "^1.4.0",
-    "vue-tsc": "^2.0.6"
+    "@tsconfig/node20": "^20.1.4",
+    "@types/node": "^22.10.7",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/tsconfig": "^0.7.0",
+    "npm-run-all2": "^7.0.2",
+    "sass": "^1.83.4",
+    "typescript": "~5.7.3",
+    "vite": "^6.0.11",
+    "vitest": "^3.0.3",
+    "vue-tsc": "^2.2.0"
   },
-  "packageManager": "pnpm@8.15.5+sha1.a58c038faac410c947dbdb93eb30994037d0fce2"
+  "packageManager": "pnpm@9.15.4+sha512.b2dc20e2fc72b3e18848459b37359a32064663e5627a51e4c74b2c29dd8e8e0491483c3abb40789cfd578bf362fb6ba8261b05f0387d76792ed6e23ea3b1b6a0"
 }
