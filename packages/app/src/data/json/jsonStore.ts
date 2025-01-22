@@ -79,7 +79,7 @@ const MISSING_PAGE = {};
 
 export type PageAccess = (pageNumber: number) => Uint8Array | undefined;
 
-type PageAccessNotUndefined = (pageNumber: number) => Uint8Array;
+export type PageAccessNotUndefined = (pageNumber: number) => Uint8Array;
 
 type PageProviderNotUndefined = PageAccessNotUndefined;
 
@@ -493,6 +493,16 @@ function buildFilterPredicate(filterCondition: FilterCondition): (jsonValue: unk
 
 // T can just be specified, it is not validated...
 export function queryJson<T extends object, P extends ProjectionType = undefined>(
+  pageAccess: PageAccessNotUndefined,
+  queryParameters: QueryParameters,
+  projection?: P,
+): QueryResult<P, T>;
+export function queryJson<T extends object, P extends ProjectionType = undefined>(
+  pageAccess: PageAccess,
+  queryParameters: QueryParameters,
+  projection?: P,
+): QueryResult<P, T> | false;
+export function queryJson<T extends object, P extends ProjectionType = undefined>(
   pageAccess: PageAccess,
   { table, filter, extraFilter, orderBy, limit, offset }: QueryParameters,
   projection?: P,
@@ -547,6 +557,8 @@ export function queryJson<T extends object, P extends ProjectionType = undefined
   }
 }
 
+export function countJson(pageAccess: PageAccessNotUndefined, countParameters: CountParameters): number;
+export function countJson(pageAccess: PageAccess, countParameters: CountParameters): number | false;
 export function countJson(pageAccess: PageAccess, countParameters: CountParameters): number | false {
   // TODO: this can/should be optimized, but for now just counting the ids should be okay
   const ids = queryJson(pageAccess, countParameters, "onlyId");
