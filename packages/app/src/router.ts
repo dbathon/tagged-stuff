@@ -6,6 +6,7 @@ import CryptoTest from "./pages/CryptoTest.vue";
 import Settings from "./pages/Settings.vue";
 import NotFound from "./pages/NotFound.vue";
 import { getSettings } from "./shared/settings";
+import { pageStore } from "./state/pageStore";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -18,14 +19,23 @@ export const router = createRouter({
         if (getSettings() === undefined) {
           // redirect to settings, if the settings are not configured yet
           next({ name: "Settings" });
+        } else {
+          next();
         }
-        next();
       },
     },
     {
       path: "/tagged-stuff/json-store-test",
       name: "JsonStoreTest",
       component: JsonStoreTest,
+      beforeEnter: (to, from, next) => {
+        if (pageStore.value === undefined) {
+          // redirect to settings, if no pageStore is available
+          next({ name: "Settings" });
+        } else {
+          next();
+        }
+      },
     },
     {
       path: "/tagged-stuff/b-tree-test",
@@ -44,7 +54,7 @@ export const router = createRouter({
     },
     {
       path: "/tagged-stuff",
-      redirect: "/tagged-stuff/entries",
+      redirect: "/tagged-stuff/json-store-test",
     },
     {
       path: "/",

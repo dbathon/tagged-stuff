@@ -1,12 +1,22 @@
 <script setup lang="ts">
 import { useRouter } from "vue-router";
-import { getSettings, saveSettings, Settings } from "../shared/settings";
+import { getPageStoreSettings, savePageStoreSettings } from "@/state/pageStore";
+import { ref } from "vue";
 
 const router = useRouter();
-const settings = getSettings() || new Settings();
+
+const previousSettings = getPageStoreSettings();
+
+const useCompression = ref(previousSettings.useCompression);
+const pageSize = ref(previousSettings.pageSize);
+const maxIndexPageSize = ref(previousSettings.maxIndexPageSize);
 
 function save(navigate: boolean) {
-  saveSettings(settings);
+  savePageStoreSettings({
+    useCompression: useCompression.value,
+    pageSize: pageSize.value || undefined,
+    maxIndexPageSize: maxIndexPageSize.value || undefined,
+  });
 
   if (navigate) {
     router.push("/");
@@ -19,20 +29,20 @@ function save(navigate: boolean) {
   <form @submit.prevent="save(true)">
     <div>
       <label>
-        jds URL:
-        <input v-model="settings.jdsUrl" placeholder="https://..." />
+        Use compression:
+        <input v-model="useCompression" type="checkbox" />
       </label>
     </div>
     <div>
       <label>
-        Store Id:
-        <input v-model="settings.storeId" />
+        Page size:
+        <input v-model="pageSize" type="number" />
       </label>
     </div>
     <div>
       <label>
-        Secret:
-        <input v-model="settings.secret" />
+        Maximum index page size:
+        <input v-model="maxIndexPageSize" type="number" />
       </label>
     </div>
 

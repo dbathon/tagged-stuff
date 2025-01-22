@@ -1,24 +1,27 @@
 <script setup lang="ts">
-import { onScopeDispose, reactive, ref } from "vue";
-import { InMemoryPageStoreBackend } from "../data/page-store/InMemoryPageStoreBackend";
-import { PageStore } from "../data/page-store/PageStore";
+import { ref } from "vue";
 import JsonStoreTestTable from "./json-store/JsonStoreTestTable.vue";
+import { pageStore } from "@/state/pageStore";
+import { useJsonQuery } from "./json-store/useJsonQuery";
+import { countJson, saveJson } from "@/data/json/jsonStore";
 
-const backendPages = ref(0);
-const backend = new InMemoryPageStoreBackend();
-const pageStore = new PageStore(backend, 4096, 4096 * 4);
+const TABLES_TABLE_NAME = "_tables_";
 
-const interval = setInterval(() => {
-  backendPages.value = backend.pages.size;
-}, 100);
-onScopeDispose(() => clearInterval(interval));
-
-const tables: string[] = reactive([]);
+const tables = useJsonQuery<{ name: string }>(pageStore, { table: TABLES_TABLE_NAME });
 const newTableName = ref("");
 
-function addTable() {
-  if (newTableName.value) {
-    tables.push(newTableName.value);
+async function addTable() {
+  const tableName = newTableName.value;
+  if (pageStore.value && tableName) {
+    await pageStore.value.runTransaction((pageAccess) => {
+      const existingCount = countJson(pageAccess.get, { table: TABLES_TABLE_NAME, filter: ["name", "=", tableName] });
+      if (!existingCount) {
+        saveJson(pageAccess, TABLES_TABLE_NAME, { name: tableName });
+      } else {
+        console.log("table already exists", tableName);
+      }
+    });
+
     newTableName.value = "";
   }
 }
@@ -33,10 +36,9 @@ function addTable() {
     </label>
     <button type="submit">Add</button>
   </form>
-  <h1>Backend pages: {{ backendPages }}</h1>
   <h1>Tables</h1>
-  <div v-for="table in tables">
-    <JsonStoreTestTable :tableName="table" :pageStore="pageStore" />
+  <div v-for="table in tables || []">
+    <JsonStoreTestTable :tableName="table.name" />
     <hr />
   </div>
 </template>

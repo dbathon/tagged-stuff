@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { deleteJson, saveJson } from "../../data/json/jsonStore";
-import { PageStore } from "../../data/page-store/PageStore";
 import { useJsonQuery } from "./useJsonQuery";
+import { pageStore } from "@/state/pageStore";
 
 interface TestEntry {
   id?: number;
   title?: string;
 }
 
-const props = defineProps<{ tableName: string; pageStore: PageStore }>();
+const props = defineProps<{ tableName: string }>();
 
-const entries = useJsonQuery<TestEntry>(props.pageStore, () => ({ table: props.tableName }));
+const entries = useJsonQuery<TestEntry>(pageStore, () => ({ table: props.tableName }));
 
 const activeEntry = ref<TestEntry>();
 
@@ -25,8 +25,8 @@ function newEntry() {
 
 async function saveEntry() {
   const entry = activeEntry.value;
-  if (entry) {
-    await props.pageStore.runTransaction((pageAccess) => {
+  if (entry && pageStore.value) {
+    await pageStore.value.runTransaction((pageAccess) => {
       saveJson(pageAccess, props.tableName, entry);
     });
     activeEntry.value = undefined;
@@ -43,7 +43,7 @@ async function generateEntries() {
 
 async function generateEntriesFast() {
   const now = Date.now();
-  await props.pageStore.runTransaction((pageAccess) => {
+  await pageStore.value?.runTransaction((pageAccess) => {
     for (let i = 0; i < 100; i++) {
       saveJson(pageAccess, props.tableName, { title: now + " - " + i });
     }
@@ -51,7 +51,7 @@ async function generateEntriesFast() {
 }
 
 async function deleteEntry(entry: TestEntry) {
-  await props.pageStore.runTransaction((pageAccess) => {
+  await pageStore.value?.runTransaction((pageAccess) => {
     deleteJson(pageAccess, props.tableName, entry.id!);
   });
 }

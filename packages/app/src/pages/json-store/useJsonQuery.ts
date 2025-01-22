@@ -1,6 +1,6 @@
-import { onScopeDispose, reactive, type Ref, ref, toRaw, watch } from "vue";
+import { type MaybeRefOrGetter, onScopeDispose, reactive, type Ref, ref, toRaw, toValue, watch } from "vue";
 import { queryJson } from "../../data/json/jsonStore";
-import { PageStore } from "../../data/page-store/PageStore";
+import { PageStore, type PageReadsRecorder } from "../../data/page-store/PageStore";
 import { type QueryParameters } from "../../data/json/queryTypes";
 
 function extractId(value: unknown): number | undefined {
@@ -113,8 +113,8 @@ function mergeInto(existingValue: unknown, newValue: unknown): unknown {
 }
 
 export function useJsonQuery<T extends object>(
-  pageStore: PageStore,
-  queryParameters: () => QueryParameters,
+  pageStore: MaybeRefOrGetter<PageStore | undefined>,
+  queryParameters: MaybeRefOrGetter<QueryParameters>,
 ): Ref<T[] | false> {
   // this ref is used to trigger a recompute
   const invalidateToggle = ref(false);
@@ -122,31 +122,49 @@ export function useJsonQuery<T extends object>(
   const invalidateCallback = () => {
     invalidateToggle.value = !lastInvalidateToggleValue;
   };
-  const pageReadsRecorder = pageStore.getPageReadsRecorder(invalidateCallback);
-  onScopeDispose(() => {
+  let lastPageStore: PageStore | undefined = undefined;
+  let pageReadsRecorder: PageReadsRecorder | undefined = undefined;
+  const cleanup = () => {
     // cleanup by recording no page reads
-    pageReadsRecorder(() => {});
-  });
+    pageReadsRecorder?.(() => {});
+    pageReadsRecorder = undefined;
+  };
+  onScopeDispose(cleanup);
+
+  toValue;
 
   const result: Ref<T[] | false> = ref(false);
 
   watch(
-    [invalidateToggle, queryParameters],
-    ([invalidateToggleValue, currentParameters]) => {
+    [invalidateToggle, () => toValue(pageStore), () => toValue(queryParameters)],
+    ([invalidateToggleValue, currentPageStore, currentParameters]) => {
       lastInvalidateToggleValue = invalidateToggleValue;
-      const label = JSON.stringify(currentParameters);
-      console.time("recompute " + label);
-      const queryResult = pageReadsRecorder((pageAccess) => queryJson<T>(pageAccess, currentParameters));
-      console.timeEnd("recompute " + label);
-      if (!result.value) {
-        result.value = queryResult;
+
+      if (!currentPageStore) {
+        cleanup();
+        result.value = false;
+        lastPageStore = undefined;
       } else {
-        if (queryResult) {
-          console.time("merge " + label);
-          mergeInto(toRaw(result.value), queryResult);
-          console.timeEnd("merge " + label);
+        if (lastPageStore !== currentPageStore || !pageReadsRecorder) {
+          cleanup();
+          pageReadsRecorder = currentPageStore.getPageReadsRecorder(invalidateCallback);
+        }
+        lastPageStore = currentPageStore;
+
+        const label = JSON.stringify(currentParameters);
+        console.time("recompute " + label);
+        const queryResult = pageReadsRecorder((pageAccess) => queryJson<T>(pageAccess, currentParameters));
+        console.timeEnd("recompute " + label);
+        if (!result.value) {
+          result.value = queryResult;
         } else {
-          // just keep the existing result if the query goes back to false
+          if (queryResult) {
+            console.time("merge " + label);
+            mergeInto(toRaw(result.value), queryResult);
+            console.timeEnd("merge " + label);
+          } else {
+            // just keep the existing result if the query goes back to false
+          }
         }
       }
     },
