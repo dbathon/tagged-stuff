@@ -1,6 +1,6 @@
 import { describe, assert, expect, test } from "vitest";
 import { compareUint8Arrays, uint8ArraysEqual } from "shared-util";
-import { insertPageEntry } from "../page-entries/pageEntries";
+import { insertPageEntry } from "page-entries";
 import {
   allocateAndInitBtreeRootPage,
   checkBtreeIntegrity,

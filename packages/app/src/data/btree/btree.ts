@@ -11,7 +11,7 @@ import {
   resetPageEntries,
   scanPageEntries,
   scanPageEntriesReverse,
-} from "../page-entries/pageEntries";
+} from "page-entries";
 import { type PageProvider, type PageProviderForWrite } from "./pageProvider";
 
 /**
