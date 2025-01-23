@@ -14,9 +14,6 @@ importers:
 
   packages/app:
     dependencies:
-      idb:
-        specifier: ^8.0.1
-        version: 8.0.1
       shared-util:
         specifier: workspace:^
         version: link:../shared-util
@@ -626,9 +623,6 @@ packages:
   he@1.2.0:
     resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
     hasBin: true
-
-  idb@8.0.1:
-    resolution: {integrity: sha512-EkBCzUZSdhJV8PxMSbeEV//xguVKZu9hZZulM+2gHXI0t2hGVU3eYE6/XnH77DS6FM2FY8wl17aDcu9vXpvLWQ==}
 
   immutable@5.0.3:
     resolution: {integrity: sha512-P8IdPQHq3lA1xVeBRi5VPqUm5HDgKnx0Ru51wZz5mjxHr5n3RWhjIpOFU7ybkUxfB+5IToy+OLaHYDBIWsv+uw==}
@@ -1369,8 +1363,6 @@ snapshots:
     optional: true
 
   he@1.2.0: {}
-
-  idb@8.0.1: {}
 
   immutable@5.0.3: {}
 

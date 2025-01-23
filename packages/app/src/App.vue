@@ -2,10 +2,7 @@
 const title = "tagged-stuff";
 
 const routeLinks = [
-  ["Entries", "Entries"],
   ["JsonStoreTest", "JsonStoreTest"],
-  ["BTreeTest", "B-Tree Test"],
-  ["CryptoTest", "Crypto Test"],
   ["Settings", "Settings"],
 ];
 </script>
