@@ -7,8 +7,8 @@ import {
   insertBtreeEntry,
   removeBtreeEntry,
   scanBtreeEntries,
-} from "../btree/btree";
-import { type PageProviderForWrite } from "../btree/pageProvider";
+} from "btree";
+import { type PageProviderForWrite } from "btree";
 import { type PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
 import {
   assert,

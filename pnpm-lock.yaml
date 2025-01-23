@@ -14,6 +14,9 @@ importers:
 
   packages/app:
     dependencies:
+      btree:
+        specifier: workspace:^
+        version: link:../btree
       page-entries:
         specifier: workspace:^
         version: link:../page-entries
@@ -57,6 +60,22 @@ importers:
       vue-tsc:
         specifier: ^2.2.0
         version: 2.2.0(typescript@5.7.3)
+
+  packages/btree:
+    dependencies:
+      page-entries:
+        specifier: workspace:^
+        version: link:../page-entries
+      shared-util:
+        specifier: workspace:^
+        version: link:../shared-util
+    devDependencies:
+      typescript:
+        specifier: ~5.7.3
+        version: 5.7.3
+      vitest:
+        specifier: ^3.0.3
+        version: 3.0.3(@types/node@22.10.7)(sass@1.83.4)
 
   packages/page-entries:
     dependencies:

@@ -1,5 +1,5 @@
-import { findFirstBtreeEntryWithPrefix, insertBtreeEntry, removeBtreeEntry } from "../../btree/btree";
-import { type PageProviderForWrite } from "../../btree/pageProvider";
+import { findFirstBtreeEntryWithPrefix, insertBtreeEntry, removeBtreeEntry } from "btree";
+import { type PageProviderForWrite } from "btree";
 import {
   assert,
   Uint8ArraySet,

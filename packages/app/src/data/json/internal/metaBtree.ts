@@ -3,8 +3,8 @@ import {
   findFirstBtreeEntryWithPrefix,
   findLastBtreeEntry,
   insertBtreeEntry,
-} from "../../btree/btree";
-import { type PageProvider, type PageProviderForWrite } from "../../btree/pageProvider";
+} from "btree";
+import { type PageProvider, type PageProviderForWrite } from "btree";
 import { assert, murmurHash3_x86_32, readTuple, tupleToUint8Array, uint8ArraysEqual } from "shared-util";
 import { type JsonPath, type JsonPathKey } from "../jsonEvents";
 

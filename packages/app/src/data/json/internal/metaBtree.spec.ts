@@ -1,6 +1,6 @@
 import { assert, expect, test } from "vitest";
-import { allocateAndInitBtreeRootPage } from "../../btree/btree";
-import { type PageProviderForWrite } from "../../btree/pageProvider";
+import { allocateAndInitBtreeRootPage } from "btree";
+import { type PageProviderForWrite } from "btree";
 import { type JsonPath } from "../jsonEvents";
 import {
   type JsonPathToNumberCache,
