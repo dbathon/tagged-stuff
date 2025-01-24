@@ -12,8 +12,7 @@
     "test": "vitest"
   },
   "dependencies": {
-    "btree": "workspace:^",
-    "page-entries": "workspace:^",
+    "json-store": "workspace:^",
     "page-store": "workspace:^",
     "shared-util": "workspace:^",
     "vue": "^3.5.13",

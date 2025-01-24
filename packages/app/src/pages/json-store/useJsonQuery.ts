@@ -1,7 +1,6 @@
 import { type MaybeRefOrGetter, onScopeDispose, reactive, type Ref, ref, toRaw, toValue, watch } from "vue";
-import { queryJson } from "../../data/json/jsonStore";
+import { queryJson, type QueryParameters } from "json-store";
 import { PageStore, type PageReadsRecorder } from "page-store";
-import { type QueryParameters } from "../../data/json/queryTypes";
 
 function extractId(value: unknown): number | undefined {
   if (typeof value === "object" && value !== null) {

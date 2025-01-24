@@ -3,7 +3,7 @@ import { ref } from "vue";
 import JsonStoreTestTable from "./json-store/JsonStoreTestTable.vue";
 import { pageStore } from "@/state/pageStore";
 import { useJsonQuery } from "./json-store/useJsonQuery";
-import { countJson, saveJson } from "@/data/json/jsonStore";
+import { countJson, saveJson } from "json-store";
 
 const TABLES_TABLE_NAME = "_tables_";
 

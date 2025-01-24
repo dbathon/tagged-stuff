@@ -1,0 +1,24 @@
+{
+  "name": "json-store",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "/dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "btree": "workspace:^",
+    "page-store": "workspace:^",
+    "shared-util": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.3",
+    "vitest": "^3.0.3"
+  }
+}

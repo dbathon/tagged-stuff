@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { deleteJson, saveJson } from "../../data/json/jsonStore";
+import { deleteJson, saveJson } from "json-store";
 import { useJsonQuery } from "./useJsonQuery";
 import { pageStore } from "@/state/pageStore";
 
