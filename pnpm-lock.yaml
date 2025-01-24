@@ -11,6 +11,9 @@ importers:
       prettier:
         specifier: ^3.4.2
         version: 3.4.2
+      vitest:
+        specifier: ^3.0.3
+        version: 3.0.3(@types/node@22.10.7)(sass@1.83.4)
 
   packages/app:
     dependencies:
