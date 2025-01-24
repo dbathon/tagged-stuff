@@ -1,7 +1,4 @@
-import { CompressingPageStoreBackend } from "@/data/page-store/CompressingPageStoreBackend";
-import { InMemoryPageStoreBackend } from "@/data/page-store/InMemoryPageStoreBackend";
-import { PageStore } from "@/data/page-store/PageStore";
-import type { PageStoreBackend } from "@/data/page-store/PageStoreBackend";
+import { CompressingPageStoreBackend, InMemoryPageStoreBackend, PageStore, type PageStoreBackend } from "page-store";
 import { shallowRef } from "vue";
 
 const SETTINGS_KEY = "taggedStuff.pageStoreSettings";

@@ -9,7 +9,7 @@ import {
   scanBtreeEntries,
 } from "btree";
 import { type PageProviderForWrite } from "btree";
-import { type PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
+import { type PageAccessDuringTransaction } from "page-store";
 import {
   assert,
   Uint8ArraySet,

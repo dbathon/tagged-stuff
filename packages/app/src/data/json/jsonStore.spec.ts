@@ -1,5 +1,5 @@
 import { assert, test } from "vitest";
-import { type PageAccessDuringTransaction } from "../page-store/PageAccessDuringTransaction";
+import { type PageAccessDuringTransaction } from "page-store";
 import { countJson, deleteJson, queryJson, saveJson } from "./jsonStore";
 import { type QueryParameters } from "./queryTypes";
 

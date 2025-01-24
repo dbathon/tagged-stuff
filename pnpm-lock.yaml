@@ -20,6 +20,9 @@ importers:
       page-entries:
         specifier: workspace:^
         version: link:../page-entries
+      page-store:
+        specifier: workspace:^
+        version: link:../page-store
       shared-util:
         specifier: workspace:^
         version: link:../shared-util
@@ -78,6 +81,19 @@ importers:
         version: 3.0.3(@types/node@22.10.7)(sass@1.83.4)
 
   packages/page-entries:
+    dependencies:
+      shared-util:
+        specifier: workspace:^
+        version: link:../shared-util
+    devDependencies:
+      typescript:
+        specifier: ~5.7.3
+        version: 5.7.3
+      vitest:
+        specifier: ^3.0.3
+        version: 3.0.3(@types/node@22.10.7)(sass@1.83.4)
+
+  packages/page-store:
     dependencies:
       shared-util:
         specifier: workspace:^
