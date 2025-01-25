@@ -1,3 +1,5 @@
+export * from "./json/jsonEquals";
+
 export * from "./misc/assert";
 export * from "./misc/murmurHash3";
 
