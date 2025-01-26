@@ -36,6 +36,9 @@ async function addTable() {
     </label>
     <button type="submit">Add</button>
   </form>
+  <div>
+    <button @click="pageStore?.refresh()">Refresh</button>
+  </div>
   <h1>Tables</h1>
   <div v-for="table in tables || []">
     <JsonStoreTestTable :tableName="table.name" />
