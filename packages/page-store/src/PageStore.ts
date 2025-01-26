@@ -175,10 +175,10 @@ export class PageStore {
   private getTransactionIdOfPage(pageEntry: PageEntry): number | undefined {
     let result = pageEntry.transactionId;
 
-    if (result === undefined) {
+    if (result === undefined && this.indexPage) {
       const transactionIdLocation = this.treeCalc.getTransactionIdLocation(pageEntry.pageNumber);
       if (!transactionIdLocation) {
-        result = this.indexPage?.transactionTreeRootTransactionId;
+        result = this.indexPage.transactionTreeRootTransactionId;
       } else {
         const pageArray = this.getPageEntry(transactionIdLocation.pageNumber).getArrayIfLoaded();
         if (pageArray) {
