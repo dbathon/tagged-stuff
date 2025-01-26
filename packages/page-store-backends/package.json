@@ -1,0 +1,25 @@
+{
+  "name": "page-store-backends",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "page-store": "workspace:^",
+    "@supabase/postgrest-js": "^1.18.1",
+    "base64-js": "^1.5.1"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.3",
+    "vitest": "^3.0.3"
+  }
+}

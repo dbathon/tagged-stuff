@@ -2,5 +2,6 @@
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "typescript.preferences.quoteStyle": "double",
   "typescript.format.semicolons": "ignore",
-  "volar.tsPlugin": true
+  "volar.tsPlugin": true,
+  "cSpell.words": ["apikey", "postgrest", "supabase"]
 }
