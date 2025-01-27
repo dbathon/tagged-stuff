@@ -12,9 +12,10 @@ import type {
 Expected table:
 create table page_store_page (
     store_name text,
-    page_number int8,
-    transaction_id int8,
-    data TEXT,
+    page_number int8,          -- -1 for the index page
+    transaction_id int8,       -- always 0 for the index page
+    index_transaction_id int8, -- the transaction_id for the index page
+    data TEXT not null,
     PRIMARY KEY (store_name, page_number, transaction_id)
 );
 */
@@ -45,19 +46,14 @@ export class PostgrestPageStoreBackend implements PageStoreBackend {
 
   private async fetchPageData(
     pageNumber: number,
-    transactionId?: number,
-  ): Promise<{ transactionId: number; data: Uint8Array } | undefined> {
-    let query = this.postgrest
+    transactionId: number,
+  ): Promise<{ data: Uint8Array; indexPageTransactionId?: number } | undefined> {
+    const { error, data } = await this.postgrest
       .from(TABLE)
-      .select("transaction_id, data")
+      .select("data, index_transaction_id")
       .eq("store_name", this.storeName)
-      .eq("page_number", pageNumber);
-    if (transactionId !== undefined) {
-      query = query.eq("transaction_id", transactionId);
-    } else {
-      query = query.limit(2);
-    }
-    const { error, data } = await query;
+      .eq("page_number", pageNumber)
+      .eq("transaction_id", transactionId);
     if (error) {
       throw error;
     }
@@ -70,20 +66,26 @@ export class PostgrestPageStoreBackend implements PageStoreBackend {
     if (data.length > 1) {
       throw new Error("unexpected number of results");
     }
-    const { transaction_id: resultTransactionId, data: dataString } = data[0];
-    if (typeof resultTransactionId !== "number" || typeof dataString !== "string") {
+    const { data: dataString, index_transaction_id: indexPageTransactionId } = data[0];
+    if (typeof dataString !== "string") {
       throw new Error("got unexpected data: " + JSON.stringify(data[0]));
     }
     return {
-      transactionId: resultTransactionId,
       data: toByteArray(dataString),
+      indexPageTransactionId: typeof indexPageTransactionId === "number" ? indexPageTransactionId : undefined,
     };
   }
 
   private async fetchBackendIndexPage(): Promise<BackendIndexPage> {
-    const result = await this.fetchPageData(INDEX_PAGE_PAGE_NUMBER);
+    const result = await this.fetchPageData(INDEX_PAGE_PAGE_NUMBER, 0);
     if (result) {
-      return result;
+      if (result.indexPageTransactionId === undefined) {
+        throw new Error("index_transaction_id is missing");
+      }
+      return {
+        data: result.data,
+        transactionId: result.indexPageTransactionId,
+      };
     }
     // return initial index page
     return {
@@ -141,12 +143,13 @@ export class PostgrestPageStoreBackend implements PageStoreBackend {
       const { error, data } = await this.postgrest
         .from(TABLE)
         .update({
-          transaction_id: indexPage.transactionId,
+          index_transaction_id: indexPage.transactionId,
           data: fromByteArray(indexPage.data),
         })
         .eq("store_name", this.storeName)
         .eq("page_number", INDEX_PAGE_PAGE_NUMBER)
-        .eq("transaction_id", previousTransactionId)
+        .eq("transaction_id", 0)
+        .eq("index_transaction_id", previousTransactionId)
         .select("transaction_id");
 
       if (error || !data) {
@@ -158,11 +161,11 @@ export class PostgrestPageStoreBackend implements PageStoreBackend {
       }
     } else {
       // special case, the first insert of the index page
-      // TODO: how to do this safely..
       const { error } = await this.postgrest.from(TABLE).insert({
         store_name: this.storeName,
         page_number: INDEX_PAGE_PAGE_NUMBER,
-        transaction_id: indexPage.transactionId,
+        transaction_id: 0,
+        index_transaction_id: indexPage.transactionId,
         data: fromByteArray(indexPage.data),
       });
       if (error) {
