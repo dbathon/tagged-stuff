@@ -173,7 +173,18 @@ export class PostgrestPageStoreBackend implements PageStoreBackend {
       }
     }
 
-    // TODO: cleanup obsolete pages
+    // the "commit" was successful fire deletes for all potentially obsolete pages
+    // we don't wait for the requests, it is not a big problem, if they fail or are not completed
+    void Promise.all(
+      pages.map((page) =>
+        this.postgrest
+          .from(TABLE)
+          .delete()
+          .eq("store_name", this.storeName)
+          .eq("page_number", page.identifier.pageNumber)
+          .lt("transaction_id", page.identifier.transactionId),
+      ),
+    );
     return true;
   }
 }

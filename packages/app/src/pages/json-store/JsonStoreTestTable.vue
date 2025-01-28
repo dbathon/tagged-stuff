@@ -55,6 +55,20 @@ async function deleteEntry(entry: TestEntry) {
     deleteJson(pageAccess, props.tableName, entry.id!);
   });
 }
+
+async function deleteOneHundredEntries() {
+  await pageStore.value?.runTransaction((pageAccess) => {
+    if (entries.value) {
+      let count = 0;
+      for (const entry of entries.value) {
+        deleteJson(pageAccess, props.tableName, entry.id!);
+        if (++count >= 100) {
+          break;
+        }
+      }
+    }
+  });
+}
 </script>
 
 <template>
@@ -62,6 +76,7 @@ async function deleteEntry(entry: TestEntry) {
 
   <button @click="generateEntries()">Generate entries</button>
   <button @click="generateEntriesFast()">Generate entries fast</button>
+  <button @click="deleteOneHundredEntries()">Delete 100 entries fast</button>
   <button @click="newEntry()">New entry</button>
 
   <div v-if="activeEntry">
