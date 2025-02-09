@@ -60,6 +60,10 @@ function writeUint16(array: Uint8Array, index: number, value: number): void {
   array[index + 1] = value & 0xff;
 }
 
+function readEntryPointer(pageArray: Uint8Array, index: number): number {
+  return readUint16(pageArray, getEntryPointerIndex(index));
+}
+
 function checkPageArraySize(pageArray: Uint8Array) {
   if (pageArray.length < MIN_PAGE_SIZE) {
     throw new Error("page is too small");
@@ -121,7 +125,7 @@ function readEntry(pageArray: Uint8Array, entryCount: number, entryNumber: numbe
   if (entryNumber < 0 || entryNumber >= entryCount) {
     throw new Error("invalid entryNumber: " + entryNumber);
   }
-  const entryPointer = readUint16(pageArray, getEntryPointerIndex(entryNumber));
+  const entryPointer = readEntryPointer(pageArray, entryNumber);
   if (entryPointer === 0) {
     // special case for empty array
     return SHARED_EMPTY_ARRAY;
@@ -260,7 +264,7 @@ function getSortedEntryPointers(pageArray: Uint8Array, entryCount: number): numb
   const result: number[] = [];
 
   for (let i = 0; i < entryCount; i++) {
-    const entryPointer = readUint16(pageArray, getEntryPointerIndex(i));
+    const entryPointer = readEntryPointer(pageArray, i);
     if (entryPointer > 0) {
       result.push(entryPointer);
     }
@@ -415,7 +419,7 @@ export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
     return false;
   }
 
-  const entryPointer = readUint16(pageArray, getEntryPointerIndex(entryNumber));
+  const entryPointer = readEntryPointer(pageArray, entryNumber);
   // shift all the following entries backwards in the array
   for (let i = entryNumber + 1; i < entryCount; i++) {
     const base = getEntryPointerIndex(i);
@@ -438,7 +442,7 @@ export function removePageEntry(pageArray: Uint8Array, entry: Uint8Array): boole
       let newFreeSpaceEnd = pageArray.length;
 
       for (let i = 0; i < newEntryCount && minNewFreeSpaceEnd < newFreeSpaceEnd; i++) {
-        const entryPointer = readUint16(pageArray, getEntryPointerIndex(i));
+        const entryPointer = readEntryPointer(pageArray, i);
         if (entryPointer > 0 && entryPointer < newFreeSpaceEnd) {
           newFreeSpaceEnd = entryPointer;
         }
@@ -474,7 +478,7 @@ export function debugPageEntries(pageArray: Uint8Array): [number, number, string
   result.push([freeSpaceStart, freeSpaceEnd, "free space"]);
 
   for (let i = 0; i < entryCount; i++) {
-    const entryPointer = readUint16(pageArray, getEntryPointerIndex(i));
+    const entryPointer = readEntryPointer(pageArray, i);
     const entryLength = readEntryLength(pageArray, entryPointer);
     const bytesStart = entryPointer + getByteCountForEntryLength(entryLength);
     result.push([entryPointer, bytesStart + entryLength, "entry " + i]);
