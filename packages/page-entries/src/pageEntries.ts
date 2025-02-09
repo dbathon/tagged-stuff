@@ -91,6 +91,7 @@ export function resetPageEntries(pageArray: Uint8Array): void {
 
 export function readPageEntriesFreeSpace(pageArray: Uint8Array): number {
   const entryCount = readPageEntriesCount(pageArray);
+  // use +1 here to allow for the new entry that would use the free space
   const freeSpaceStart = getEntryPointerIndex(entryCount + 1);
   if (entryCount === 0 && pageArray[0] === 0) {
     // not initialized, so we have to pretend it was initialized
