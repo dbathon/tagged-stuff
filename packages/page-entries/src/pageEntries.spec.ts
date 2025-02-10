@@ -5,10 +5,12 @@ import {
   readAllPageEntries,
   readPageEntriesCount,
   readPageEntriesFreeSpace,
+  readPageEntryByNumber,
   removePageEntry,
   scanPageEntries,
   scanPageEntriesReverse,
 } from "./pageEntries";
+import { uint8ArraysEqual } from "shared-util";
 
 // some copied constants
 const FREE_CHUNKS_SIZE = 3;
@@ -87,9 +89,8 @@ describe("pageEntries", () => {
     }
 
     expect(readAllPageEntries(pageArray)).toEqual([]);
-    // no free chunks exist
-    assert(dataView.getUint16(FREE_CHUNKS_SIZE) === 0);
     assert(readPageEntriesFreeSpace(pageArray) === startFreeSpace);
+    assert(pageArray[0] === 0);
   });
 
   test("scanPageEntries", () => {
@@ -302,6 +303,40 @@ describe("pageEntries", () => {
 
     assert(readPageEntriesCount(pageArray) === 0);
     assert(readPageEntriesFreeSpace(pageArray) === freeSpaceAtStart);
-    assert(dataView.getUint16(FREE_CHUNKS_SIZE) === 0);
+    assert(pageArray[0] === 0);
+  });
+
+  test("entries with common prefix", () => {
+    const pageArray = new Uint8Array(1100);
+    const insertedEntries: Uint8Array[] = [];
+
+    const entry = Uint8Array.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
+
+    for (let i = 0; i < 256; i++) {
+      entry[entry.length - 1] = i;
+      // all entries need to fit
+      assert(insertPageEntry(pageArray, entry));
+      insertedEntries.push(new Uint8Array(entry));
+    }
+
+    assert(readPageEntriesCount(pageArray) === 256);
+
+    // also test some cases with partial prefixes
+    entry[5] = 6;
+    assert(insertPageEntry(pageArray, entry));
+    insertedEntries.push(new Uint8Array(entry));
+    entry[2] = 3;
+    assert(insertPageEntry(pageArray, entry));
+    insertedEntries.push(new Uint8Array(entry));
+
+    // and an entry without any matching prefix
+    entry[0] = 1;
+    assert(insertPageEntry(pageArray, entry));
+    insertedEntries.push(new Uint8Array(entry));
+
+    // check that all the entries can be read correctly
+    insertedEntries.forEach((expectedEntry, i) =>
+      assert(uint8ArraysEqual(expectedEntry, readPageEntryByNumber(pageArray, i))),
+    );
   });
 });
