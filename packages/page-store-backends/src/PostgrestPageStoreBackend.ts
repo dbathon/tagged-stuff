@@ -1,12 +1,7 @@
 import { PostgrestClient } from "@supabase/postgrest-js";
 import { fromByteArray, toByteArray } from "base64-js";
-import type {
-  BackendIndexPage,
-  BackendPage,
-  BackendPageIdentifier,
-  BackendReadResult,
-  PageStoreBackend,
-} from "page-store";
+import type { BackendIndexPage, BackendPage, BackendPageIdentifier } from "page-store";
+import { AbstractPageStoreBackend } from "./AbstractPageStoreBackend";
 
 /*
 Expected table:
@@ -24,10 +19,7 @@ const TABLE = "page_store_page";
 
 const INDEX_PAGE_PAGE_NUMBER = -1;
 
-export class PostgrestPageStoreBackend implements PageStoreBackend {
-  // Support up to 64KB, this limit is arbitrary, it could be increased...
-  readonly maxPageSize = 1 << 16;
-
+export class PostgrestPageStoreBackend extends AbstractPageStoreBackend {
   private readonly postgrest: PostgrestClient;
 
   constructor(
@@ -35,6 +27,7 @@ export class PostgrestPageStoreBackend implements PageStoreBackend {
     token: string,
     readonly storeName: string,
   ) {
+    super();
     this.postgrest = new PostgrestClient(url, {
       headers: {
         Authorization: "Bearer " + token,
@@ -76,7 +69,7 @@ export class PostgrestPageStoreBackend implements PageStoreBackend {
     };
   }
 
-  private async fetchBackendIndexPage(): Promise<BackendIndexPage> {
+  protected async fetchBackendIndexPage(): Promise<BackendIndexPage | undefined> {
     const result = await this.fetchPageData(INDEX_PAGE_PAGE_NUMBER, 0);
     if (result) {
       if (result.indexPageTransactionId === undefined) {
@@ -87,14 +80,10 @@ export class PostgrestPageStoreBackend implements PageStoreBackend {
         transactionId: result.indexPageTransactionId,
       };
     }
-    // return initial index page
-    return {
-      transactionId: 0,
-      data: new Uint8Array(0),
-    };
+    return undefined;
   }
 
-  private async fetchBackendPage(identifier: BackendPageIdentifier): Promise<BackendPage | undefined> {
+  protected async fetchBackendPage(identifier: BackendPageIdentifier): Promise<BackendPage | undefined> {
     if (identifier.pageNumber < 0) {
       throw new Error("unexpected page number");
     }
@@ -107,38 +96,17 @@ export class PostgrestPageStoreBackend implements PageStoreBackend {
     );
   }
 
-  async readPages(includeIndexPage: boolean, pageIdentifiers: BackendPageIdentifier[]): Promise<BackendReadResult> {
-    // fetch everything in parallel
-    const indexPagePromise: Promise<BackendIndexPage | undefined> = includeIndexPage
-      ? this.fetchBackendIndexPage()
-      : Promise.resolve(undefined);
-    const pagesPromise: Promise<(BackendPage | undefined)[]> = Promise.all(
-      pageIdentifiers.map((identifier) => this.fetchBackendPage(identifier)),
-    );
-
-    const [indexPage, pages] = await Promise.all([indexPagePromise, pagesPromise]);
-
-    return {
-      indexPage,
-      pages: pages.filter((page) => !!page),
-    };
+  protected async writeBackendPage(page: BackendPage): Promise<boolean> {
+    const { error } = await this.postgrest.from(TABLE).insert({
+      store_name: this.storeName,
+      page_number: page.identifier.pageNumber,
+      transaction_id: page.identifier.transactionId,
+      data: fromByteArray(page.data),
+    });
+    return !error;
   }
 
-  async writePages(indexPage: BackendIndexPage, previousTransactionId: number, pages: BackendPage[]): Promise<boolean> {
-    // TODO: batching etc.
-    for (const page of pages) {
-      const { error } = await this.postgrest.from(TABLE).insert({
-        store_name: this.storeName,
-        page_number: page.identifier.pageNumber,
-        transaction_id: page.identifier.transactionId,
-        data: fromByteArray(page.data),
-      });
-      if (error) {
-        return false;
-      }
-    }
-
-    // all backend pages were inserted successfully, so now try the index page update
+  protected async writeIndexPage(indexPage: BackendIndexPage, previousTransactionId: number): Promise<boolean> {
     if (previousTransactionId > 0) {
       const { error, data } = await this.postgrest
         .from(TABLE)
@@ -172,11 +140,12 @@ export class PostgrestPageStoreBackend implements PageStoreBackend {
         return false;
       }
     }
+    return true;
+  }
 
-    // the "commit" was successful fire deletes for all potentially obsolete pages
-    // we don't wait for the requests, it is not a big problem, if they fail or are not completed
+  protected async cleanupObsoleteBackendPages(writtenPages: BackendPage[]): Promise<void> {
     void Promise.all(
-      pages.map((page) =>
+      writtenPages.map((page) =>
         this.postgrest
           .from(TABLE)
           .delete()
@@ -185,6 +154,5 @@ export class PostgrestPageStoreBackend implements PageStoreBackend {
           .lt("transaction_id", page.identifier.transactionId),
       ),
     );
-    return true;
   }
 }
