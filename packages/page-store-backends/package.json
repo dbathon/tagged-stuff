@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "page-store": "workspace:^",
+    "shared-util": "workspace:^",
     "@supabase/postgrest-js": "^1.18.1",
     "base64-js": "^1.5.1"
   },
