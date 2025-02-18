@@ -130,8 +130,6 @@ export function useJsonQuery<T extends object>(
   };
   onScopeDispose(cleanup);
 
-  toValue;
-
   const result: Ref<T[] | false> = ref(false);
 
   watch(
