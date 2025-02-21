@@ -1,22 +1,16 @@
 <script setup lang="ts">
 import { useRouter } from "vue-router";
 import { getPageStoreSettings, savePageStoreSettings } from "@/state/pageStore";
-import { ref } from "vue";
+import { reactive } from "vue";
+import CheckboxInput from "@/components/CheckboxInput.vue";
+import NumberInput from "@/components/NumberInput.vue";
 
 const router = useRouter();
 
-const previousSettings = getPageStoreSettings();
-
-const useCompression = ref(previousSettings.useCompression);
-const pageSize = ref(previousSettings.pageSize);
-const maxIndexPageSize = ref(previousSettings.maxIndexPageSize);
+const settings = reactive(structuredClone(getPageStoreSettings()));
 
 function save(navigate: boolean) {
-  savePageStoreSettings({
-    useCompression: useCompression.value,
-    pageSize: pageSize.value || undefined,
-    maxIndexPageSize: maxIndexPageSize.value || undefined,
-  });
+  savePageStoreSettings(settings);
 
   if (navigate) {
     router.push("/");
@@ -27,24 +21,9 @@ function save(navigate: boolean) {
 <template>
   <h2>Settings</h2>
   <form @submit.prevent="save(true)">
-    <div>
-      <label>
-        Use compression:
-        <input v-model="useCompression" type="checkbox" />
-      </label>
-    </div>
-    <div>
-      <label>
-        Page size:
-        <input v-model="pageSize" type="number" />
-      </label>
-    </div>
-    <div>
-      <label>
-        Maximum index page size:
-        <input v-model="maxIndexPageSize" type="number" />
-      </label>
-    </div>
+    <CheckboxInput label="Use compression" v-model="settings.useCompression" />
+    <NumberInput label="Page size" v-model="settings.pageSize" />
+    <NumberInput label="Maximum index page size" v-model="settings.maxIndexPageSize" />
 
     <div>
       <button type="submit">Save</button>
