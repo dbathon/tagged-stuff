@@ -2,6 +2,7 @@ export * from "./json/jsonEquals";
 
 export * from "./misc/assert";
 export * from "./misc/murmurHash3";
+export * from "./misc/Semaphore";
 
 export * from "./uint8-array/bitset32";
 export * from "./uint8-array/compareUint8Arrays";

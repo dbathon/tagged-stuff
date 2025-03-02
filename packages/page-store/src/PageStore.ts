@@ -10,7 +10,7 @@ import {
   type BackendReadResult,
   type PageStoreBackend,
 } from "./PageStoreBackend";
-import { uint8ArrayToDataView, assert } from "shared-util";
+import { uint8ArrayToDataView, assert, Semaphore } from "shared-util";
 
 // require at least 4KB
 const MIN_PAGE_SIZE = 1 << 12;
@@ -112,6 +112,7 @@ const RESOLVED_PROMISE = Promise.resolve();
 
 export class PageStore {
   private readonly treeCalc: TreeCalc;
+  private readonly transactionSemaphore = new Semaphore(1);
 
   private indexPage?: IndexPage;
 
@@ -125,8 +126,6 @@ export class PageStore {
 
   private loadingFinishedPromise?: Promise<void>;
   private loadingFinishedResolve?: () => void;
-
-  private transactionActive = false;
 
   private readonly zeroedPageArray: Uint8Array;
 
@@ -617,13 +616,7 @@ export class PageStore {
       await this.loadingFinished();
     }
 
-    if (this.transactionActive) {
-      // TODO maybe automatically "serialize" the transactions (by just waiting until the previous one is finished)
-      throw new Error("there is already an active transaction");
-    }
-    this.transactionActive = true;
-
-    try {
+    return this.transactionSemaphore.run(async () => {
       const triedTransactionIds: Set<number> = new Set();
       for (let retry = 0; retries === undefined || retry <= retries; ++retry) {
         if (retry > 0) {
@@ -696,10 +689,8 @@ export class PageStore {
         }
         return { committed: true, resultValue };
       }
-    } finally {
-      this.transactionActive = false;
-    }
 
-    return { committed: false };
+      return { committed: false };
+    });
   }
 }
