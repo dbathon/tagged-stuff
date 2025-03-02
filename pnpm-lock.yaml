@@ -17,6 +17,9 @@ importers:
 
   packages/app:
     dependencies:
+      base64-js:
+        specifier: ^1.5.1
+        version: 1.5.1
       json-store:
         specifier: workspace:^
         version: link:../json-store

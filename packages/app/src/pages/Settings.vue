@@ -7,6 +7,7 @@ import NumberInput from "@/components/NumberInput.vue";
 import type { SelectOption } from "@/components/types";
 import Select from "@/components/Select.vue";
 import TextInput from "@/components/TextInput.vue";
+import { fromByteArray } from "base64-js";
 
 const router = useRouter();
 
@@ -17,6 +18,11 @@ const backendTypes: SelectOption<PageStoreBackendType>[] = [
   { label: "Simple key value serverless function", value: "SimpleKeyValue" },
   { label: "Postgrest", value: "Postgrest" },
 ];
+
+function generateEncryptionSecret() {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(20));
+  settings.encryptionSecret = fromByteArray(randomBytes);
+}
 
 async function save(navigate: boolean) {
   await savePageStoreSettings(settings);
@@ -38,6 +44,8 @@ async function save(navigate: boolean) {
       v-model="settings.backendStoreName"
       v-if="settings.backendType === 'Postgrest'"
     />
+    <TextInput label="Encryption secret" v-model="settings.encryptionSecret" />
+    <button type="button" @click="generateEncryptionSecret()">Generate encryption secret</button>
     <CheckboxInput label="Use compression" v-model="settings.useCompression" />
     <NumberInput label="Page size" v-model="settings.pageSize" />
     <NumberInput label="Maximum index page size" v-model="settings.maxIndexPageSize" />

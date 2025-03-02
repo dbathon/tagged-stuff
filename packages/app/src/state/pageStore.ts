@@ -1,4 +1,4 @@
-import { CompressingPageStoreBackend, PageStore, type PageStoreBackend } from "page-store";
+import { CompressingPageStoreBackend, EncryptingPageStoreBackend, PageStore, type PageStoreBackend } from "page-store";
 import { Semaphore } from "shared-util";
 import { shallowRef } from "vue";
 
@@ -13,6 +13,7 @@ export type PageStoreSettings = {
   backendUrl?: string;
   backendSecret?: string;
   backendStoreName?: string;
+  encryptionSecret?: string;
   useCompression: boolean;
   pageSize?: number;
   maxIndexPageSize?: number;
@@ -52,6 +53,24 @@ function updatePageStoreInstance(settings: PageStoreSettings): Promise<void> {
   return pageStoreSetupSemaphore.run(async () => {
     try {
       let backend = await constructBaseBackend(settings);
+
+      if (settings.encryptionSecret) {
+        const keyData = new TextEncoder().encode(settings.encryptionSecret);
+        const rawKey = await crypto.subtle.importKey("raw", keyData, "PBKDF2", false, ["deriveKey"]);
+
+        // use a fixed "dummy" salt, the secret just needs to be sufficiently strong
+        const salt = new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        // just use 1 iteration, the secret just needs to be sufficiently strong
+        const iterations = 1;
+        const pbkdf2Params: Pbkdf2Params = { name: "PBKDF2", salt, iterations, hash: "SHA-256" };
+        // note: always use a 128 bit key for now, this could be made configurable
+        const key = await crypto.subtle.deriveKey(pbkdf2Params, rawKey, { name: "AES-GCM", length: 128 }, false, [
+          "encrypt",
+          "decrypt",
+        ]);
+
+        backend = new EncryptingPageStoreBackend(backend, key);
+      }
 
       if (settings.useCompression) {
         backend = new CompressingPageStoreBackend(backend);
