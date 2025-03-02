@@ -1,3 +1,4 @@
+import { PostgrestPageStoreBackend, SimpleKeyValuePageStoreBackend } from "page-store-backends";
 import { CompressingPageStoreBackend, InMemoryPageStoreBackend, PageStore, type PageStoreBackend } from "page-store";
 import { shallowRef } from "vue";
 
@@ -5,7 +6,13 @@ const SETTINGS_KEY = "taggedStuff.pageStoreSettings";
 
 const DEFAULT_PAGE_SIZE = 8192;
 
+export type PageStoreBackendType = "InMemory" | "SimpleKeyValue" | "Postgrest";
+
 export type PageStoreSettings = {
+  backendType: PageStoreBackendType;
+  backendUrl?: string;
+  backendSecret?: string;
+  backendStoreName?: string;
   useCompression: boolean;
   pageSize?: number;
   maxIndexPageSize?: number;
@@ -17,9 +24,27 @@ export type PageStoreSettings = {
  */
 export const pageStore = shallowRef<PageStore>();
 
+function constructBaseBackend(settings: PageStoreSettings): PageStoreBackend {
+  switch (settings.backendType) {
+    case "InMemory":
+      return new InMemoryPageStoreBackend();
+    case "SimpleKeyValue":
+      return new SimpleKeyValuePageStoreBackend(settings.backendUrl || "-", settings.backendSecret || "-");
+    case "Postgrest":
+      return new PostgrestPageStoreBackend(
+        settings.backendUrl || "-",
+        settings.backendSecret || "-",
+        settings.backendStoreName || "-",
+      );
+    default:
+      throw new Error("unexpected backendType: " + settings.backendType);
+  }
+}
+
 function updatePageStoreInstance(settings: PageStoreSettings): void {
   try {
-    let backend: PageStoreBackend = new InMemoryPageStoreBackend();
+    let backend = constructBaseBackend(settings);
+
     if (settings.useCompression) {
       backend = new CompressingPageStoreBackend(backend);
     }
@@ -43,12 +68,22 @@ export function getPageStoreSettings(): PageStoreSettings {
   }
   // construct the default settings
   return {
+    backendType: "InMemory",
     useCompression: true,
     pageSize: DEFAULT_PAGE_SIZE,
   };
 }
 
 export function savePageStoreSettings(settings: PageStoreSettings) {
+  // do some cleanup
+  if (settings.backendType === "InMemory") {
+    settings.backendUrl = undefined;
+    settings.backendSecret = undefined;
+  }
+  if (settings.backendType !== "Postgrest") {
+    settings.backendStoreName = undefined;
+  }
+
   window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   updatePageStoreInstance(settings);
 }
