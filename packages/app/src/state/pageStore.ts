@@ -1,5 +1,5 @@
-import { PostgrestPageStoreBackend, SimpleKeyValuePageStoreBackend } from "page-store-backends";
-import { CompressingPageStoreBackend, InMemoryPageStoreBackend, PageStore, type PageStoreBackend } from "page-store";
+import { CompressingPageStoreBackend, PageStore, type PageStoreBackend } from "page-store";
+import { Semaphore } from "shared-util";
 import { shallowRef } from "vue";
 
 const SETTINGS_KEY = "taggedStuff.pageStoreSettings";
@@ -24,13 +24,20 @@ export type PageStoreSettings = {
  */
 export const pageStore = shallowRef<PageStore>();
 
-function constructBaseBackend(settings: PageStoreSettings): PageStoreBackend {
+export const pageStoreSetupSemaphore = new Semaphore(1);
+
+async function constructBaseBackend(settings: PageStoreSettings): Promise<PageStoreBackend> {
   switch (settings.backendType) {
     case "InMemory":
+      const { InMemoryPageStoreBackend } = await import("page-store");
       return new InMemoryPageStoreBackend();
     case "SimpleKeyValue":
+      const { SimpleKeyValuePageStoreBackend } = await import(
+        "page-store-backends/dist/SimpleKeyValuePageStoreBackend"
+      );
       return new SimpleKeyValuePageStoreBackend(settings.backendUrl || "-", settings.backendSecret || "-");
     case "Postgrest":
+      const { PostgrestPageStoreBackend } = await import("page-store-backends/dist/PostgrestPageStoreBackend");
       return new PostgrestPageStoreBackend(
         settings.backendUrl || "-",
         settings.backendSecret || "-",
@@ -41,21 +48,23 @@ function constructBaseBackend(settings: PageStoreSettings): PageStoreBackend {
   }
 }
 
-function updatePageStoreInstance(settings: PageStoreSettings): void {
-  try {
-    let backend = constructBaseBackend(settings);
+function updatePageStoreInstance(settings: PageStoreSettings): Promise<void> {
+  return pageStoreSetupSemaphore.run(async () => {
+    try {
+      let backend = await constructBaseBackend(settings);
 
-    if (settings.useCompression) {
-      backend = new CompressingPageStoreBackend(backend);
+      if (settings.useCompression) {
+        backend = new CompressingPageStoreBackend(backend);
+      }
+
+      const pageSize = settings.pageSize ?? DEFAULT_PAGE_SIZE;
+      const maxIndexPageSize = settings.maxIndexPageSize ?? pageSize;
+      pageStore.value = new PageStore(backend, pageSize, maxIndexPageSize);
+    } catch (e) {
+      pageStore.value = undefined;
+      console.warn("failed to build page store", e);
     }
-
-    const pageSize = settings.pageSize ?? DEFAULT_PAGE_SIZE;
-    const maxIndexPageSize = settings.maxIndexPageSize ?? pageSize;
-    pageStore.value = new PageStore(backend, pageSize, maxIndexPageSize);
-  } catch (e) {
-    pageStore.value = undefined;
-    console.warn("failed to build page store", e);
-  }
+  });
 }
 
 export function getPageStoreSettings(): PageStoreSettings {
@@ -74,7 +83,7 @@ export function getPageStoreSettings(): PageStoreSettings {
   };
 }
 
-export function savePageStoreSettings(settings: PageStoreSettings) {
+export async function savePageStoreSettings(settings: PageStoreSettings) {
   // do some cleanup
   if (settings.backendType === "InMemory") {
     settings.backendUrl = undefined;
@@ -85,8 +94,12 @@ export function savePageStoreSettings(settings: PageStoreSettings) {
   }
 
   window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  updatePageStoreInstance(settings);
+  await updatePageStoreInstance(settings);
+}
+
+export async function isPageStoreAvailable(): Promise<boolean> {
+  return pageStoreSetupSemaphore.run(async () => pageStore.value !== undefined);
 }
 
 // set initial value
-updatePageStoreInstance(getPageStoreSettings());
+void updatePageStoreInstance(getPageStoreSettings());

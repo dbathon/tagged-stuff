@@ -18,8 +18,8 @@ const backendTypes: SelectOption<PageStoreBackendType>[] = [
   { label: "Postgrest", value: "Postgrest" },
 ];
 
-function save(navigate: boolean) {
-  savePageStoreSettings(settings);
+async function save(navigate: boolean) {
+  await savePageStoreSettings(settings);
 
   if (navigate) {
     router.push("/");
