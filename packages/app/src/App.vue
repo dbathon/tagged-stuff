@@ -3,6 +3,7 @@ const title = "tagged-stuff";
 
 const routeLinks = [
   ["JsonStoreTest", "JsonStoreTest"],
+  ["ConcurrencyTest", "ConcurrencyTest"],
   ["Settings", "Settings"],
 ];
 </script>
