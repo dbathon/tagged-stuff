@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onScopeDispose, ref, watchEffect } from "vue";
-import { pageStore } from "@/state/pageStore";
+import { pageStore, pageStoreTransaction } from "@/state/pageStore";
 import { useJsonQuery } from "./json-store/useJsonQuery";
 import { deleteJson, queryJson, saveJson } from "json-store";
 import NumberInput from "@/components/NumberInput.vue";
@@ -45,27 +45,23 @@ function setupTimeout() {
 watchEffect(setupTimeout);
 
 async function increment() {
-  if (pageStore.value) {
-    inTransaction.value = true;
-    await pageStore.value.runTransaction((pageAccess) => {
-      const entry = queryJson<Entry>(pageAccess.get, { table: TABLE_NAME, filter: ["key", "=", key] })[0] ?? {
-        key,
-        count: 0,
-      };
-      ++entry.count;
-      saveJson(pageAccess, TABLE_NAME, entry);
-    });
-    inTransaction.value = false;
-    setupTimeout();
-  }
+  inTransaction.value = true;
+  await pageStoreTransaction((pageAccess) => {
+    const entry = queryJson<Entry>(pageAccess.get, { table: TABLE_NAME, filter: ["key", "=", key] })[0] ?? {
+      key,
+      count: 0,
+    };
+    ++entry.count;
+    saveJson(pageAccess, TABLE_NAME, entry);
+  });
+  inTransaction.value = false;
+  setupTimeout();
 }
 
 async function deleteEntry(id: number) {
-  if (pageStore.value) {
-    await pageStore.value.runTransaction((pageAccess) => {
-      deleteJson(pageAccess, TABLE_NAME, id);
-    });
-  }
+  await pageStoreTransaction((pageAccess) => {
+    deleteJson(pageAccess, TABLE_NAME, id);
+  });
 }
 </script>
 

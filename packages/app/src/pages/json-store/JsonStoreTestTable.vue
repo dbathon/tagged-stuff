@@ -2,7 +2,7 @@
 import { ref } from "vue";
 import { deleteJson, saveJson } from "json-store";
 import { useJsonQuery } from "./useJsonQuery";
-import { pageStore } from "@/state/pageStore";
+import { pageStore, pageStoreTransaction } from "@/state/pageStore";
 
 interface TestEntry {
   id?: number;
@@ -25,8 +25,8 @@ function newEntry() {
 
 async function saveEntry() {
   const entry = activeEntry.value;
-  if (entry && pageStore.value) {
-    await pageStore.value.runTransaction((pageAccess) => {
+  if (entry) {
+    await pageStoreTransaction((pageAccess) => {
       saveJson(pageAccess, props.tableName, entry);
     });
     activeEntry.value = undefined;

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import JsonStoreTestTable from "./json-store/JsonStoreTestTable.vue";
-import { pageStore } from "@/state/pageStore";
+import { pageStore, pageStoreTransaction } from "@/state/pageStore";
 import { useJsonQuery } from "./json-store/useJsonQuery";
 import { countJson, saveJson } from "json-store";
 
@@ -12,8 +12,8 @@ const newTableName = ref("");
 
 async function addTable() {
   const tableName = newTableName.value;
-  if (pageStore.value && tableName) {
-    await pageStore.value.runTransaction((pageAccess) => {
+  if (tableName) {
+    await pageStoreTransaction((pageAccess) => {
       const existingCount = countJson(pageAccess.get, { table: TABLES_TABLE_NAME, filter: ["name", "=", tableName] });
       if (!existingCount) {
         saveJson(pageAccess, TABLES_TABLE_NAME, { name: tableName });

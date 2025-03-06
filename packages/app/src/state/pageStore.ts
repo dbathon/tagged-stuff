@@ -1,4 +1,11 @@
-import { CompressingPageStoreBackend, EncryptingPageStoreBackend, PageStore, type PageStoreBackend } from "page-store";
+import {
+  CompressingPageStoreBackend,
+  EncryptingPageStoreBackend,
+  PageStore,
+  type PageAccessDuringTransaction,
+  type PageStoreBackend,
+  type TransactionResult,
+} from "page-store";
 import { Semaphore } from "shared-util";
 import { shallowRef } from "vue";
 
@@ -25,7 +32,16 @@ export type PageStoreSettings = {
  */
 export const pageStore = shallowRef<PageStore>();
 
-export const pageStoreSetupSemaphore = new Semaphore(1);
+export async function pageStoreTransaction<T>(
+  transactionFn: (pageAccess: PageAccessDuringTransaction) => T,
+): Promise<TransactionResult<T>> {
+  if (pageStore.value) {
+    return pageStore.value.runTransaction(transactionFn);
+  }
+  return { committed: false };
+}
+
+const pageStoreSetupSemaphore = new Semaphore(1);
 
 async function constructBaseBackend(settings: PageStoreSettings): Promise<PageStoreBackend> {
   switch (settings.backendType) {
